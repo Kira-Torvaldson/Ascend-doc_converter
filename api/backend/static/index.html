@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>API AsciiDoc ⇄ Markdown</title>
+    <!-- Icône de l'onglet (favicon) : le fichier doit être dans api/backend/public/logo.png -->
+    <link rel="icon" type="image/png" href="/public/logo.png" />
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* Image de fond (rafale) : le fichier doit être dans api/backend/public/rafale.jpg */
+        background-image: url("/public/rafale.jpg");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+      }
+      .card {
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 0.75rem;
+        padding: 1.5rem 2rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        border: 1px solid #e5e7eb;
+        max-width: 480px;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 0.5rem;
+        color: #111827;
+      }
+      p {
+        margin: 0.15rem 0;
+        color: #4b5563;
+        font-size: 0.9rem;
+      }
+      code {
+        background: #f9fafb;
+        border-radius: 0.35rem;
+        padding: 0.15rem 0.3rem;
+        border: 1px solid #e5e7eb;
+      }
+      ul {
+        margin-top: 0.75rem;
+        padding-left: 1.25rem;
+        color: #4b5563;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;">
+        <img
+          src="/public/logo.png"
+          alt="Logo"
+          style="width:32px;height:32px;border-radius:999px;object-fit:cover;"
+        />
+        <h1 style="margin:0;">API AsciiDoc ⇄ Markdown</h1>
+      </div>
+      <p>Backend FastAPI pour la conversion :</p>
+      <ul>
+        <li><code>POST /to-markdown</code> – AsciiDoc → Markdown</li>
+        <li><code>POST /to-asciidoc</code> – Markdown → AsciiDoc</li>
+      </ul>
+      <p>
+        Cette API est consommée par le front React/TypeScript dans
+        <code>api/frontend</code>.
+      </p>
+    </div>
+  </body>
+</html>
+
+
