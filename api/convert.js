@@ -539,9 +539,482 @@ function processInlineFormatting(text) {
   return result
 }
 
+/**
+ * Converts AsciiDoc content to Markdown using Pandoc
+ * 
+ * @param {string} asciidoc - The AsciiDoc content to convert
+ * @returns {Promise<string>} Promise that resolves to the converted Markdown
+ * @throws {Error} If Pandoc execution fails
+ */
+async function convertAsciiDocWithPandoc(asciidoc) {
+  if (!asciidoc || typeof asciidoc !== 'string') {
+    throw new Error('AsciiDoc content must be a non-empty string')
+  }
+
+  return new Promise((resolve, reject) => {
+    const tempInput = path.join(tmpdir(), `pandoc-input-${randomUUID()}.adoc`)
+    const tempOutput = path.join(tmpdir(), `pandoc-output-${randomUUID()}.md`)
+
+    try {
+      // Write input to temporary file
+      writeFileSync(tempInput, asciidoc, 'utf-8')
+
+      // Run Pandoc: asciidoc -> markdown
+      const pandoc = spawn('pandoc', [
+        '-f', 'asciidoc',
+        '-t', 'markdown',
+        '-o', tempOutput,
+        tempInput
+      ])
+
+      let stderr = ''
+
+      pandoc.stderr.on('data', (data) => {
+        stderr += data.toString()
+      })
+
+      pandoc.on('close', (code) => {
+        try {
+          if (code !== 0) {
+            // Clean up temp files
+            try { unlinkSync(tempInput) } catch {}
+            try { unlinkSync(tempOutput) } catch {}
+            reject(new Error(`Pandoc conversion failed with code ${code}: ${stderr}`))
+            return
+          }
+
+          // Read output
+          const markdown = readFileSync(tempOutput, 'utf-8')
+
+          // Clean up temp files
+          unlinkSync(tempInput)
+          unlinkSync(tempOutput)
+
+          // Apply basic cleanup
+          const cleaned = basicCleanup(markdown)
+          resolve(cleaned)
+        } catch (error) {
+          // Clean up temp files on error
+          try { unlinkSync(tempInput) } catch {}
+          try { unlinkSync(tempOutput) } catch {}
+          reject(error)
+        }
+      })
+
+      pandoc.on('error', (error) => {
+        // Clean up temp files on error
+        try { unlinkSync(tempInput) } catch {}
+        try { unlinkSync(tempOutput) } catch {}
+        reject(new Error(`Failed to execute Pandoc: ${error.message}`))
+      })
+    } catch (error) {
+      // Clean up temp files on error
+      try { unlinkSync(tempInput) } catch {}
+      try { unlinkSync(tempOutput) } catch {}
+      reject(error)
+    }
+  })
+}
+
+/**
+ * Converts Markdown content to AsciiDoc using Pandoc
+ * 
+ * @param {string} markdown - The Markdown content to convert
+ * @returns {Promise<string>} Promise that resolves to the converted AsciiDoc
+ * @throws {Error} If Pandoc execution fails
+ */
+async function convertMarkdownWithPandoc(markdown) {
+  if (!markdown || typeof markdown !== 'string') {
+    throw new Error('Markdown content must be a non-empty string')
+  }
+
+  return new Promise((resolve, reject) => {
+    const tempInput = path.join(tmpdir(), `pandoc-input-${randomUUID()}.md`)
+    const tempOutput = path.join(tmpdir(), `pandoc-output-${randomUUID()}.adoc`)
+
+    try {
+      // Write input to temporary file
+      writeFileSync(tempInput, markdown, 'utf-8')
+
+      // Run Pandoc: markdown -> asciidoc
+      const pandoc = spawn('pandoc', [
+        '-f', 'markdown',
+        '-t', 'asciidoc',
+        '-o', tempOutput,
+        tempInput
+      ])
+
+      let stderr = ''
+
+      pandoc.stderr.on('data', (data) => {
+        stderr += data.toString()
+      })
+
+      pandoc.on('close', (code) => {
+        try {
+          if (code !== 0) {
+            // Clean up temp files
+            try { unlinkSync(tempInput) } catch {}
+            try { unlinkSync(tempOutput) } catch {}
+            reject(new Error(`Pandoc conversion failed with code ${code}: ${stderr}`))
+            return
+          }
+
+          // Read output
+          const asciidoc = readFileSync(tempOutput, 'utf-8')
+
+          // Clean up temp files
+          unlinkSync(tempInput)
+          unlinkSync(tempOutput)
+
+          // Clean up excessive blank lines
+          const cleaned = asciidoc.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
+          resolve(cleaned)
+        } catch (error) {
+          // Clean up temp files on error
+          try { unlinkSync(tempInput) } catch {}
+          try { unlinkSync(tempOutput) } catch {}
+          reject(error)
+        }
+      })
+
+      pandoc.on('error', (error) => {
+        // Clean up temp files on error
+        try { unlinkSync(tempInput) } catch {}
+        try { unlinkSync(tempOutput) } catch {}
+        reject(new Error(`Failed to execute Pandoc: ${error.message}`))
+      })
+    } catch (error) {
+      // Clean up temp files on error
+      try { unlinkSync(tempInput) } catch {}
+      try { unlinkSync(tempOutput) } catch {}
+      reject(error)
+    }
+  })
+}
+
+/**
+ * Converts content from one format to another using Pandoc (fonction générique)
+ * 
+ * @param {string} text - The content to convert
+ * @param {string} fromFormat - The source format (html, txt, markdown, asciidoc, etc.)
+ * @param {string} toFormat - The target format (markdown, asciidoc, etc.)
+ * @returns {Promise<string>} Promise that resolves to the converted content
+ * @throws {Error} If Pandoc execution fails
+ */
+async function convertWithPandoc(text, fromFormat, toFormat) {
+  if (!text || typeof text !== 'string') {
+    throw new Error('Content must be a non-empty string')
+  }
+
+  if (!fromFormat || typeof fromFormat !== 'string') {
+    throw new Error('Source format must be specified')
+  }
+
+  if (!toFormat || typeof toFormat !== 'string') {
+    throw new Error('Target format must be specified')
+  }
+
+  // Liste des formats supportés par Pandoc
+  const supportedFormats = ['markdown', 'asciidoc', 'docx', 'pdf', 'epub', 'rst', 'tex', 'latex', 'html', 'yaml', 'json', 'txt']
+  
+  // Normaliser les formats
+  const normalizedFrom = fromFormat.toLowerCase()
+  const normalizedTo = toFormat.toLowerCase()
+
+  // Mapper les formats vers les noms Pandoc
+  // Note: "plain" est un format de sortie uniquement, pas d'entrée
+  // Pour txt, on utilise "markdown" car Pandoc peut interpréter du texte brut comme Markdown
+  const pandocInputFormatMap = {
+    'txt': 'markdown',
+    'asciidoc': 'asciidoc',
+    'markdown': 'markdown',
+    'html': 'html',
+    'pdf': 'pdf',
+    'yaml': 'yaml',
+    'json': 'json',
+    'docx': 'docx',
+    'epub': 'epub',
+    'rst': 'rst',
+    'tex': 'latex',
+    'latex': 'latex'
+  }
+
+  const pandocOutputFormatMap = {
+    'txt': 'plain',
+    'asciidoc': 'asciidoc',
+    'markdown': 'markdown',
+    'html': 'html',
+    'pdf': 'pdf',
+    'yaml': 'yaml',
+    'json': 'json',
+    'docx': 'docx',
+    'epub': 'epub',
+    'rst': 'rst',
+    'tex': 'latex',
+    'latex': 'latex'
+  }
+
+  // Obtenir les formats Pandoc (entrée et sortie séparés)
+  const pandocFrom = pandocInputFormatMap[normalizedFrom] || normalizedFrom
+  const pandocTo = pandocOutputFormatMap[normalizedTo] || normalizedTo
+
+  // Vérifier que les formats sont supportés (vérifier les formats originaux)
+  if (!supportedFormats.includes(normalizedFrom)) {
+    throw new Error(`Format source non supporté: ${fromFormat}. Formats supportés: ${supportedFormats.join(', ')}`)
+  }
+  
+  if (!supportedFormats.includes(normalizedTo)) {
+    throw new Error(`Format de sortie non supporté: ${toFormat}. Formats supportés: ${supportedFormats.join(', ')}`)
+  }
+
+  return new Promise((resolve, reject) => {
+    // Déterminer l'extension du fichier source
+    const sourceExt = normalizedFrom === 'asciidoc' ? 'adoc' : (normalizedFrom === 'txt' ? 'txt' : normalizedFrom)
+    const targetExt = normalizedTo === 'asciidoc' ? 'adoc' : (normalizedTo === 'txt' ? 'txt' : normalizedTo)
+    
+    const tempInput = path.join(tmpdir(), `pandoc-input-${randomUUID()}.${sourceExt}`)
+    const tempOutput = path.join(tmpdir(), `pandoc-output-${randomUUID()}.${targetExt}`)
+
+    try {
+      // Write input to temporary file
+      writeFileSync(tempInput, text, 'utf-8')
+
+      // Run Pandoc: fromFormat -> toFormat (utiliser les formats Pandoc mappés)
+      const pandoc = spawn('pandoc', [
+        '-f', pandocFrom,
+        '-t', pandocTo,
+        '-o', tempOutput,
+        tempInput
+      ])
+
+      let stderr = ''
+
+      pandoc.stderr.on('data', (data) => {
+        stderr += data.toString()
+      })
+
+      pandoc.on('close', (code) => {
+        try {
+          if (code !== 0) {
+            // Clean up temp files
+            try { unlinkSync(tempInput) } catch {}
+            try { unlinkSync(tempOutput) } catch {}
+            reject(new Error(`Pandoc conversion failed with code ${code}: ${stderr}`))
+            return
+          }
+
+          // Read output
+          const result = readFileSync(tempOutput, 'utf-8')
+
+          // Clean up temp files
+          unlinkSync(tempInput)
+          unlinkSync(tempOutput)
+
+          // Apply basic cleanup for text-based formats
+          if (['markdown', 'asciidoc', 'rst', 'txt'].includes(normalizedTo)) {
+            const cleaned = result.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
+            resolve(cleaned)
+          } else {
+            resolve(result)
+          }
+        } catch (error) {
+          // Clean up temp files on error
+          try { unlinkSync(tempInput) } catch {}
+          try { unlinkSync(tempOutput) } catch {}
+          reject(error)
+        }
+      })
+
+      pandoc.on('error', (error) => {
+        // Clean up temp files on error
+        try { unlinkSync(tempInput) } catch {}
+        try { unlinkSync(tempOutput) } catch {}
+        reject(new Error(`Failed to execute Pandoc: ${error.message}`))
+      })
+    } catch (error) {
+      // Clean up temp files on error
+      try { unlinkSync(tempInput) } catch {}
+      try { unlinkSync(tempOutput) } catch {}
+      reject(error)
+    }
+  })
+}
+
+/**
+ * Converts HTML content to other formats using Pandoc
+ * 
+ * @param {string} html - The HTML content to convert
+ * @param {string} toFormat - The target format (markdown, asciidoc, etc.)
+ * @returns {Promise<string>} Promise that resolves to the converted content
+ * @throws {Error} If Pandoc execution fails
+ */
+async function convertHtmlWithPandoc(html, toFormat = 'markdown') {
+  return convertWithPandoc(html, 'html', toFormat)
+}
+
+/**
+ * Converts plain text to Markdown format
+ * Détecte automatiquement les titres, listes, paragraphes, etc.
+ * 
+ * @param {string} text - The plain text content to convert
+ * @returns {string} The converted Markdown content
+ */
+function text2markdown(text) {
+  if (!text || typeof text !== 'string') {
+    throw new Error('Text content must be a non-empty string')
+  }
+
+  const lines = text.split('\n')
+  const markdown = []
+  let inList = false
+  let listType = '' // 'ul' or 'ol'
+  let inCodeBlock = false
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmed = line.trim()
+    const nextLine = i < lines.length - 1 ? lines[i + 1] : ''
+    const prevLine = i > 0 ? lines[i - 1] : ''
+
+    // Détecter les blocs de code (lignes qui commencent par 4 espaces ou une tabulation)
+    if (trimmed === '' && prevLine.trim() !== '' && nextLine.match(/^    |^\t/)) {
+      if (!inCodeBlock) {
+        markdown.push('```')
+        inCodeBlock = true
+      }
+      markdown.push('')
+      continue
+    }
+
+    if (inCodeBlock) {
+      if (trimmed === '' && !nextLine.match(/^    |^\t/) && nextLine.trim() !== '') {
+        markdown.push('```')
+        markdown.push('')
+        inCodeBlock = false
+        continue
+      }
+      markdown.push(line)
+      continue
+    }
+
+    // Détecter les titres (lignes en majuscules ou avec des caractères spéciaux)
+    if (trimmed.length > 0 && trimmed.length < 100) {
+      // Titre de niveau 1 : ligne en majuscules suivie d'une ligne vide ou d'une ligne de séparation
+      if (trimmed === trimmed.toUpperCase() && trimmed.match(/^[A-Z\s]+$/) && trimmed.length > 3) {
+        if (nextLine.trim() === '' || nextLine.match(/^[=-]+$/)) {
+          markdown.push(`# ${trimmed}`)
+          markdown.push('')
+          inList = false
+          continue
+        }
+      }
+      
+      // Titre de niveau 2 : ligne suivie de ===
+      if (nextLine.match(/^=+$/)) {
+        markdown.push(`## ${trimmed}`)
+        markdown.push('')
+        inList = false
+        i++ // Skip la ligne de séparation
+        continue
+      }
+      
+      // Titre de niveau 3 : ligne suivie de ---
+      if (nextLine.match(/^-+$/)) {
+        markdown.push(`### ${trimmed}`)
+        markdown.push('')
+        inList = false
+        i++ // Skip la ligne de séparation
+        continue
+      }
+    }
+
+    // Détecter les listes
+    const listMatch = trimmed.match(/^(\d+[.)]|\*|\-|\+)\s+(.+)$/)
+    if (listMatch) {
+      const marker = listMatch[1]
+      const content = listMatch[2]
+      const isOrdered = /^\d+[.)]/.test(marker)
+      
+      if (!inList || (isOrdered && listType !== 'ol') || (!isOrdered && listType !== 'ul')) {
+        if (inList) {
+          markdown.push('')
+        }
+        inList = true
+        listType = isOrdered ? 'ol' : 'ul'
+      }
+      
+      markdown.push(`${isOrdered ? '1.' : '-'} ${content}`)
+      continue
+    }
+
+    // Fin de liste
+    if (inList && trimmed === '') {
+      if (nextLine.trim() === '' || (!nextLine.match(/^(\d+[.)]|\*|\-|\+)\s+/) && nextLine.trim() !== '')) {
+        markdown.push('')
+        inList = false
+        listType = ''
+      }
+    }
+
+    // Détecter les séparateurs horizontaux
+    if (trimmed.match(/^[-*_]{3,}$/)) {
+      markdown.push('---')
+      markdown.push('')
+      inList = false
+      continue
+    }
+
+    // Paragraphe normal
+    if (trimmed !== '') {
+      // Détecter les liens simples (http://, https://, www.)
+      let processedLine = trimmed.replace(/(https?:\/\/[^\s]+|www\.[^\s]+)/g, (url) => {
+        const displayUrl = url.replace(/^https?:\/\//, '').replace(/^www\./, 'www.')
+        return `[${displayUrl}](${url.startsWith('http') ? url : 'https://' + url})`
+      })
+      
+      // Détecter les emails
+      processedLine = processedLine.replace(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, (email) => {
+        return `[${email}](mailto:${email})`
+      })
+      
+      markdown.push(processedLine)
+    } else {
+      // Ligne vide
+      if (prevLine.trim() !== '' && nextLine.trim() !== '') {
+        markdown.push('')
+      }
+    }
+  }
+
+  // Fermer la liste si elle est encore ouverte
+  if (inList) {
+    markdown.push('')
+  }
+
+  // Fermer le bloc de code si ouvert
+  if (inCodeBlock) {
+    markdown.push('```')
+  }
+
+  let result = markdown.join('\n')
+  
+  // Nettoyer les lignes vides multiples
+  result = result.replace(/\n{3,}/g, '\n\n')
+  
+  // S'assurer que le fichier se termine par une seule ligne vide
+  result = result.trimEnd() + '\n'
+
+  return result
+}
+
 module.exports = {
   convertAsciiDoc,
   convertMarkdown,
-  normalizeForBookStack
+  normalizeForBookStack,
+  convertMarkdownWithPandoc,
+  convertHtmlWithPandoc,
+  convertWithPandoc,
+  text2markdown
 }
 

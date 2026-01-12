@@ -106,6 +106,89 @@ async function convertMarkdownToAsciiDoc(
   }
 }
 
+// Fonction de conversion générique selon les formats source et destination
+async function convertText(
+  text: string,
+  sourceFormat: 'asciidoc' | 'markdown' | 'html' | 'pdf' | 'yaml' | 'json' | 'txt',
+  targetFormat: 'asciidoc' | 'markdown' | 'html' | 'pdf' | 'yaml' | 'json' | 'txt',
+  setStatus: (s: string) => void,
+  setOutput: (s: string) => void,
+  setLoading: (b: boolean) => void
+) {
+  if (!text.trim()) {
+    setStatus("Veuillez entrer du texte à convertir");
+    return;
+  }
+
+  if (sourceFormat === targetFormat) {
+    setStatus("Les formats source et destination sont identiques");
+    return;
+  }
+
+  setStatus("Conversion en cours...");
+  setLoading(true);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let endpoint = '';
+    let body: any = { text };
+
+    // Déterminer l'endpoint selon les formats
+    if (sourceFormat === 'asciidoc' && targetFormat === 'markdown') {
+      // AsciiDoc → Markdown : utiliser downdoc
+      endpoint = `${API_BASE}/to-markdown`;
+    } else if (sourceFormat === 'markdown' && targetFormat === 'asciidoc') {
+      // Markdown → AsciiDoc : utiliser Pandoc
+      endpoint = `${API_BASE}/to-asciidoc`;
+    } else if (sourceFormat === 'txt' && targetFormat === 'markdown') {
+      // Texte brut → Markdown : utiliser text2markdown
+      endpoint = `${API_BASE}/text-to-markdown`;
+    } else if (sourceFormat === 'html') {
+      // HTML → autres formats : utiliser l'endpoint from-html
+      endpoint = `${API_BASE}/from-html`;
+      body = { text, to: targetFormat };
+    } else {
+      // Pour toutes les autres conversions (TXT vers autres, PDF, YAML, JSON, etc.) : utiliser l'endpoint générique /convert
+      endpoint = `${API_BASE}/convert`;
+      body = { text, from: sourceFormat, to: targetFormat };
+    }
+
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => "");
+      throw new Error(`Erreur HTTP ${res.status}${errorText ? `: ${errorText}` : ""}`);
+    }
+
+    const data = await res.json();
+    // Gérer les différentes réponses selon l'endpoint
+    const result = data.markdown || data.asciidoc || data.result || "";
+    setOutput(result);
+    setStatus("Conversion réussie ✔");
+  } catch (e: any) {
+    if (e.name === "AbortError") {
+      setStatus("Erreur : Timeout - La conversion prend trop de temps. Le fichier est peut-être trop volumineux.");
+    } else if (e.message?.includes("NetworkError") || e.message?.includes("Failed to fetch")) {
+      setStatus(`Erreur réseau : Impossible de contacter l'API à ${API_BASE}. Vérifiez que le serveur backend est démarré.`);
+    } else {
+      setStatus(`Erreur lors de l'appel à l'API : ${e.message ?? e}`);
+    }
+  } finally {
+    setLoading(false);
+  }
+}
+
 function App() {
   const [adocInput, setAdocInput] = useState<string>("");
   const [mdOutput, setMdOutput] = useState<string>("");
@@ -117,19 +200,32 @@ function App() {
   const [folderFiles, setFolderFiles] = useState<File[]>([]); // Fichiers du dossier sélectionné
   const [selectedFileIndex, setSelectedFileIndex] = useState<number>(-1); // Index du fichier sélectionné
   const [copied, setCopied] = useState<boolean>(false);
+  const [isEditingResult, setIsEditingResult] = useState<boolean>(false);
+  const [showEditModal, setShowEditModal] = useState<boolean>(false);
+  const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
+  const [showCancelModal, setShowCancelModal] = useState<boolean>(false);
+  const [showClearResultModal, setShowClearResultModal] = useState<boolean>(false);
+  const [showClearSourceModal, setShowClearSourceModal] = useState<boolean>(false);
+  const [originalAdocInput, setOriginalAdocInput] = useState<string>("");
+  const [originalMdOutput, setOriginalMdOutput] = useState<string>("");
 
   const [swapped, setSwapped] = useState<boolean>(false);
   const [conversionMode, setConversionMode] = useState<'adoc-to-md' | 'md-to-adoc'>('adoc-to-md');
   // Mode visuel pour déterminer quels panneaux afficher (change avec les flèches)
   const [visualMode, setVisualMode] = useState<'adoc-to-md' | 'md-to-adoc'>('adoc-to-md');
+  
+  // Formats de conversion
+  type FormatType = 'asciidoc' | 'markdown' | 'html' | 'pdf' | 'yaml' | 'json' | 'txt';
+  const [sourceFormat, setSourceFormat] = useState<FormatType>('asciidoc');
+  const [targetFormat, setTargetFormat] = useState<FormatType>('markdown');
 
   const adocTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
 
   // Extraction des titres AsciiDoc (=, ==, etc.) et Markdown (#, ##, etc.) pour naviguer dans le fichier
   const headings = useMemo(() => {
-    // Utiliser le texte selon le mode visuel
-    const text = visualMode === 'adoc-to-md' ? adocInput : mdOutput;
+    // Utiliser le texte selon le format source
+    const text = sourceFormat === 'asciidoc' ? adocInput : (sourceFormat === 'markdown' ? mdOutput : adocInput);
     if (!text) return [];
     
     const lines = text.split("\n");
@@ -154,7 +250,7 @@ function App() {
         return null;
       })
       .filter(Boolean) as { lineIndex: number; level: number; title: string }[];
-  }, [adocInput, mdOutput, visualMode]);
+  }, [adocInput, mdOutput, sourceFormat]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -163,10 +259,10 @@ function App() {
     const reader = new FileReader();
     reader.onload = () => {
       const text = typeof reader.result === "string" ? reader.result : "";
-      // Utiliser visualMode pour déterminer où mettre le texte
-      if (visualMode === 'adoc-to-md') {
+      // Utiliser sourceFormat pour déterminer où mettre le texte
+      if (sourceFormat === 'asciidoc' || sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
         setAdocInput(text);
-      } else {
+      } else if (sourceFormat === 'markdown') {
         setMdOutput(text);
       }
       setCurrentFileName(file.name);
@@ -214,10 +310,10 @@ function App() {
       const reader = new FileReader();
       reader.onload = () => {
         const text = typeof reader.result === "string" ? reader.result : "";
-        // Utiliser visualMode pour déterminer où mettre le texte
-        if (visualMode === 'adoc-to-md') {
+        // Utiliser sourceFormat pour déterminer où mettre le texte
+        if (sourceFormat === 'asciidoc' || sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json') {
           setAdocInput(text);
-        } else {
+        } else if (sourceFormat === 'markdown') {
           setMdOutput(text);
         }
         setStatus(`Fichier chargé : ${selectedFile.name}`);
@@ -247,8 +343,8 @@ function App() {
   };
 
   const handleCopy = async () => {
-    // Copier le texte du résultat selon le mode visuel actuel
-    const textToCopy = visualMode === 'adoc-to-md' ? mdOutput : adocInput;
+    // Copier le texte du résultat selon le format de destination
+    const textToCopy = targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt' ? mdOutput : adocInput;
     if (!textToCopy || !textToCopy.trim()) {
       setStatus("Aucun texte à copier");
       return;
@@ -291,12 +387,19 @@ function App() {
   };
 
   const handleClear = () => {
-    if (conversionMode === 'adoc-to-md') {
+    setShowClearResultModal(true);
+  };
+
+  const confirmClearResult = () => {
+    // Effacer uniquement le résultat selon le format de destination
+    if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
       setMdOutput("");
-    } else {
+    } else if (targetFormat === 'asciidoc') {
       setAdocInput("");
     }
+    
     setStatus("Résultat effacé");
+    setShowClearResultModal(false);
   };
 
   const handleClearAdoc = () => {
@@ -307,6 +410,70 @@ function App() {
     setSelectedFileIndex(-1);
     setStatus("Contenu AsciiDoc effacé");
   };
+
+  // Fonction pour obtenir le titre du format
+  const getFormatTitle = useCallback((format: 'asciidoc' | 'markdown' | 'html' | 'pdf' | 'yaml' | 'json' | 'txt') => {
+    const titles = {
+      'asciidoc': 'AsciiDoc',
+      'markdown': 'Markdown',
+      'html': 'HTML',
+      'pdf': 'PDF',
+      'yaml': 'YAML',
+      'json': 'JSON',
+      'txt': 'Texte'
+    };
+    return titles[format];
+  }, []);
+
+  // Fonction générique pour effacer le contenu selon le format source
+  const handleClearSource = useCallback(() => {
+    setShowClearSourceModal(true);
+  }, []);
+
+  const confirmClearSource = useCallback(() => {
+    // Effacer uniquement la source
+    const formatTitle = getFormatTitle(sourceFormat);
+    if (sourceFormat === 'asciidoc' || sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
+      setAdocInput("");
+      setStatus(`Contenu ${formatTitle} effacé`);
+    } else if (sourceFormat === 'markdown') {
+      setMdOutput("");
+      setStatus(`Contenu ${formatTitle} effacé`);
+    }
+    setCurrentFileName(null);
+    setImportedFiles([]);
+    setFolderFiles([]);
+    setSelectedFileIndex(-1);
+    setShowClearSourceModal(false);
+  }, [sourceFormat, getFormatTitle]);
+
+  const confirmClearSourceAndResult = useCallback(() => {
+    // Effacer la source et le résultat
+    const formatTitle = getFormatTitle(sourceFormat);
+    
+    // Effacer la source
+    if (sourceFormat === 'asciidoc' || sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
+      setAdocInput("");
+    } else if (sourceFormat === 'markdown') {
+      setMdOutput("");
+    }
+    
+    // Effacer le résultat
+    if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
+      setMdOutput("");
+    } else if (targetFormat === 'asciidoc') {
+      setAdocInput("");
+    }
+    
+    // Réinitialiser les fichiers
+    setCurrentFileName(null);
+    setImportedFiles([]);
+    setFolderFiles([]);
+    setSelectedFileIndex(-1);
+    
+    setStatus(`Source ${formatTitle} et résultat effacés`);
+    setShowClearSourceModal(false);
+  }, [sourceFormat, targetFormat, getFormatTitle]);
 
   const handleSaveAdoc = () => {
     if (!adocInput || !adocInput.trim()) {
@@ -338,37 +505,42 @@ function App() {
     }
   };
 
-  // Callbacks de conversion avec useCallback pour éviter les problèmes de closure
-  const handleConvertAdocToMd = useCallback(() => {
-    setConversionMode('adoc-to-md');
-    const currentValue = adocTextAreaRef.current?.value || adocInput;
-    if (!currentValue.trim()) {
+  // Fonction de conversion générique utilisant les formats sélectionnés
+  const handleConvert = useCallback(() => {
+    // Déterminer le texte source selon le format source
+    let sourceText = "";
+    if (sourceFormat === 'asciidoc') {
+      sourceText = adocTextAreaRef.current?.value || adocInput;
+    } else if (sourceFormat === 'markdown') {
+      sourceText = mdOutput;
+    } else if (sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
+      // Pour HTML, PDF, YAML, JSON, TXT, utiliser adocInput comme zone de texte temporaire
+      sourceText = adocInput;
+    }
+
+    if (!sourceText.trim()) {
       setStatus("Veuillez entrer du texte à convertir");
       return;
     }
-    convertAsciiDocToMarkdown(
-      currentValue,
+
+    // Déterminer où mettre le résultat selon le format de destination
+    const setOutput = (result: string) => {
+      if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
+        setMdOutput(result);
+      } else if (targetFormat === 'asciidoc') {
+        setAdocInput(result);
+      }
+    };
+
+    convertText(
+      sourceText,
+      sourceFormat,
+      targetFormat,
       setStatus,
-      setMdOutput,
+      setOutput,
       setLoading
     );
-  }, [adocInput]);
-
-  const handleConvertMdToAdoc = useCallback(() => {
-    setConversionMode('md-to-adoc');
-    setSwapped(false);
-    if (!mdOutput.trim()) {
-      setStatus("Veuillez entrer du texte à convertir");
-      return;
-    }
-    convertMarkdownToAsciiDoc(
-      mdOutput,
-      setStatus,
-      setAdocInput,
-      setLoading,
-      setConversionMode
-    );
-  }, [mdOutput]);
+  }, [sourceFormat, targetFormat, adocInput, mdOutput]);
 
   // Composant réutilisable pour le panneau source
   const renderSourcePanel = (
@@ -377,9 +549,10 @@ function App() {
     setValue: (value: string) => void,
     placeholder: string,
     textAreaRef: React.RefObject<HTMLTextAreaElement> | null,
-    conversionMode: 'adoc-to-md' | 'md-to-adoc',
     onConvert: () => void,
-    showHeadings: boolean = false
+    showHeadings: boolean = false,
+    canConvert: boolean = true,
+    onClear?: () => void
   ) => (
     <section className="panel">
       <div className="panel-header">
@@ -402,23 +575,24 @@ function App() {
               onChange={handleFolderChange}
             />
           </label>
-          {title === 'AsciiDoc' && (
+          {onClear && (
             <button
-              onClick={handleClearAdoc}
-              disabled={!adocInput.trim()}
+              onClick={onClear}
+              disabled={!value.trim()}
               style={{
                 fontSize: "0.85rem",
                 padding: "0.4rem 0.9rem",
                 background: "#ef4444"
               }}
-              title="Effacer le contenu AsciiDoc"
+              title={`Effacer le contenu ${title}`}
             >
               🗑️ 
             </button>
           )}
           <button
             onClick={onConvert}
-            disabled={loading || (conversionMode === 'md-to-adoc' && !value.trim())}
+            disabled={loading || !value.trim() || !canConvert}
+            title={!canConvert ? "Les formats source et destination doivent être différents" : ""}
           >
             {loading ? "Conversion..." : "Convertir"}
           </button>
@@ -507,118 +681,139 @@ function App() {
     </section>
   );
 
-  // Panneau source : change selon le mode visuel (pour l'affichage)
-  const sourceCard = useMemo(() => {
-    if (visualMode === 'adoc-to-md') {
-      return renderSourcePanel(
-        'AsciiDoc',
-        adocInput,
-        setAdocInput,
-        'Texte AsciiDoc...',
-        adocTextAreaRef,
-        'adoc-to-md',
-        handleConvertAdocToMd,
-        true // Afficher les headings pour AsciiDoc
-      );
-    } else {
-      return renderSourcePanel(
-        'Markdown',
-        mdOutput,
-        setMdOutput,
-        'Texte Markdown...',
-        null,
-        'md-to-adoc',
-        handleConvertMdToAdoc,
-        true // Afficher les headings pour Markdown aussi
-      );
-    }
-  }, [visualMode, adocInput, mdOutput, currentFileName, status, headings, loading, folderFiles, selectedFileIndex, handleConvertAdocToMd, handleConvertMdToAdoc]);
+  // Fonction pour obtenir le placeholder selon le format
+  const getFormatPlaceholder = useCallback((format: 'asciidoc' | 'markdown' | 'html' | 'pdf' | 'yaml' | 'json' | 'txt') => {
+    const placeholders = {
+      'asciidoc': 'Texte AsciiDoc...',
+      'markdown': 'Texte Markdown...',
+      'html': 'Contenu HTML...',
+      'pdf': 'Contenu PDF...',
+      'yaml': 'Contenu YAML...',
+      'json': 'Contenu JSON...',
+      'txt': 'Texte brut...'
+    };
+    return placeholders[format];
+  }, []);
 
-  // Panneau résultat : change selon le mode visuel (pour l'affichage)
-  const resultCard = useMemo(() => visualMode === 'adoc-to-md' ? (
+  // Panneau source : affiche le format source sélectionné
+  const sourceCard = useMemo(() => {
+    let sourceValue = "";
+    let setSourceValue = (v: string) => {};
+    let sourceRef: React.RefObject<HTMLTextAreaElement> | null = null;
+
+    if (sourceFormat === 'asciidoc') {
+      sourceValue = adocInput;
+      setSourceValue = setAdocInput;
+      sourceRef = adocTextAreaRef;
+    } else if (sourceFormat === 'markdown') {
+      sourceValue = mdOutput;
+      setSourceValue = setMdOutput;
+      sourceRef = null;
+    } else if (sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
+      sourceValue = adocInput; // Utiliser adocInput temporairement pour HTML, PDF, YAML, JSON, TXT
+      setSourceValue = setAdocInput;
+      sourceRef = adocTextAreaRef;
+    }
+
+    return renderSourcePanel(
+      getFormatTitle(sourceFormat),
+      sourceValue,
+      setSourceValue,
+      getFormatPlaceholder(sourceFormat),
+      sourceRef,
+      handleConvert,
+      sourceFormat === 'asciidoc', // Afficher les headings uniquement pour AsciiDoc
+      sourceFormat !== targetFormat, // Peut convertir si formats différents
+      handleClearSource // Fonction pour effacer le contenu source
+    );
+  }, [sourceFormat, adocInput, mdOutput, currentFileName, status, headings, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, adocTextAreaRef]);
+
+  // Panneau résultat : affiche le format de destination sélectionné
+  const resultCard = useMemo(() => {
+    let resultValue = "";
+    let setResultValue = (v: string) => {};
+
+    if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
+      resultValue = mdOutput;
+      setResultValue = setMdOutput;
+    } else if (targetFormat === 'asciidoc') {
+      resultValue = adocInput;
+      setResultValue = setAdocInput;
+    }
+
+    return (
     <section className="panel">
       <div className="panel-header">
-        <h2>Markdown</h2>
+        <h2>{getFormatTitle(targetFormat)}</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          {mdOutput && (
-            <>
-              <button
-                onClick={handleCopy}
-                style={{ fontSize: "0.85rem", padding: "0.4rem 0.9rem" }}
-                title="Copier le résultat"
-              >
-                {copied ? "✓ Copié" : "📋 Copier"}
-              </button>
-              <button
-                onClick={handleClear}
-                style={{ 
-                  fontSize: "0.85rem", 
-                  padding: "0.4rem 0.9rem",
-                  background: "#ef4444"
-                }}
-                title="Effacer le résultat"
-              >
-                🗑️ Effacer
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-      <textarea
-        value={mdOutput}
-        readOnly
-        placeholder="Résultat Markdown..."
-      />
-    </section>
-  ) : (
-    <section className="panel">
-      <div className="panel-header">
-        <h2>AsciiDoc</h2>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          {/* Pas de boutons d'import dans le panneau résultat */}
-          {adocInput && (
+          {resultValue && (
             <>
               <button
                 onClick={() => {
-                  // Changer seulement le mode visuel pour afficher les bons panneaux
-                  setVisualMode('adoc-to-md');
-                  setSwapped(false); // Remettre sourceCard à gauche
+                  if (isEditingResult) {
+                    setShowCancelModal(true);
+                  } else {
+                    setShowEditModal(true);
+                  }
                 }}
-                disabled={loading}
-                style={{ fontSize: "0.85rem", padding: "0.4rem 0.9rem" }}
-                title="Préparer la conversion vers Markdown"
+                style={{ 
+                  fontSize: "0.85rem", 
+                  padding: "0.4rem 0.9rem",
+                  background: isEditingResult ? "#ef4444" : "#6b7280"
+                }}
+                title={isEditingResult ? "Annuler l'édition" : "Activer l'édition"}
               >
-                ➡️ Vers Markdown
+                {isEditingResult ? "✕ Annuler" : "✏️"}
               </button>
+              {isEditingResult && (
+                <button
+                  onClick={() => setShowSaveModal(true)}
+                  style={{ 
+                    fontSize: "0.85rem", 
+                    padding: "0.4rem 0.9rem",
+                    background: "#10b981"
+                  }}
+                  title="Sauvegarder les modifications"
+                >
+                  💾 Sauvegarder
+                </button>
+              )}
               <button
                 onClick={handleCopy}
+                disabled={isEditingResult}
                 style={{ fontSize: "0.85rem", padding: "0.4rem 0.9rem" }}
-                title="Copier le résultat"
+                title={isEditingResult ? "Copie désactivée en mode édition" : "Copier le résultat"}
               >
-                {copied ? "✓ Copié" : "📋 Copier"}
+                {copied ? "✓ Copié" : "📋"}
               </button>
               <button
                 onClick={handleClear}
+                disabled={isEditingResult}
                 style={{ 
                   fontSize: "0.85rem", 
                   padding: "0.4rem 0.9rem",
                   background: "#ef4444"
                 }}
-                title="Effacer le résultat"
+                title={isEditingResult ? "Effacement désactivé en mode édition" : "Effacer le résultat"}
               >
-                🗑️ Effacer
+                🗑️ 
               </button>
             </>
           )}
         </div>
       </div>
       <textarea
-        value={adocInput}
-        readOnly
-        placeholder="Résultat AsciiDoc..."
+        value={resultValue}
+        onChange={(e) => setResultValue(e.target.value)}
+        readOnly={!isEditingResult}
+        placeholder={`Résultat ${getFormatTitle(targetFormat)}...`}
+        style={{
+          cursor: isEditingResult ? "text" : "default"
+        }}
       />
     </section>
-  ), [visualMode, adocInput, mdOutput, status, loading, copied]);
+    );
+  }, [targetFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, getFormatTitle, setMdOutput, setAdocInput]);
 
   return (
     <div className="page">
@@ -636,8 +831,84 @@ function App() {
               }}
             />
             <div>
-              <h1>Ascend - AsciiDoc to Markdown</h1>
-             
+              <h1>Ascend - Convertisseur de documents</h1>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ fontSize: "0.9rem", fontWeight: 500, color: "#374151" }}>
+                De :
+              </label>
+              <select
+                value={sourceFormat}
+                onChange={(e) => {
+                  const newFormat = e.target.value as FormatType;
+                  setSourceFormat(newFormat);
+                  // Ajuster le format de destination si nécessaire
+                  if (newFormat === targetFormat) {
+                    const alternatives: FormatType[] = ['asciidoc', 'markdown', 'html', 'pdf', 'yaml', 'json', 'txt'];
+                    const newTarget = alternatives.find(f => f !== newFormat) || 'markdown';
+                    setTargetFormat(newTarget);
+                  }
+                }}
+                style={{
+                  padding: "0.4rem 0.75rem",
+                  borderRadius: "0.5rem",
+                  border: "1px solid rgba(209, 213, 219, 0.3)",
+                  background: "rgba(255, 255, 255, 0.15)",
+                  backdropFilter: "blur(2px)",
+                  fontSize: "0.875rem",
+                  color: "#111827",
+                  cursor: "pointer",
+                  fontWeight: 500
+                }}
+              >
+                <option value="asciidoc">AsciiDoc</option>
+                <option value="markdown">Markdown</option>
+                <option value="html">HTML</option>
+                <option value="pdf">PDF</option>
+                <option value="yaml">YAML</option>
+                <option value="json">JSON</option>
+                <option value="txt">Texte</option>
+              </select>
+            </div>
+            <span style={{ fontSize: "1.2rem", color: "#6b7280" }}>→</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ fontSize: "0.9rem", fontWeight: 500, color: "#374151" }}>
+                Vers :
+              </label>
+              <select
+                value={targetFormat}
+                onChange={(e) => {
+                  const newFormat = e.target.value as FormatType;
+                  setTargetFormat(newFormat);
+                  // Ajuster le format source si nécessaire
+                  if (newFormat === sourceFormat) {
+                    const alternatives: FormatType[] = ['asciidoc', 'markdown', 'html', 'pdf', 'yaml', 'json', 'txt'];
+                    const newSource = alternatives.find(f => f !== newFormat) || 'asciidoc';
+                    setSourceFormat(newSource);
+                  }
+                }}
+                style={{
+                  padding: "0.4rem 0.75rem",
+                  borderRadius: "0.5rem",
+                  border: "1px solid rgba(209, 213, 219, 0.3)",
+                  background: "rgba(255, 255, 255, 0.15)",
+                  backdropFilter: "blur(2px)",
+                  fontSize: "0.875rem",
+                  color: "#111827",
+                  cursor: "pointer",
+                  fontWeight: 500
+                }}
+              >
+                <option value="markdown">Markdown</option>
+                <option value="asciidoc">AsciiDoc</option>
+                <option value="html">HTML</option>
+                <option value="pdf">PDF</option>
+                <option value="yaml">YAML</option>
+                <option value="json">JSON</option>
+                <option value="txt">Texte</option>
+              </select>
             </div>
           </div>
         </div>
@@ -660,8 +931,201 @@ function App() {
       </main>
 
       <footer className="footer">
-        AsciiDoc ⇄ Markdown · Converter
+        Make by TBE
       </footer>
+
+      {/* Modale de confirmation pour l'édition */}
+      {showEditModal && (
+        <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Activer le mode édition</h3>
+            <p>Voulez-vous activer le mode édition pour modifier le contenu ?</p>
+            <div className="modal-buttons">
+              <button
+                onClick={() => {
+                  // Sauvegarder le contenu original avant d'activer l'édition
+                  if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json') {
+                    setOriginalMdOutput(mdOutput);
+                  } else {
+                    setOriginalAdocInput(adocInput);
+                  }
+                  setIsEditingResult(true);
+                  setShowEditModal(false);
+                }}
+                style={{ 
+                  background: "#10b981",
+                  flex: 1
+                }}
+              >
+                Oui
+              </button>
+              <button
+                onClick={() => setShowEditModal(false)}
+                style={{ 
+                  background: "#ef4444",
+                  flex: 1
+                }}
+              >
+                Non
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale de confirmation pour la sauvegarde */}
+      {showSaveModal && (
+        <div className="modal-overlay" onClick={() => setShowSaveModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Sauvegarder les modifications</h3>
+            <p>Voulez-vous sauvegarder les modifications apportées au contenu ?</p>
+            <div className="modal-buttons">
+              <button
+                onClick={() => {
+                  setIsEditingResult(false);
+                  setShowSaveModal(false);
+                  setStatus("Modifications sauvegardées ✓");
+                  setTimeout(() => setStatus(""), 3000);
+                }}
+                style={{ 
+                  background: "#10b981",
+                  flex: 1
+                }}
+              >
+                Oui
+              </button>
+              <button
+                onClick={() => {
+                  // Restaurer le contenu original et désactiver l'édition
+                  if (visualMode === 'adoc-to-md') {
+                    setMdOutput(originalMdOutput);
+                  } else {
+                    setAdocInput(originalAdocInput);
+                  }
+                  setIsEditingResult(false);
+                  setShowSaveModal(false);
+                  setStatus("Édition annulée - modifications non sauvegardées");
+                }}
+                style={{ 
+                  background: "#ef4444",
+                  flex: 1
+                }}
+              >
+                Non
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale de confirmation pour l'annulation */}
+      {showCancelModal && (
+        <div className="modal-overlay" onClick={() => setShowCancelModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Annuler l'édition</h3>
+            <p>Voulez-vous annuler l'édition ? Toutes les modifications non sauvegardées seront perdues.</p>
+            <div className="modal-buttons">
+              <button
+                onClick={() => {
+                  // Annuler les modifications et restaurer le contenu original
+                  if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
+                    setMdOutput(originalMdOutput);
+                  } else {
+                    setAdocInput(originalAdocInput);
+                  }
+                  setIsEditingResult(false);
+                  setShowCancelModal(false);
+                  setStatus("Édition annulée - modifications non sauvegardées");
+                }}
+                style={{ 
+                  background: "#10b981",
+                  flex: 1
+                }}
+              >
+                Oui
+              </button>
+              <button
+                onClick={() => setShowCancelModal(false)}
+                style={{ 
+                  background: "#ef4444",
+                  flex: 1
+                }}
+              >
+                Non
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale de confirmation pour l'effacement du résultat */}
+      {showClearResultModal && (
+        <div className="modal-overlay" onClick={() => setShowClearResultModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Effacer le résultat</h3>
+            <p>Voulez-vous effacer le résultat ? Cette action est irréversible.</p>
+            <div className="modal-buttons">
+              <button
+                onClick={confirmClearResult}
+                style={{ 
+                  background: "#10b981",
+                  flex: 1
+                }}
+              >
+                Oui
+              </button>
+              <button
+                onClick={() => setShowClearResultModal(false)}
+                style={{ 
+                  background: "#ef4444",
+                  flex: 1
+                }}
+              >
+                Non
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale de confirmation pour l'effacement de la source */}
+      {showClearSourceModal && (
+        <div className="modal-overlay" onClick={() => setShowClearSourceModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Effacer la source</h3>
+            <p>Que voulez-vous effacer ?</p>
+            <div className="modal-buttons" style={{ flexDirection: "column", gap: "0.5rem" }}>
+              <button
+                onClick={confirmClearSource}
+                style={{ 
+                  background: "#10b981",
+                  width: "100%"
+                }}
+              >
+                Oui - Source uniquement
+              </button>
+              <button
+                onClick={confirmClearSourceAndResult}
+                style={{ 
+                  background: "#10b981",
+                  width: "100%"
+                }}
+              >
+                Oui - Source et résultat
+              </button>
+              <button
+                onClick={() => setShowClearSourceModal(false)}
+                style={{ 
+                  background: "#ef4444",
+                  width: "100%"
+                }}
+              >
+                Non
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
