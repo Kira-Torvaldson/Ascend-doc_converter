@@ -27,6 +27,8 @@ Application web moderne pour convertir des documents entre les formats AsciiDoc 
 - **Interface moderne** : Design épuré avec effet glassmorphism
 - **Import de fichiers** : Support pour fichiers individuels et dossiers complets
 - **Navigation dans le document** : Affichage hiérarchique des chapitres et sections
+- **Mode édition avec confirmation** : Édition sécurisée des résultats avec modales de confirmation
+- **Sauvegarde/Annulation** : Système de sauvegarde avec restauration automatique en cas d'annulation
 - **Copie rapide** : Bouton de copie pour les résultats
 - **Effacement** : Bouton pour effacer le contenu AsciiDoc
 - **Conversion en temps réel** : Résultats instantanés
@@ -38,6 +40,10 @@ Application web moderne pour convertir des documents entre les formats AsciiDoc 
 - **Node.js** : Runtime JavaScript
 - **Express.js** : Framework web
 - **downdoc** : Bibliothèque de conversion AsciiDoc → Markdown
+- **Pandoc** : Outil de conversion universel de documents pour Markdown → AsciiDoc et HTML → autres formats
+- **text2markdown** : Module de conversion texte brut → Markdown (détection automatique)
+- **Docverter** : Module de conversion de documents (préparé pour intégration future)
+- **PanWriter** : Module d'édition et conversion de documents (préparé pour intégration future)
 - **CORS** : Gestion des requêtes cross-origin
 
 ### Frontend
@@ -50,6 +56,9 @@ Application web moderne pour convertir des documents entre les formats AsciiDoc 
 
 - **Node.js** : Version 16.17.0 ou supérieure
 - **npm** : Gestionnaire de paquets (inclus avec Node.js)
+- **Pandoc** (requis) : Pour les conversions Markdown → AsciiDoc et HTML → autres formats
+  - Téléchargement : https://pandoc.org/installing.html
+  - Vérifier l'installation : `pandoc --version`
 
 ## 🔧 Installation
 
@@ -132,6 +141,51 @@ npm run preview
    - La section "Navigation dans le fichier" affiche la structure hiérarchique
    - Cliquez sur un chapitre pour naviguer directement
 
+6. **Édition des résultats** :
+   - Cliquez sur le bouton ✏️ pour activer le mode édition
+   - Une modale de confirmation s'affiche avec les options "Oui" (vert) et "Non" (rouge)
+   - En mode édition, vous pouvez modifier le contenu directement dans la zone de texte
+   - Les boutons de copie et d'effacement sont désactivés pendant l'édition
+   - Cliquez sur 💾 Sauvegarder pour valider vos modifications (modale de confirmation)
+   - Cliquez sur ✕ Annuler pour annuler l'édition et restaurer le contenu original (modale de confirmation)
+   - Si vous cliquez sur "Non" dans la modale de sauvegarde, les modifications sont annulées automatiquement
+
+## ✏️ Mode Édition
+
+Le mode édition permet de modifier directement les résultats de conversion avec un système de sauvegarde sécurisé.
+
+### Fonctionnement
+
+1. **Activation du mode édition** :
+   - Cliquez sur le bouton ✏️ dans le panneau de résultat
+   - Une modale de confirmation s'affiche
+   - Cliquez sur "Oui" (vert) pour activer l'édition
+   - Le contenu original est automatiquement sauvegardé
+
+2. **Modification du contenu** :
+   - Le texte devient éditable dans la zone de texte
+   - Les boutons de copie 📋 et d'effacement 🗑️ sont désactivés
+   - Seuls les boutons "Sauvegarder" et "Annuler" sont disponibles
+
+3. **Sauvegarde** :
+   - Cliquez sur 💾 Sauvegarder
+   - Une modale de confirmation s'affiche
+   - "Oui" (vert) : Valide et sauvegarde les modifications
+   - "Non" (rouge) : Annule les modifications et restaure le contenu original
+
+4. **Annulation** :
+   - Cliquez sur ✕ Annuler
+   - Une modale de confirmation s'affiche
+   - "Oui" (vert) : Confirme l'annulation et restaure le contenu original
+   - "Non" (rouge) : Continue l'édition sans annuler
+
+### Sécurité
+
+- Le contenu original est toujours sauvegardé avant l'édition
+- Les modifications ne sont conservées que si vous cliquez explicitement sur "Sauvegarder"
+- Toute annulation restaure automatiquement le contenu d'origine
+- Les actions destructives (copie, effacement) sont désactivées pendant l'édition
+
 ## 🏗 Architecture
 
 ```
@@ -148,7 +202,9 @@ Ascend/
 │   │   │   ├── main.tsx  # Point d'entrée React
 │   │   │   └── styles.css # Styles CSS
 │   │   └── package.json  # Dépendances frontend
-│   └── convert.js        # Module de conversion
+│   ├── convert.js        # Module de conversion principal
+│   ├── docverter.js      # Module Docverter (préparé pour intégration)
+│   └── panwriter.js      # Module PanWriter (préparé pour intégration)
 ├── lib/                  # Bibliothèque downdoc
 └── README.md            # Ce fichier
 ```
@@ -158,7 +214,7 @@ Ascend/
 ### Endpoints
 
 #### `POST /to-markdown`
-Convertit du contenu AsciiDoc en Markdown.
+Convertit du contenu AsciiDoc en Markdown (utilise downdoc).
 
 **Requête :**
 ```json
@@ -166,6 +222,9 @@ Convertit du contenu AsciiDoc en Markdown.
   "text": "= Titre\n\nContenu AsciiDoc"
 }
 ```
+
+**Paramètres :**
+- `text` (requis) : Le contenu AsciiDoc à convertir
 
 **Réponse :**
 ```json
@@ -175,7 +234,7 @@ Convertit du contenu AsciiDoc en Markdown.
 ```
 
 #### `POST /to-asciidoc`
-Convertit du contenu Markdown en AsciiDoc.
+Convertit du contenu Markdown en AsciiDoc (utilise Pandoc).
 
 **Requête :**
 ```json
@@ -184,6 +243,9 @@ Convertit du contenu Markdown en AsciiDoc.
 }
 ```
 
+**Paramètres :**
+- `text` (requis) : Le contenu Markdown à convertir
+
 **Réponse :**
 ```json
 {
@@ -191,18 +253,128 @@ Convertit du contenu Markdown en AsciiDoc.
 }
 ```
 
+#### `POST /from-html`
+Convertit du contenu HTML vers d'autres formats (utilise Pandoc).
+
+**Requête :**
+```json
+{
+  "text": "<h1>Titre</h1><p>Contenu HTML</p>",
+  "to": "markdown"
+}
+```
+
+**Paramètres :**
+- `text` (requis) : Le contenu HTML à convertir
+- `to` (requis) : Le format de sortie (markdown, asciidoc, docx, pdf, epub, rst, tex, latex)
+
+**Réponse :**
+```json
+{
+  "result": "# Titre\n\nContenu Markdown",
+  "format": "markdown"
+}
+```
+
+#### `POST /text-to-markdown`
+Convertit du texte brut vers Markdown (utilise text2markdown).
+
+**Requête :**
+```json
+{
+  "text": "TITRE PRINCIPAL\n\nContenu du paragraphe.\n\n- Liste item 1\n- Liste item 2"
+}
+```
+
+**Réponse :**
+```json
+{
+  "markdown": "# TITRE PRINCIPAL\n\nContenu du paragraphe.\n\n- Liste item 1\n- Liste item 2\n"
+}
+```
+
+#### `POST /convert`
+Convertit depuis n'importe quel format vers un autre format (utilise Pandoc ou text2markdown selon les formats).
+
+**Requête :**
+```json
+{
+  "text": "Contenu à convertir",
+  "from": "txt",
+  "to": "markdown"
+}
+```
+
+**Paramètres :**
+- `text` (requis) : Le contenu à convertir
+- `from` (requis) : Le format source (txt, html, markdown, asciidoc, pdf, yaml, json, etc.)
+- `to` (requis) : Le format de destination (markdown, asciidoc, html, pdf, yaml, json, txt, etc.)
+
+**Réponse :**
+```json
+{
+  "result": "Contenu converti",
+  "format": "markdown"
+}
+```
+
+### Moteurs de conversion
+
+Ascend utilise deux moteurs de conversion selon le type de conversion :
+
+1. **downdoc** : Bibliothèque JavaScript native
+   - Utilisé pour : AsciiDoc → Markdown
+   - Rapide et léger, pas de dépendances externes
+   - Idéal pour les conversions simples
+
+2. **Pandoc** : Outil de conversion universel de documents
+   - Utilisé pour : Markdown → AsciiDoc et HTML → autres formats
+   - Support complet pour de nombreux formats
+   - Nécessite Pandoc installé sur le système
+   - Idéal pour les conversions complexes et les documents volumineux
+
+3. **text2markdown** : Module de conversion texte brut → Markdown
+   - Utilisé pour : Texte brut → Markdown
+   - Détection automatique des structures (titres, listes, liens, emails, etc.)
+   - Conversion intelligente sans dépendances externes
+   - Idéal pour convertir du texte brut en Markdown structuré
+
+### Modules préparés pour intégration future
+
+Les modules suivants sont préparés dans le projet mais ne sont pas encore intégrés avec des endpoints :
+
+- **Docverter** (`api/docverter.js`) : Module de conversion de documents
+  - Formats supportés : rtf, pdf, html, txt, markdown, docx, xlsx, pptx, odt, ods, odp, png, jpg, jpeg, gif
+  - Fonction : `convertWithDocverter(content, fromFormat, toFormat)`
+  - Statut : Prêt pour intégration, endpoints à créer
+
+- **PanWriter** (`api/panwriter.js`) : Module d'édition et conversion de documents
+  - Formats supportés : markdown, asciidoc, html, docx, odt, rtf, latex, tex
+  - Fonctions : `convertWithPanWriter(content, fromFormat, toFormat)`, `editWithPanWriter(content, format)`
+  - Statut : Prêt pour intégration, endpoints à créer
+
 ### Exemple avec cURL
 
 ```bash
-# Conversion AsciiDoc → Markdown
+# Conversion AsciiDoc → Markdown (downdoc)
 curl -X POST http://localhost:3003/to-markdown \
   -H "Content-Type: application/json" \
   -d '{"text": "= Mon Titre\n\nContenu de test"}'
 
-# Conversion Markdown → AsciiDoc
+# Conversion Markdown → AsciiDoc (Pandoc)
 curl -X POST http://localhost:3003/to-asciidoc \
   -H "Content-Type: application/json" \
   -d '{"text": "# Mon Titre\n\nContenu de test"}'
+
+# Conversion HTML → Markdown (Pandoc)
+curl -X POST http://localhost:3003/from-html \
+  -H "Content-Type: application/json" \
+  -d '{"text": "<h1>Mon Titre</h1><p>Contenu de test</p>", "to": "markdown"}'
+
+# Conversion HTML → AsciiDoc (Pandoc)
+curl -X POST http://localhost:3003/from-html \
+  -H "Content-Type: application/json" \
+  -d '{"text": "<h1>Mon Titre</h1><p>Contenu de test</p>", "to": "asciidoc"}'
 ```
 
 ## 🧪 Développement
@@ -286,5 +458,4 @@ Pour toute question ou problème, veuillez ouvrir une [issue](https://github.com
 
 ---
 
-**Fait avec ❤️ par l'équipe Ascend**
 
