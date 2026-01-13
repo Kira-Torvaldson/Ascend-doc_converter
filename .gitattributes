@@ -14,6 +14,7 @@ api/frontend/src/*.ts linguist-language=TypeScript
 # Ensure JSON is detected (but exclude package-lock.json from stats)
 *.json linguist-language=JSON
 package-lock.json linguist-vendored=true
+**/package-lock.json linguist-vendored=true
 
 # Ensure Markdown is detected
 *.md linguist-language=Markdown
@@ -21,3 +22,38 @@ package-lock.json linguist-vendored=true
 # Exclude node_modules from language statistics (they skew the results)
 **/node_modules/** linguist-vendored=true
 **/node_modules/** linguist-detectable=false
+
+# Exclude generated files and build artifacts
+**/dist/** linguist-vendored=true
+**/build/** linguist-vendored=true
+**/.vite/** linguist-vendored=true
+**/.nyc_output/** linguist-vendored=true
+**/reports/** linguist-vendored=true
+
+# Exclude lock files
+*.lock linguist-vendored=true
+package-lock.json linguist-vendored=true
+yarn.lock linguist-vendored=true
+pnpm-lock.yaml linguist-vendored=true
+
+# Exclude log files
+*.log linguist-vendored=true
+npm-debug.log* linguist-vendored=true
+yarn-debug.log* linguist-vendored=true
+yarn-error.log* linguist-vendored=true
+
+# Exclude IDE and OS files
+.vscode/** linguist-vendored=true
+.idea/** linguist-vendored=true
+*.swp linguist-vendored=true
+*.swo linguist-vendored=true
+.DS_Store linguist-vendored=true
+Thumbs.db linguist-vendored=true
+
+# Exclude environment files
+.env linguist-vendored=true
+.env.* linguist-vendored=true
+
+# Exclude test coverage and reports
+coverage/** linguist-vendored=true
+.nyc_output/** linguist-vendored=true
