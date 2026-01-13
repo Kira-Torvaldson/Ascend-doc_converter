@@ -1,12 +1,20 @@
 # Force GitHub to detect TypeScript and React
 *.tsx linguist-language=TypeScript
 *.ts linguist-language=TypeScript
-*.jsx linguist-language=JavaScript
+*.jsx linguist-language=TypeScript
 *.js linguist-language=JavaScript
 
-# Mark React files explicitly
+# Mark React files explicitly as TypeScript
 api/frontend/src/*.tsx linguist-language=TypeScript
 api/frontend/src/*.ts linguist-language=TypeScript
+api/frontend/**/*.js linguist-language=TypeScript
+
+# Backend JavaScript files (not React)
+api/backend/**/*.js linguist-language=JavaScript
+api/convert.js linguist-language=JavaScript
+api/*.js linguist-language=JavaScript
+lib/**/*.js linguist-language=JavaScript
+bin/**/*.js linguist-language=JavaScript
 
 # Ensure CSS is detected
 *.css linguist-language=CSS
@@ -57,3 +65,14 @@ Thumbs.db linguist-vendored=true
 # Exclude test coverage and reports
 coverage/** linguist-vendored=true
 .nyc_output/** linguist-vendored=true
+
+# Exclude test files from statistics (they're mostly JavaScript)
+test/**/*.js linguist-vendored=true
+**/*.test.js linguist-vendored=true
+**/*.spec.js linguist-vendored=true
+
+# Exclude configuration and tooling files
+*.config.js linguist-vendored=true
+vite.config.* linguist-vendored=true
+rollup.config.* linguist-vendored=true
+webpack.config.* linguist-vendored=true
