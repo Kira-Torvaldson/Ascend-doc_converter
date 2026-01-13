@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { convertAsciiDoc, convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown } = require('../convert.js');
+const { mergeOptions, validateOptions } = require('../conversion-options.js');
 
 // __dirname est automatiquement disponible en CommonJS
 const PROJECT_ROOT = path.join(__dirname, '..', '..');
@@ -44,7 +45,7 @@ app.get('/', (req, res) => {
 // Endpoint: AsciiDoc → Markdown (utilise downdoc uniquement)
 app.post('/to-markdown', async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, options } = req.body;
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({
@@ -52,10 +53,14 @@ app.post('/to-markdown', async (req, res) => {
       });
     }
 
-    console.log(`[INFO] Conversion de ${text.length} caractères (AsciiDoc → Markdown) avec downdoc`);
+    // Vérifier si Parsedown est activé dans les options
+    const useParsedown = options?.formatSpecific?.markdown?.parsedown || false;
+    const mode = useParsedown ? 'bookstack' : 'default';
 
-    // Utiliser downdoc (méthode par défaut, on ne touche pas à cette partie)
-    const markdown = await convertAsciiDoc(text, 'default');
+    console.log(`[INFO] Conversion de ${text.length} caractères (AsciiDoc → Markdown) avec downdoc${useParsedown ? ' (mode Parsedown/BookStack)' : ''}`);
+
+    // Utiliser downdoc avec le mode approprié
+    const markdown = await convertAsciiDoc(text, mode);
 
     console.log(`[INFO] Conversion réussie: ${markdown.length} caractères de Markdown générés`);
 
@@ -159,7 +164,7 @@ app.post('/text-to-markdown', async (req, res) => {
 // Endpoint générique: Conversion depuis n'importe quel format vers n'importe quel autre format (utilise Pandoc)
 app.post('/convert', async (req, res) => {
   try {
-    const { text, from, to } = req.body;
+    const { text, from, to, options } = req.body;
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({
@@ -179,13 +184,35 @@ app.post('/convert', async (req, res) => {
       });
     }
 
-    console.log(`[INFO] Conversion de ${text.length} caractères (${from} → ${to}) avec Pandoc`);
+    // Fusionner et valider les options de conversion
+    const conversionOptions = mergeOptions(options || {});
+    const validation = validateOptions(conversionOptions);
+    
+    if (!validation.valid) {
+      return res.status(400).json({
+        detail: "Options de conversion invalides",
+        errors: validation.errors
+      });
+    }
+
+    // Vérifier la taille du fichier
+    const textSize = Buffer.byteLength(text, 'utf8');
+    if (textSize > conversionOptions.security.maxFileSize) {
+      return res.status(400).json({
+        detail: `Fichier trop volumineux (${textSize} octets). Taille maximale: ${conversionOptions.security.maxFileSize} octets`
+      });
+    }
+
+    console.log(`[INFO] Conversion de ${text.length} caractères (${from} → ${to}) avec options:`, {
+      analysisMode: conversionOptions.contentAnalysis.analysisMode,
+      debugMode: conversionOptions.developer.debugMode
+    });
 
     // Si conversion TXT → Markdown, utiliser text2markdown pour une meilleure détection
     if (from.toLowerCase() === 'txt' && to.toLowerCase() === 'markdown') {
       const markdown = text2markdown(text);
       console.log(`[INFO] Conversion réussie avec text2markdown: ${markdown.length} caractères générés`);
-      return res.json({ result: markdown, format: to });
+      return res.json({ result: markdown, format: to, options: conversionOptions });
     }
 
     // Utiliser Pandoc pour les autres conversions
@@ -193,7 +220,7 @@ app.post('/convert', async (req, res) => {
 
     console.log(`[INFO] Conversion réussie: ${result.length} caractères générés`);
 
-    return res.json({ result, format: to });
+    return res.json({ result, format: to, options: conversionOptions });
   } catch (error) {
     console.error('[ERROR] Erreur lors de la conversion:', error);
     return res.status(500).json({
