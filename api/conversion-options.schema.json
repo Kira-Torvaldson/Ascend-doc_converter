@@ -1,0 +1,233 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Conversion Options Schema",
+  "description": "Schéma JSON pour les options de conversion de documents",
+  "type": "object",
+  "properties": {
+    "contentAnalysis": {
+      "type": "object",
+      "description": "Options d'analyse du contenu",
+      "properties": {
+        "analysisMode": {
+          "type": "string",
+          "enum": ["basic", "heuristic", "strict"],
+          "default": "heuristic",
+          "description": "Mode d'analyse: basic (rapide), heuristic (intelligent), strict (précis)"
+        },
+        "headingDetection": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "detectAllCaps": { "type": "boolean", "default": true },
+            "detectSeparators": { "type": "boolean", "default": true },
+            "detectNumbering": { "type": "boolean", "default": true },
+            "minLength": { "type": "number", "default": 3, "minimum": 1 },
+            "maxLength": { "type": "number", "default": 100, "minimum": 1 }
+          }
+        },
+        "listDetection": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "detectBullets": { "type": "boolean", "default": true },
+            "detectNumbered": { "type": "boolean", "default": true },
+            "preserveIndentation": { "type": "boolean", "default": true },
+            "normalizeIndentation": { "type": "boolean", "default": true },
+            "indentSize": { "type": "number", "default": 2, "minimum": 1 }
+          }
+        }
+      }
+    },
+    "normalization": {
+      "type": "object",
+      "description": "Options de normalisation du contenu",
+      "properties": {
+        "encoding": {
+          "type": "string",
+          "enum": ["utf-8", "latin1", "ascii"],
+          "default": "utf-8"
+        },
+        "lineBreaks": {
+          "type": "object",
+          "properties": {
+            "normalize": { "type": "boolean", "default": true },
+            "target": { "type": "string", "enum": ["unix", "windows", "mac"], "default": "unix" },
+            "removeTrailing": { "type": "boolean", "default": true },
+            "maxConsecutive": { "type": "number", "default": 2, "minimum": 1 }
+          }
+        },
+        "removeNonAscii": { "type": "boolean", "default": false },
+        "tabs": {
+          "type": "object",
+          "properties": {
+            "convertToSpaces": { "type": "boolean", "default": true },
+            "tabSize": { "type": "number", "default": 2, "minimum": 1 }
+          }
+        }
+      }
+    },
+    "rendering": {
+      "type": "object",
+      "description": "Options de rendu documentaire",
+      "properties": {
+        "tableOfContents": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "depth": { "type": "number", "default": 3, "minimum": 1, "maximum": 6 },
+            "position": { "type": "string", "enum": ["top", "bottom", "none"], "default": "top" }
+          }
+        },
+        "sectionNumbering": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "depth": { "type": "number", "default": 3, "minimum": 1, "maximum": 6 },
+            "style": { "type": "string", "enum": ["numeric", "alpha", "roman"], "default": "numeric" }
+          }
+        },
+        "lineWrap": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "maxWidth": { "type": "number", "default": 80, "minimum": 40 },
+            "hardWrap": { "type": "boolean", "default": false }
+          }
+        },
+        "listStyle": {
+          "type": "object",
+          "properties": {
+            "bulletStyle": { "type": "string", "enum": ["dash", "asterisk", "plus", "circle"], "default": "dash" },
+            "numberedStyle": { "type": "string", "enum": ["numeric", "alpha", "roman"], "default": "numeric" },
+            "indentChar": { "type": "string", "default": " " },
+            "indentSize": { "type": "number", "default": 2, "minimum": 1 }
+          }
+        }
+      }
+    },
+    "formatSpecific": {
+      "type": "object",
+      "description": "Options spécifiques aux formats de sortie",
+      "properties": {
+        "markdown": {
+          "type": "object",
+          "properties": {
+            "flavor": { "type": "string", "enum": ["commonmark", "gfm", "markdown"], "default": "commonmark" },
+            "gfmExtensions": {
+              "type": "object",
+              "properties": {
+                "tables": { "type": "boolean", "default": true },
+                "strikethrough": { "type": "boolean", "default": true },
+                "taskLists": { "type": "boolean", "default": true },
+                "autolinks": { "type": "boolean", "default": true }
+              }
+            },
+            "preserveHtml": { "type": "boolean", "default": false },
+            "codeFenceStyle": { "type": "string", "enum": ["backtick", "tilde"], "default": "backtick" }
+          }
+        },
+        "asciidoc": {
+          "type": "object",
+          "properties": {
+            "compatMode": { "type": "string", "enum": ["asciidoctor", "asciidoc"], "default": "asciidoctor" },
+            "attributes": {
+              "type": "object",
+              "properties": {
+                "doctype": { "type": "string", "enum": ["article", "book", "manpage"], "default": "article" },
+                "toc": { "type": "string", "enum": ["left", "right", "macro"], "default": "left" },
+                "numbered": { "type": "boolean", "default": false },
+                "sectanchors": { "type": "boolean", "default": true },
+                "sectlinks": { "type": "boolean", "default": true }
+              }
+            },
+            "safeMode": { "type": "string", "enum": ["unsafe", "safe", "server", "secure"], "default": "safe" }
+          }
+        },
+        "pdf": {
+          "type": "object",
+          "properties": {
+            "pageSize": { "type": "string", "enum": ["a4", "letter", "legal", "a3"], "default": "a4" },
+            "orientation": { "type": "string", "enum": ["portrait", "landscape"], "default": "portrait" },
+            "margins": {
+              "type": "object",
+              "properties": {
+                "top": { "type": "string", "default": "2.5cm" },
+                "right": { "type": "string", "default": "2cm" },
+                "bottom": { "type": "string", "default": "2.5cm" },
+                "left": { "type": "string", "default": "2cm" }
+              }
+            },
+            "fontFamily": { "type": "string", "default": "default" },
+            "fontSize": { "type": "string", "default": "12pt" },
+            "template": { "type": ["string", "null"], "default": null },
+            "engine": { "type": "string", "enum": ["pdflatex", "xelatex", "lualatex", "wkhtmltopdf"], "default": "pdflatex" }
+          }
+        },
+        "html": {
+          "type": "object",
+          "properties": {
+            "standalone": { "type": "boolean", "default": true },
+            "embedImages": { "type": "boolean", "default": false },
+            "css": { "type": ["string", "null"], "default": null },
+            "minify": { "type": "boolean", "default": false }
+          }
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "description": "Options de sécurité et robustesse",
+      "properties": {
+        "maxFileSize": { "type": "number", "default": 10485760, "minimum": 1 },
+        "conversionTimeout": { "type": "number", "default": 30000, "minimum": 1000 },
+        "externalResources": {
+          "type": "object",
+          "properties": {
+            "allowExternalLinks": { "type": "boolean", "default": true },
+            "allowImages": { "type": "boolean", "default": true },
+            "allowScripts": { "type": "boolean", "default": false },
+            "allowStyles": { "type": "boolean", "default": true },
+            "sandboxMode": { "type": "boolean", "default": false }
+          }
+        },
+        "validation": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "strictMode": { "type": "boolean", "default": false },
+            "maxErrors": { "type": "number", "default": 10, "minimum": 1 }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Métadonnées du document",
+      "properties": {
+        "title": { "type": ["string", "null"], "default": null },
+        "author": { "type": ["string", "null"], "default": null },
+        "date": { "type": ["string", "null"], "default": null },
+        "language": { "type": "string", "default": "fr" },
+        "license": { "type": ["string", "null"], "default": null },
+        "custom": { "type": "object", "default": {} }
+      }
+    },
+    "developer": {
+      "type": "object",
+      "description": "Options développeur",
+      "properties": {
+        "debugMode": { "type": "boolean", "default": false },
+        "exportIntermediate": { "type": "boolean", "default": false },
+        "showPipeline": { "type": "boolean", "default": false },
+        "logging": {
+          "type": "object",
+          "properties": {
+            "level": { "type": "string", "enum": ["debug", "info", "warn", "error"], "default": "info" },
+            "verbose": { "type": "boolean", "default": false },
+            "saveLogs": { "type": "boolean", "default": false }
+          }
+        }
+      }
+    }
+  }
+}
