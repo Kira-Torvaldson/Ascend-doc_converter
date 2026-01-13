@@ -11,8 +11,13 @@ api/frontend/src/*.ts linguist-language=TypeScript
 # Ensure CSS is detected
 *.css linguist-language=CSS
 
-# Ensure JSON is detected
+# Ensure JSON is detected (but exclude package-lock.json from stats)
 *.json linguist-language=JSON
+package-lock.json linguist-vendored=true
 
 # Ensure Markdown is detected
 *.md linguist-language=Markdown
+
+# Exclude node_modules from language statistics (they skew the results)
+**/node_modules/** linguist-vendored=true
+**/node_modules/** linguist-detectable=false
