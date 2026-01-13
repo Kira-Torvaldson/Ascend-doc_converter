@@ -1,0 +1,18 @@
+# Force GitHub to detect TypeScript and React
+*.tsx linguist-language=TypeScript
+*.ts linguist-language=TypeScript
+*.jsx linguist-language=JavaScript
+*.js linguist-language=JavaScript
+
+# Mark React files explicitly
+api/frontend/src/*.tsx linguist-language=TypeScript
+api/frontend/src/*.ts linguist-language=TypeScript
+
+# Ensure CSS is detected
+*.css linguist-language=CSS
+
+# Ensure JSON is detected
+*.json linguist-language=JSON
+
+# Ensure Markdown is detected
+*.md linguist-language=Markdown
