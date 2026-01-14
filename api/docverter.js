@@ -29,7 +29,7 @@ async function convertWithDocverter(content, fromFormat, toFormat) {
     throw new Error('Target format must be specified')
   }
 
-  // TODO: Implémenter l'intégration avec Docverter
+  // TODO: Implement integration with Docverter
   // Pour le moment, cette fonction est un placeholder
   throw new Error('Docverter integration not yet implemented')
 }

@@ -203,9 +203,22 @@ Ascend/
 │   │   │   └── styles.css # Styles CSS
 │   │   └── package.json  # Dépendances frontend
 │   ├── convert.js        # Module de conversion principal
+│   ├── secure-converter.js # Moteur de conversion sécurisé (tokens + isolation)
+│   ├── secure-converter-integration-example.js # Exemple d'intégration
+│   ├── conversion-options.js # Options de conversion (unifié)
+│   ├── bookstack-adapter.js # Adaptateur BookStack
 │   ├── docverter.js      # Module Docverter (préparé pour intégration)
 │   └── panwriter.js      # Module PanWriter (préparé pour intégration)
+├── doc/                  # Documentation
+│   ├── confirmation-security-guide.md
+│   ├── conversion-options.md
+│   ├── encoding-options.md
+│   ├── normalization-advanced-options.md
+│   ├── secure-converter.md
+│   └── secure-converter-frontend-integration.md
 ├── lib/                  # Bibliothèque downdoc
+├── bin/                  # Exécutables
+├── test/                 # Tests
 └── README.md            # Ce fichier
 ```
 
@@ -407,7 +420,6 @@ Ascend/
 │   ├── backend/              # Backend Node.js/Express
 │   │   ├── server.js         # Serveur principal
 │   │   ├── package.json      # Configuration npm
-│   │   ├── README.md         # Documentation backend
 │   │   ├── public/           # Assets statiques
 │   │   │   ├── logo.png
 │   │   │   └── rafale.jpg
@@ -419,11 +431,23 @@ Ascend/
 │   │   │   ├── main.tsx     # Point d'entrée
 │   │   │   └── styles.css   # Styles
 │   │   ├── index.html       # Template HTML
-│   │   ├── package.json     # Configuration npm
+│   │   ├── package.json      # Configuration npm
 │   │   ├── tsconfig.json    # Configuration TypeScript
 │   │   └── vite.config.ts   # Configuration Vite
-│   ├── convert.js           # Module de conversion
-│   └── bookstack-adapter.js # Adaptateur BookStack
+│   ├── convert.js           # Module de conversion principal
+│   ├── secure-converter.js  # Moteur de conversion sécurisé (tokens + isolation)
+│   ├── secure-converter-integration-example.js # Exemple d'intégration
+│   ├── conversion-options.js # Options de conversion (unifié : encodage + normalisation)
+│   ├── bookstack-adapter.js # Adaptateur BookStack
+│   ├── docverter.js         # Module Docverter (préparé pour intégration)
+│   └── panwriter.js         # Module PanWriter (préparé pour intégration)
+├── doc/                      # Documentation
+│   ├── confirmation-security-guide.md
+│   ├── conversion-options.md
+│   ├── encoding-options.md
+│   ├── normalization-advanced-options.md
+│   ├── secure-converter.md
+│   └── secure-converter-frontend-integration.md
 ├── lib/                      # Bibliothèque downdoc
 ├── bin/                      # Exécutables
 ├── test/                     # Tests

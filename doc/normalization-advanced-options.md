@@ -207,23 +207,23 @@ const userOptions = {
   },
 };
 
-// Fusionner avec les valeurs par défaut
+// Merge with default values
 const options = mergeAdvancedNormalizationOptions(userOptions);
 
-// Valider
+// Validate
 const validation = validateAdvancedNormalizationOptions(options);
 if (!validation.valid) {
-  console.error('Options invalides:', validation.errors);
+  console.error('Invalid options:', validation.errors);
   return;
 }
 
-// Vérifier la sécurité (non-destructivité)
+// Check safety (non-destructiveness)
 const safety = checkOptionsSafety(options);
 if (!safety.safe) {
-  console.warn('Avertissements de sécurité:', safety.warnings);
+  console.warn('Security warnings:', safety.warnings);
 }
 
-// Utiliser les options dans le traitement
+// Use options in processing
 // ...
 ```
 
@@ -270,7 +270,7 @@ const ConversionOptions = {
   normalization: {
     encoding: 'utf-8',
     lineBreaks: { /* ... */ },
-    // Options supplémentaires
+    // Additional options
     advanced: getAdvancedNormalizationPreset('default'),
   },
   // ...

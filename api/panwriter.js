@@ -29,8 +29,8 @@ async function convertWithPanWriter(content, fromFormat, toFormat) {
     throw new Error('Target format must be specified')
   }
 
-  // TODO: Implémenter l'intégration avec PanWriter
-  // Pour le moment, cette fonction est un placeholder
+  // TODO: Implement integration with PanWriter
+  // For now, this function is a placeholder
   throw new Error('PanWriter integration not yet implemented')
 }
 
@@ -51,7 +51,7 @@ async function editWithPanWriter(content, format) {
     throw new Error('Format must be specified')
   }
 
-  // TODO: Implémenter l'intégration avec PanWriter pour l'édition
+  // TODO: Implement integration with PanWriter for editing
   // Pour le moment, cette fonction est un placeholder
   throw new Error('PanWriter editing not yet implemented')
 }
