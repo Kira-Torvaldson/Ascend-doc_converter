@@ -399,10 +399,10 @@ Les options sont organisées en 7 catégories principales :
 ```javascript
 const { mergeOptions, validateOptions } = require('./conversion-options');
 
-// Options par défaut
+// Default options
 const options = mergeOptions();
 
-// Options personnalisées
+// Custom options
 const customOptions = mergeOptions({
   contentAnalysis: {
     analysisMode: 'strict'
@@ -431,7 +431,7 @@ if (!validation.valid) {
 app.post('/convert', async (req, res) => {
   const { text, from, to, options } = req.body;
   
-  // Fusionner avec les options par défaut
+  // Merge with default options
   const conversionOptions = mergeOptions(options || {});
   
   // Valider

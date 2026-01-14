@@ -1,131 +1,551 @@
 /**
- * Configuration des options de conversion
- * Structure modulaire et extensible pour gérer le comportement des conversions
+ * COMPLETE CONVERSION OPTIONS CONFIGURATION
+ * 
+ * This unified module contains all conversion options:
+ * - General conversion options
+ * - Encoding options
+ * - Advanced normalization options
+ * 
+ * Modular and extensible structure to manage conversion behavior
+ * API-first approach: Clear JSON structure, safe default values
  */
 
-const { 
-  getAdvancedNormalizationPreset,
-  mergeAdvancedNormalizationOptions,
-  validateAdvancedNormalizationOptions
-} = require('./normalization-advanced-options');
+// ============================================================================
+// ADVANCED NORMALIZATION OPTIONS
+// ============================================================================
 
 /**
- * Schéma de configuration des options de conversion
+ * Complete configuration structure for additional normalization options
+ * @typedef {Object} AdvancedNormalizationOptions
+ * @property {UnicodeManagement} unicode - Advanced Unicode management
+ * @property {CharacterCleaning} characterCleaning - Character cleaning
+ * @property {TransliterationAndFallback} transliteration - Transliteration and fallback
+ * @property {ContentValidation} validation - Content validation
+ * @property {ProcessingMode} processingMode - Processing mode
+ */
+
+/**
+ * Recommended default values for production
+ */
+const DefaultAdvancedNormalizationOptions = {
+  unicode: {
+    mode: 'full', // Full Unicode mode
+    normalization: 'NFC', // Canonical Composition Form (recommended standard)
+    detectConfusables: true, // Detect visually confusable characters
+    confusablesAction: 'warn', // Only warn, do not modify (non-destructive)
+  },
+  characterCleaning: {
+    removeControlChars: false, // Disabled by default (can be destructive)
+    removeDirectionalChars: false, // Disabled by default (can alter display)
+    removeNonPrintableChars: false, // Disabled by default (can be destructive)
+    preserveWhitespace: true, // Preserve essential whitespace (tabs, newlines)
+  },
+  transliteration: {
+    strategy: 'none', // No transliteration by default (non-destructive)
+    enableTransliteration: false, // Disabled by default (can alter meaning)
+    unicodeToAscii: {
+      enabled: false, // Disabled by default (can be destructive)
+      method: 'transliterate', // Method if enabled
+      replacementChar: '?', // Replacement character if method='replace'
+    },
+  },
+  validation: {
+    rejectInvalidSequences: true, // Reject invalid sequences (security)
+    rejectPrivateChars: false, // Do not reject private characters by default
+    warnOutOfRange: true, // Signal characters out of range (traceability)
+    allowedRanges: [], // Empty = all allowed ranges except Private Use Area
+  },
+  processingMode: {
+    mode: 'tolerant', // Tolerant mode by default (cleaning + warnings)
+    throwOnError: false, // Do not interrupt processing
+    logWarnings: true, // Log warnings for analysis
+    continueOnWarning: true, // Continue despite warnings
+  },
+};
+
+/**
+ * Strict options for critical environments
+ */
+const StrictAdvancedNormalizationOptions = {
+  unicode: {
+    mode: 'full',
+    normalization: 'NFC',
+    detectConfusables: true,
+    confusablesAction: 'warn',
+  },
+  characterCleaning: {
+    removeControlChars: true, // Enable strict cleaning
+    removeDirectionalChars: true, // Remove directional characters
+    removeNonPrintableChars: true, // Remove non-printable characters
+    preserveWhitespace: true,
+  },
+  transliteration: {
+    strategy: 'none',
+    enableTransliteration: false,
+    unicodeToAscii: {
+      enabled: false,
+      method: 'transliterate',
+      replacementChar: '?',
+    },
+  },
+  validation: {
+    rejectInvalidSequences: true,
+    rejectPrivateChars: true, // Reject private characters in strict mode
+    warnOutOfRange: true,
+    allowedRanges: [],
+  },
+  processingMode: {
+    mode: 'strict',
+    throwOnError: true, // Throw error immediately
+    logWarnings: true,
+    continueOnWarning: false, // Do not continue on warning
+  },
+};
+
+/**
+ * Permissive options for converting legacy or corrupted documents
+ */
+const PermissiveAdvancedNormalizationOptions = {
+  unicode: {
+    mode: 'full',
+    normalization: 'NFKC', // More aggressive normalization
+    detectConfusables: false, // Disable detection to avoid noise
+    confusablesAction: 'none',
+  },
+  characterCleaning: {
+    removeControlChars: true, // Clean problematic characters
+    removeDirectionalChars: false, // Preserve directional characters
+    removeNonPrintableChars: true, // Clean non-printable characters
+    preserveWhitespace: false, // Normalize whitespace
+  },
+  transliteration: {
+    strategy: 'simple', // Enable simple transliteration
+    enableTransliteration: true, // Transliteration enabled
+    unicodeToAscii: {
+      enabled: true, // Enable Unicode → ASCII fallback
+      method: 'transliterate', // Transliteration rather than removal
+      replacementChar: '?',
+    },
+  },
+  validation: {
+    rejectInvalidSequences: false, // Do not reject (maximum tolerance)
+    rejectPrivateChars: false,
+    warnOutOfRange: false, // Fewer warnings to avoid noise
+    allowedRanges: [],
+  },
+  processingMode: {
+    mode: 'tolerant',
+    throwOnError: false,
+    logWarnings: false, // Fewer logs to avoid noise
+    continueOnWarning: true,
+  },
+};
+
+/**
+ * Gets a predefined options preset
+ * @param {string} preset - Preset name ('default'|'strict'|'permissive')
+ * @returns {AdvancedNormalizationOptions} - Preset options
+ */
+function getAdvancedNormalizationPreset(preset = 'default') {
+  const presets = {
+    default: DefaultAdvancedNormalizationOptions,
+    strict: StrictAdvancedNormalizationOptions,
+    permissive: PermissiveAdvancedNormalizationOptions,
+  };
+
+  return presets[preset] || DefaultAdvancedNormalizationOptions;
+}
+
+/**
+ * Merges provided options with default values
+ * @param {Partial<AdvancedNormalizationOptions>} userOptions - User options
+ * @param {AdvancedNormalizationOptions} defaults - Default options
+ * @returns {AdvancedNormalizationOptions} - Merged options
+ */
+function mergeAdvancedNormalizationOptions(userOptions = {}, defaults = DefaultAdvancedNormalizationOptions) {
+  return {
+    unicode: {
+      ...defaults.unicode,
+      ...(userOptions.unicode || {}),
+    },
+    characterCleaning: {
+      ...defaults.characterCleaning,
+      ...(userOptions.characterCleaning || {}),
+    },
+    transliteration: {
+      ...defaults.transliteration,
+      ...(userOptions.transliteration || {}),
+      unicodeToAscii: {
+        ...defaults.transliteration.unicodeToAscii,
+        ...(userOptions.transliteration?.unicodeToAscii || {}),
+      },
+    },
+    validation: {
+      ...defaults.validation,
+      ...(userOptions.validation || {}),
+      allowedRanges: userOptions.validation?.allowedRanges || defaults.validation.allowedRanges,
+    },
+    processingMode: {
+      ...defaults.processingMode,
+      ...(userOptions.processingMode || {}),
+    },
+  };
+}
+
+/**
+ * Validates advanced normalization options
+ * @param {AdvancedNormalizationOptions} options - Options to validate
+ * @returns {Object} - { valid: boolean, errors: string[] }
+ */
+function validateAdvancedNormalizationOptions(options) {
+  const errors = [];
+
+  // Unicode mode validation
+  const validUnicodeModes = ['full', 'restricted', 'disabled'];
+  if (!validUnicodeModes.includes(options.unicode?.mode)) {
+    errors.push(`Invalid Unicode mode: ${options.unicode?.mode}. Accepted values: ${validUnicodeModes.join(', ')}`);
+  }
+
+  // Unicode normalization validation
+  const validNormalizationForms = ['none', 'NFC', 'NFKC'];
+  if (!validNormalizationForms.includes(options.unicode?.normalization)) {
+    errors.push(`Invalid normalization form: ${options.unicode?.normalization}. Accepted values: ${validNormalizationForms.join(', ')}`);
+  }
+
+  // Confusables action validation
+  const validConfusablesActions = ['none', 'warn', 'replace'];
+  if (!validConfusablesActions.includes(options.unicode?.confusablesAction)) {
+    errors.push(`Invalid confusables action: ${options.unicode?.confusablesAction}. Accepted values: ${validConfusablesActions.join(', ')}`);
+  }
+
+  // Transliteration strategy validation
+  const validTransliterationStrategies = ['none', 'simple', 'configurable'];
+  if (!validTransliterationStrategies.includes(options.transliteration?.strategy)) {
+    errors.push(`Invalid transliteration strategy: ${options.transliteration?.strategy}. Accepted values: ${validTransliterationStrategies.join(', ')}`);
+  }
+
+  // Unicode → ASCII fallback method validation
+  const validFallbackMethods = ['remove', 'replace', 'transliterate'];
+  if (options.transliteration?.unicodeToAscii?.enabled && 
+      !validFallbackMethods.includes(options.transliteration.unicodeToAscii.method)) {
+    errors.push(`Invalid fallback method: ${options.transliteration.unicodeToAscii.method}. Accepted values: ${validFallbackMethods.join(', ')}`);
+  }
+
+  // Processing mode validation
+  const validProcessingModes = ['strict', 'tolerant'];
+  if (!validProcessingModes.includes(options.processingMode?.mode)) {
+    errors.push(`Invalid processing mode: ${options.processingMode?.mode}. Accepted values: ${validProcessingModes.join(', ')}`);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
+// ============================================================================
+// ENCODING OPTIONS
+// ============================================================================
+
+/**
+ * Recommended default values for production
+ */
+const DefaultEncodingOptions = {
+  input: {
+    encoding: 'auto',
+    autoDetect: true,
+    fallbackToLatin1: false, // Avoid dangerous assumptions
+  },
+  output: {
+    encoding: 'utf-8',
+    addBOM: false, // Optional BOM, generally not necessary
+  },
+  invalidCharacters: {
+    strategy: 'replace', // Safer than 'remove' (can alter meaning)
+    replacementChar: '\uFFFD', // Standard Unicode replacement character
+    logInvalidChars: true, // Important for production debugging
+  },
+  normalization: {
+    form: 'NFC', // Canonical Composition Form (recommended standard)
+    preserveMeaning: true, // Ensure normalization does not alter meaning
+  },
+  cleaning: {
+    removeControlChars: true, // Remove control characters (except \t, \n, \r)
+    removeDirectionalChars: true, // Avoid RTL/LTR display issues
+    removeZeroWidthChars: true, // Remove potentially problematic invisible characters
+    normalizeWhitespace: false, // Preserve multiple spaces (may be intentional)
+  },
+  processingMode: {
+    mode: 'tolerant', // Tolerant mode by default (cleaning + warnings)
+    throwOnError: false, // Do not interrupt processing
+    logWarnings: true, // Log issues for later analysis
+  },
+};
+
+/**
+ * Strict options for critical environments
+ */
+const StrictEncodingOptions = {
+  input: {
+    encoding: 'utf-8', // No auto-detection, explicit UTF-8
+    autoDetect: false,
+    fallbackToLatin1: false,
+  },
+  output: {
+    encoding: 'utf-8',
+    addBOM: false,
+  },
+  invalidCharacters: {
+    strategy: 'fail', // Fail immediately on invalid character
+    replacementChar: '\uFFFD',
+    logInvalidChars: true,
+  },
+  normalization: {
+    form: 'NFC',
+    preserveMeaning: true,
+  },
+  cleaning: {
+    removeControlChars: true,
+    removeDirectionalChars: true,
+    removeZeroWidthChars: true,
+    normalizeWhitespace: false,
+  },
+  processingMode: {
+    mode: 'strict',
+    throwOnError: true, // Throw error immediately
+    logWarnings: true,
+  },
+};
+
+/**
+ * Permissive options for converting legacy documents
+ */
+const PermissiveEncodingOptions = {
+  input: {
+    encoding: 'auto',
+    autoDetect: true,
+    fallbackToLatin1: true, // Accept Latin-1 as fallback
+  },
+  output: {
+    encoding: 'utf-8',
+    addBOM: false,
+  },
+  invalidCharacters: {
+    strategy: 'transliterate', // Transliteration to preserve content
+    replacementChar: '\uFFFD',
+    logInvalidChars: false, // Fewer logs to avoid noise
+  },
+  normalization: {
+    form: 'NFKC', // More aggressive normalization
+    preserveMeaning: true,
+  },
+  cleaning: {
+    removeControlChars: true,
+    removeDirectionalChars: false, // Preserve directional characters
+    removeZeroWidthChars: false, // Preserve zero-width characters
+    normalizeWhitespace: true, // Normalize whitespace
+  },
+  processingMode: {
+    mode: 'tolerant',
+    throwOnError: false,
+    logWarnings: false, // Fewer warnings to avoid noise
+  },
+};
+
+/**
+ * Validates provided encoding options
+ * @param {EncodingOptions} options - Options to validate
+ * @returns {Object} - { valid: boolean, errors: string[] }
+ */
+function validateEncodingOptions(options) {
+  const errors = [];
+
+  // Input encoding validation
+  const validInputEncodings = ['auto', 'utf-8', 'ascii', 'latin-1'];
+  if (!validInputEncodings.includes(options.input?.encoding)) {
+    errors.push(`Invalid input encoding: ${options.input?.encoding}. Accepted values: ${validInputEncodings.join(', ')}`);
+  }
+
+  // Output encoding validation
+  const validOutputEncodings = ['utf-8', 'ascii', 'latin-1'];
+  if (!validOutputEncodings.includes(options.output?.encoding)) {
+    errors.push(`Invalid output encoding: ${options.output?.encoding}. Accepted values: ${validOutputEncodings.join(', ')}`);
+  }
+
+  // Invalid character handling strategy validation
+  const validStrategies = ['fail', 'replace', 'remove', 'transliterate'];
+  if (!validStrategies.includes(options.invalidCharacters?.strategy)) {
+    errors.push(`Invalid handling strategy: ${options.invalidCharacters?.strategy}. Accepted values: ${validStrategies.join(', ')}`);
+  }
+
+  // Normalization form validation
+  const validNormalizationForms = ['none', 'NFC', 'NFKC'];
+  if (!validNormalizationForms.includes(options.normalization?.form)) {
+    errors.push(`Invalid normalization form: ${options.normalization?.form}. Accepted values: ${validNormalizationForms.join(', ')}`);
+  }
+
+  // Processing mode validation
+  const validModes = ['strict', 'tolerant'];
+  if (!validModes.includes(options.processingMode?.mode)) {
+    errors.push(`Invalid processing mode: ${options.processingMode?.mode}. Accepted values: ${validModes.join(', ')}`);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
+/**
+ * Merges provided options with default values
+ * @param {Partial<EncodingOptions>} userOptions - User options
+ * @param {EncodingOptions} defaults - Default options
+ * @returns {EncodingOptions} - Merged options
+ */
+function mergeEncodingOptions(userOptions = {}, defaults = DefaultEncodingOptions) {
+  return {
+    input: {
+      ...defaults.input,
+      ...(userOptions.input || {}),
+    },
+    output: {
+      ...defaults.output,
+      ...(userOptions.output || {}),
+    },
+    invalidCharacters: {
+      ...defaults.invalidCharacters,
+      ...(userOptions.invalidCharacters || {}),
+    },
+    normalization: {
+      ...defaults.normalization,
+      ...(userOptions.normalization || {}),
+    },
+    cleaning: {
+      ...defaults.cleaning,
+      ...(userOptions.cleaning || {}),
+    },
+    processingMode: {
+      ...defaults.processingMode,
+      ...(userOptions.processingMode || {}),
+    },
+  };
+}
+
+/**
+ * Gets a predefined options preset
+ * @param {string} preset - Preset name ('default'|'strict'|'permissive')
+ * @returns {EncodingOptions} - Preset options
+ */
+function getEncodingPreset(preset = 'default') {
+  const presets = {
+    default: DefaultEncodingOptions,
+    strict: StrictEncodingOptions,
+    permissive: PermissiveEncodingOptions,
+  };
+
+  return presets[preset] || DefaultEncodingOptions;
+}
+
+// ============================================================================
+// GENERAL CONVERSION OPTIONS
+// ============================================================================
+
+/**
+ * Conversion options configuration schema
  * @typedef {Object} ConversionOptions
- * @property {ContentAnalysisOptions} contentAnalysis - Options d'analyse du contenu
- * @property {NormalizationOptions} normalization - Options de normalisation
- * @property {RenderingOptions} rendering - Options de rendu documentaire
- * @property {FormatSpecificOptions} formatSpecific - Options spécifiques aux formats
- * @property {SecurityOptions} security - Options de sécurité et robustesse
- * @property {MetadataOptions} metadata - Métadonnées du document
- * @property {DeveloperOptions} developer - Options développeur
+ * @property {ContentAnalysisOptions} contentAnalysis - Content analysis options
+ * @property {NormalizationOptions} normalization - Normalization options
+ * @property {RenderingOptions} rendering - Document rendering options
+ * @property {FormatSpecificOptions} formatSpecific - Format-specific options
+ * @property {SecurityOptions} security - Security and robustness options
+ * @property {MetadataOptions} metadata - Document metadata
+ * @property {DeveloperOptions} developer - Developer options
  */
 
 /**
- * Options d'analyse du contenu
- * @typedef {Object} ContentAnalysisOptions
- * @property {string} analysisMode - Mode d'analyse: 'basic' | 'heuristic' | 'strict'
- * @property {HeadingDetectionOptions} headingDetection - Règles de détection des titres
- * @property {ListDetectionOptions} listDetection - Gestion des listes et indentations
+ * Content analysis options
  */
 const ContentAnalysisOptions = {
   analysisMode: 'heuristic', // 'basic' | 'heuristic' | 'strict'
   headingDetection: {
     enabled: true,
-    detectAllCaps: true, // Détecter les titres en majuscules
-    detectSeparators: true, // Détecter les séparateurs (===, ---)
-    detectNumbering: true, // Détecter la numérotation (1., 2., etc.)
-    minLength: 3, // Longueur minimale pour considérer comme titre
-    maxLength: 100 // Longueur maximale pour considérer comme titre
+    detectAllCaps: true, // Detect uppercase titles
+    detectSeparators: true, // Detect separators (===, ---)
+    detectNumbering: true, // Detect numbering (1., 2., etc.)
+    minLength: 3, // Minimum length to consider as title
+    maxLength: 100 // Maximum length to consider as title
   },
   listDetection: {
     enabled: true,
-    detectBullets: true, // Détecter les puces (*, -, +)
-    detectNumbered: true, // Détecter les listes numérotées
-    preserveIndentation: true, // Préserver l'indentation
-    normalizeIndentation: true, // Normaliser l'indentation (tabs → espaces)
-    indentSize: 2 // Taille d'indentation en espaces
+    detectBullets: true, // Detect bullets (*, -, +)
+    detectNumbered: true, // Detect numbered lists
+    preserveIndentation: true, // Preserve indentation
+    normalizeIndentation: true, // Normalize indentation (tabs → spaces)
+    indentSize: 2 // Indentation size in spaces
   }
 };
 
 /**
- * Options de normalisation du contenu
- * @typedef {Object} NormalizationOptions
- * @property {string} encoding - Encodage du texte (défaut: UTF-8)
- * @property {LineBreakOptions} lineBreaks - Normalisation des sauts de ligne
- * @property {boolean} removeNonAscii - Supprimer les caractères non-ASCII (optionnel)
- * @property {TabOptions} tabs - Conversion des tabulations
- * @property {AdvancedNormalizationOptions} advanced - Options supplémentaires de normalisation avancée
+ * Content normalization options
  */
-
 const NormalizationOptions = {
   encoding: 'utf-8', // 'utf-8' | 'latin1' | 'ascii'
   lineBreaks: {
-    normalize: true, // Normaliser les sauts de ligne
+    normalize: true, // Normalize line breaks
     target: 'unix', // 'unix' (\n) | 'windows' (\r\n) | 'mac' (\r)
-    removeTrailing: true, // Supprimer les sauts de ligne en fin de fichier
-    maxConsecutive: 2 // Nombre maximum de sauts de ligne consécutifs
+    removeTrailing: true, // Remove trailing line breaks at end of file
+    maxConsecutive: 2 // Maximum number of consecutive line breaks
   },
-  removeNonAscii: false, // Supprimer les caractères non-ASCII
+  removeNonAscii: false, // Remove non-ASCII characters
   tabs: {
-    convertToSpaces: true, // Convertir les tabulations en espaces
-    tabSize: 2 // Taille d'une tabulation en espaces
+    convertToSpaces: true, // Convert tabs to spaces
+    tabSize: 2 // Tab size in spaces
   },
-  // Options supplémentaires de normalisation avancée
+  // Additional advanced normalization options
   advanced: getAdvancedNormalizationPreset('default')
 };
 
 /**
- * Options de rendu documentaire
- * @typedef {Object} RenderingOptions
- * @property {TableOfContentsOptions} tableOfContents - Génération table des matières
- * @property {SectionNumberingOptions} sectionNumbering - Numérotation des sections
- * @property {LineWrapOptions} lineWrap - Largeur maximale des lignes
- * @property {ListStyleOptions} listStyle - Style des listes
+ * Document rendering options
  */
 const RenderingOptions = {
   tableOfContents: {
-    enabled: false, // Générer une table des matières
-    depth: 3, // Profondeur maximale (1-6)
+    enabled: false, // Generate table of contents
+    depth: 3, // Maximum depth (1-6)
     position: 'top' // 'top' | 'bottom' | 'none'
   },
   sectionNumbering: {
-    enabled: false, // Numéroter les sections
-    depth: 3, // Profondeur maximale de numérotation
+    enabled: false, // Number sections
+    depth: 3, // Maximum numbering depth
     style: 'numeric' // 'numeric' | 'alpha' | 'roman'
   },
   lineWrap: {
-    enabled: false, // Activer le retour à la ligne automatique
-    maxWidth: 80, // Largeur maximale en caractères
-    hardWrap: false // Retour à la ligne forcé (hard wrap)
+    enabled: false, // Enable automatic line wrapping
+    maxWidth: 80, // Maximum width in characters
+    hardWrap: false // Forced line break (hard wrap)
   },
   listStyle: {
     bulletStyle: 'dash', // 'dash' | 'asterisk' | 'plus' | 'circle'
     numberedStyle: 'numeric', // 'numeric' | 'alpha' | 'roman'
-    indentChar: ' ', // Caractère d'indentation
-    indentSize: 2 // Taille d'indentation
+    indentChar: ' ', // Indentation character
+    indentSize: 2 // Indentation size
   }
 };
 
 /**
- * Options spécifiques aux formats de sortie
- * @typedef {Object} FormatSpecificOptions
- * @property {MarkdownOptions} markdown - Options Markdown
- * @property {AsciiDocOptions} asciidoc - Options AsciiDoc
- * @property {PDFOptions} pdf - Options PDF
- * @property {HTMLOptions} html - Options HTML
+ * Format-specific output options
  */
 const FormatSpecificOptions = {
   markdown: {
     flavor: 'commonmark', // 'commonmark' | 'gfm' | 'markdown'
-    parsedown: false, // Compatibilité Parsedown (BookStack)
+    parsedown: false, // Parsedown compatibility (BookStack)
     gfmExtensions: {
       tables: true,
       strikethrough: true,
       taskLists: true,
       autolinks: true
     },
-    preserveHtml: false, // Préserver le HTML dans le Markdown
+    preserveHtml: false, // Preserve HTML in Markdown
     codeFenceStyle: 'backtick' // 'backtick' | 'tilde'
   },
   asciidoc: {
@@ -150,68 +570,51 @@ const FormatSpecificOptions = {
     },
     fontFamily: 'default', // 'default' | 'serif' | 'sans-serif' | 'monospace'
     fontSize: '12pt',
-    template: null, // Chemin vers un template personnalisé (optionnel)
+    template: null, // Path to custom template (optional)
     engine: 'pdflatex' // 'pdflatex' | 'xelatex' | 'lualatex' | 'wkhtmltopdf'
   },
   html: {
-    standalone: true, // Document HTML complet avec <html>, <head>, <body>
-    embedImages: false, // Intégrer les images en base64
-    css: null, // Chemin vers une feuille de style CSS (optionnel)
-    minify: false // Minifier le HTML
+    standalone: true, // Complete HTML document with <html>, <head>, <body>
+    embedImages: false, // Embed images as base64
+    css: null, // Path to CSS stylesheet (optional)
+    minify: false // Minify HTML
   }
 };
 
 /**
- * Options de sécurité et robustesse
- * @typedef {Object} SecurityOptions
- * @property {number} maxFileSize - Taille maximale du fichier en octets
- * @property {number} conversionTimeout - Timeout de conversion en millisecondes
- * @property {ExternalResourcesOptions} externalResources - Gestion des ressources externes
- * @property {ValidationOptions} validation - Options de validation
+ * Security and robustness options
  */
 const SecurityOptions = {
-  maxFileSize: 10 * 1024 * 1024, // 10 MB par défaut
-  conversionTimeout: 30000, // 30 secondes par défaut
+  maxFileSize: 10 * 1024 * 1024, // 10 MB by default
+  conversionTimeout: 30000, // 30 seconds by default
   externalResources: {
-    allowExternalLinks: true, // Autoriser les liens externes
-    allowImages: true, // Autoriser les images
-    allowScripts: false, // Autoriser les scripts (désactivé par défaut)
-    allowStyles: true, // Autoriser les styles
-    sandboxMode: false // Mode sandbox (isolation complète)
+    allowExternalLinks: true, // Allow external links
+    allowImages: true, // Allow images
+    allowScripts: false, // Allow scripts (disabled by default)
+    allowStyles: true, // Allow styles
+    sandboxMode: false // Sandbox mode (complete isolation)
   },
   validation: {
-    enabled: true, // Activer la validation
-    strictMode: false, // Mode strict (rejette les erreurs mineures)
-    maxErrors: 10 // Nombre maximum d'erreurs avant d'abandonner
+    enabled: true, // Enable validation
+    strictMode: false, // Strict mode (rejects minor errors)
+    maxErrors: 10 // Maximum number of errors before giving up
   }
 };
 
 /**
- * Métadonnées du document
- * @typedef {Object} MetadataOptions
- * @property {string} title - Titre du document
- * @property {string} author - Auteur du document
- * @property {string} date - Date du document (ISO 8601 ou format personnalisé)
- * @property {string} language - Langue du document (code ISO 639-1)
- * @property {string} license - Licence du document
- * @property {Object} custom - Métadonnées personnalisées (clé-valeur)
+ * Document metadata
  */
 const MetadataOptions = {
   title: null,
   author: null,
-  date: null, // Si null, utilise la date actuelle
-  language: 'fr', // Code ISO 639-1 (fr, en, es, etc.)
+  date: null, // If null, uses current date
+  language: 'fr', // ISO 639-1 code (fr, en, es, etc.)
   license: null,
-  custom: {} // Objet pour métadonnées personnalisées
+  custom: {} // Object for custom metadata
 };
 
 /**
- * Options développeur
- * @typedef {Object} DeveloperOptions
- * @property {boolean} debugMode - Mode debug
- * @property {boolean} exportIntermediate - Exporter les formats intermédiaires
- * @property {boolean} showPipeline - Afficher le pipeline de conversion
- * @property {LoggingOptions} logging - Options de logging
+ * Developer options
  */
 const DeveloperOptions = {
   debugMode: false,
@@ -220,12 +623,12 @@ const DeveloperOptions = {
   logging: {
     level: 'info', // 'debug' | 'info' | 'warn' | 'error'
     verbose: false,
-    saveLogs: false // Sauvegarder les logs dans un fichier
+    saveLogs: false // Save logs to file
   }
 };
 
 /**
- * Configuration par défaut complète
+ * Complete default configuration
  */
 const DEFAULT_CONVERSION_OPTIONS = {
   contentAnalysis: ContentAnalysisOptions,
@@ -238,14 +641,14 @@ const DEFAULT_CONVERSION_OPTIONS = {
 };
 
 /**
- * Fusionne les options utilisateur avec les options par défaut
- * @param {Partial<ConversionOptions>} userOptions - Options fournies par l'utilisateur
- * @returns {ConversionOptions} Options fusionnées
+ * Merges user options with default options
+ * @param {Partial<ConversionOptions>} userOptions - Options provided by user
+ * @returns {ConversionOptions} Merged options
  */
 function mergeOptions(userOptions = {}) {
   const merged = JSON.parse(JSON.stringify(DEFAULT_CONVERSION_OPTIONS));
   
-  // Fusion récursive
+  // Recursive merge
   function deepMerge(target, source) {
     for (const key in source) {
       if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
@@ -259,7 +662,7 @@ function mergeOptions(userOptions = {}) {
   
   deepMerge(merged, userOptions);
   
-  // Fusion spéciale pour les options avancées de normalisation
+  // Special merge for advanced normalization options
   if (userOptions.normalization?.advanced) {
     merged.normalization.advanced = mergeAdvancedNormalizationOptions(
       userOptions.normalization.advanced,
@@ -271,44 +674,44 @@ function mergeOptions(userOptions = {}) {
 }
 
 /**
- * Valide les options de conversion
- * @param {Partial<ConversionOptions>} options - Options à valider
- * @returns {{valid: boolean, errors: string[]}} Résultat de la validation
+ * Validates conversion options
+ * @param {Partial<ConversionOptions>} options - Options to validate
+ * @returns {{valid: boolean, errors: string[]}} Validation result
  */
 function validateOptions(options) {
   const errors = [];
   
-  // Validation du mode d'analyse
+  // Analysis mode validation
   if (options.contentAnalysis?.analysisMode && 
       !['basic', 'heuristic', 'strict'].includes(options.contentAnalysis.analysisMode)) {
-    errors.push('contentAnalysis.analysisMode doit être "basic", "heuristic" ou "strict"');
+    errors.push('contentAnalysis.analysisMode must be "basic", "heuristic" or "strict"');
   }
   
-  // Validation de l'encodage
+  // Encoding validation
   if (options.normalization?.encoding && 
       !['utf-8', 'latin1', 'ascii'].includes(options.normalization.encoding)) {
-    errors.push('normalization.encoding doit être "utf-8", "latin1" ou "ascii"');
+    errors.push('normalization.encoding must be "utf-8", "latin1" or "ascii"');
   }
   
-  // Validation de la taille maximale
+  // Maximum size validation
   if (options.security?.maxFileSize && 
       (typeof options.security.maxFileSize !== 'number' || options.security.maxFileSize <= 0)) {
-    errors.push('security.maxFileSize doit être un nombre positif');
+    errors.push('security.maxFileSize must be a positive number');
   }
   
-  // Validation du timeout
+  // Timeout validation
   if (options.security?.conversionTimeout && 
       (typeof options.security.conversionTimeout !== 'number' || options.security.conversionTimeout <= 0)) {
-    errors.push('security.conversionTimeout doit être un nombre positif');
+    errors.push('security.conversionTimeout must be a positive number');
   }
   
-  // Validation du format Markdown
+  // Markdown format validation
   if (options.formatSpecific?.markdown?.flavor && 
       !['commonmark', 'gfm', 'markdown'].includes(options.formatSpecific.markdown.flavor)) {
-    errors.push('formatSpecific.markdown.flavor doit être "commonmark", "gfm" ou "markdown"');
+    errors.push('formatSpecific.markdown.flavor must be "commonmark", "gfm" or "markdown"');
   }
   
-  // Validation des options avancées de normalisation
+  // Advanced normalization options validation
   if (options.normalization?.advanced) {
     const advancedValidation = validateAdvancedNormalizationOptions(options.normalization.advanced);
     if (!advancedValidation.valid) {
@@ -322,7 +725,12 @@ function validateOptions(options) {
   };
 }
 
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
 module.exports = {
+  // General conversion options
   DEFAULT_CONVERSION_OPTIONS,
   mergeOptions,
   validateOptions,
@@ -332,5 +740,21 @@ module.exports = {
   FormatSpecificOptions,
   SecurityOptions,
   MetadataOptions,
-  DeveloperOptions
+  DeveloperOptions,
+  
+  // Advanced normalization options
+  DefaultAdvancedNormalizationOptions,
+  StrictAdvancedNormalizationOptions,
+  PermissiveAdvancedNormalizationOptions,
+  getAdvancedNormalizationPreset,
+  mergeAdvancedNormalizationOptions,
+  validateAdvancedNormalizationOptions,
+  
+  // Encoding options
+  DefaultEncodingOptions,
+  StrictEncodingOptions,
+  PermissiveEncodingOptions,
+  validateEncodingOptions,
+  mergeEncodingOptions,
+  getEncodingPreset
 };

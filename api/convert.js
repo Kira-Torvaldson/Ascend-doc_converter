@@ -715,16 +715,16 @@ async function convertWithPandoc(text, fromFormat, toFormat) {
     throw new Error('Target format must be specified')
   }
 
-  // Liste des formats supportés par Pandoc
+  // List of formats supported by Pandoc
   const supportedFormats = ['markdown', 'asciidoc', 'docx', 'pdf', 'epub', 'rst', 'tex', 'latex', 'html', 'yaml', 'json', 'txt']
   
-  // Normaliser les formats
+  // Normalize formats
   const normalizedFrom = fromFormat.toLowerCase()
   const normalizedTo = toFormat.toLowerCase()
 
-  // Mapper les formats vers les noms Pandoc
-  // Note: "plain" est un format de sortie uniquement, pas d'entrée
-  // Pour txt, on utilise "markdown" car Pandoc peut interpréter du texte brut comme Markdown
+  // Map formats to Pandoc names
+  // Note: "plain" is output format only, not input
+  // For txt, we use "markdown" because Pandoc can interpret plain text as Markdown
   const pandocInputFormatMap = {
     'txt': 'markdown',
     'asciidoc': 'asciidoc',
@@ -755,21 +755,21 @@ async function convertWithPandoc(text, fromFormat, toFormat) {
     'latex': 'latex'
   }
 
-  // Obtenir les formats Pandoc (entrée et sortie séparés)
+  // Get Pandoc formats (input and output separated)
   const pandocFrom = pandocInputFormatMap[normalizedFrom] || normalizedFrom
   const pandocTo = pandocOutputFormatMap[normalizedTo] || normalizedTo
 
-  // Vérifier que les formats sont supportés (vérifier les formats originaux)
+  // Check that formats are supported (check original formats)
   if (!supportedFormats.includes(normalizedFrom)) {
-    throw new Error(`Format source non supporté: ${fromFormat}. Formats supportés: ${supportedFormats.join(', ')}`)
+    throw new Error(`Unsupported source format: ${fromFormat}. Supported formats: ${supportedFormats.join(', ')}`)
   }
   
   if (!supportedFormats.includes(normalizedTo)) {
-    throw new Error(`Format de sortie non supporté: ${toFormat}. Formats supportés: ${supportedFormats.join(', ')}`)
+    throw new Error(`Unsupported output format: ${toFormat}. Supported formats: ${supportedFormats.join(', ')}`)
   }
 
   return new Promise((resolve, reject) => {
-    // Déterminer l'extension du fichier source
+    // Determine source file extension
     const sourceExt = normalizedFrom === 'asciidoc' ? 'adoc' : (normalizedFrom === 'txt' ? 'txt' : normalizedFrom)
     const targetExt = normalizedTo === 'asciidoc' ? 'adoc' : (normalizedTo === 'txt' ? 'txt' : normalizedTo)
     
@@ -780,7 +780,7 @@ async function convertWithPandoc(text, fromFormat, toFormat) {
       // Write input to temporary file
       writeFileSync(tempInput, text, 'utf-8')
 
-      // Run Pandoc: fromFormat -> toFormat (utiliser les formats Pandoc mappés)
+      // Run Pandoc: fromFormat -> toFormat (use mapped Pandoc formats)
       const pandoc = spawn('pandoc', [
         '-f', pandocFrom,
         '-t', pandocTo,
@@ -877,7 +877,7 @@ function text2markdown(text) {
     const nextLine = i < lines.length - 1 ? lines[i + 1] : ''
     const prevLine = i > 0 ? lines[i - 1] : ''
 
-    // Détecter les blocs de code (lignes qui commencent par 4 espaces ou une tabulation)
+    // Detect code blocks (lines starting with 4 spaces or a tab)
     if (trimmed === '' && prevLine.trim() !== '' && nextLine.match(/^    |^\t/)) {
       if (!inCodeBlock) {
         markdown.push('```')
@@ -898,9 +898,9 @@ function text2markdown(text) {
       continue
     }
 
-    // Détecter les titres (lignes en majuscules ou avec des caractères spéciaux)
+    // Detect headings (uppercase lines or with special characters)
     if (trimmed.length > 0 && trimmed.length < 100) {
-      // Titre de niveau 1 : ligne en majuscules suivie d'une ligne vide ou d'une ligne de séparation
+      // Level 1 heading: uppercase line followed by empty line or separator line
       if (trimmed === trimmed.toUpperCase() && trimmed.match(/^[A-Z\s]+$/) && trimmed.length > 3) {
         if (nextLine.trim() === '' || nextLine.match(/^[=-]+$/)) {
           markdown.push(`# ${trimmed}`)
@@ -910,26 +910,26 @@ function text2markdown(text) {
         }
       }
       
-      // Titre de niveau 2 : ligne suivie de ===
+      // Level 2 heading: line followed by ===
       if (nextLine.match(/^=+$/)) {
         markdown.push(`## ${trimmed}`)
         markdown.push('')
         inList = false
-        i++ // Skip la ligne de séparation
+        i++ // Skip separator line
         continue
       }
       
-      // Titre de niveau 3 : ligne suivie de ---
+      // Level 3 heading: line followed by ---
       if (nextLine.match(/^-+$/)) {
         markdown.push(`### ${trimmed}`)
         markdown.push('')
         inList = false
-        i++ // Skip la ligne de séparation
+        i++ // Skip separator line
         continue
       }
     }
 
-    // Détecter les listes
+    // Detect lists
     const listMatch = trimmed.match(/^(\d+[.)]|\*|\-|\+)\s+(.+)$/)
     if (listMatch) {
       const marker = listMatch[1]
@@ -948,7 +948,7 @@ function text2markdown(text) {
       continue
     }
 
-    // Fin de liste
+    // End of list
     if (inList && trimmed === '') {
       if (nextLine.trim() === '' || (!nextLine.match(/^(\d+[.)]|\*|\-|\+)\s+/) && nextLine.trim() !== '')) {
         markdown.push('')
@@ -957,7 +957,7 @@ function text2markdown(text) {
       }
     }
 
-    // Détecter les séparateurs horizontaux
+    // Detect horizontal separators
     if (trimmed.match(/^[-*_]{3,}$/)) {
       markdown.push('---')
       markdown.push('')
@@ -965,15 +965,15 @@ function text2markdown(text) {
       continue
     }
 
-    // Paragraphe normal
+    // Normal paragraph
     if (trimmed !== '') {
-      // Détecter les liens simples (http://, https://, www.)
+      // Detect simple links (http://, https://, www.)
       let processedLine = trimmed.replace(/(https?:\/\/[^\s]+|www\.[^\s]+)/g, (url) => {
         const displayUrl = url.replace(/^https?:\/\//, '').replace(/^www\./, 'www.')
         return `[${displayUrl}](${url.startsWith('http') ? url : 'https://' + url})`
       })
       
-      // Détecter les emails
+      // Detect emails
       processedLine = processedLine.replace(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, (email) => {
         return `[${email}](mailto:${email})`
       })

@@ -171,14 +171,14 @@ const userOptions = {
     encoding: 'utf-8', // Forcer UTF-8
   },
   invalidCharacters: {
-    strategy: 'fail', // Échouer sur caractères invalides
+    strategy: 'fail', // Fail on invalid characters
   },
   processingMode: {
-    mode: 'strict', // Mode strict
+    mode: 'strict', // Strict mode
   },
 };
 
-// Fusionner avec les valeurs par défaut
+// Merge with default values
 const options = mergeEncodingOptions(userOptions);
 
 // Valider
