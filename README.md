@@ -165,13 +165,17 @@ npm run preview
    - La fenêtre est déplaçable, redimensionnable, minimisable et maximisable
 
 6. **Options de conversion** :
-   - Cliquez sur l'icône ⚙️ pour ouvrir le panneau d'options
-   - Configurez :
+   - Dans la sidebar de gauche, section "Autres options"
+   - Développez les sections pour configurer :
      - **Analyse du contenu** : Mode d'analyse, détection des titres/listes
      - **Normalisation** : Encodage, Unicode, nettoyage des caractères
      - **Rendu documentaire** : Table des matières, numérotation, retour à la ligne
      - **Métadonnées** : Titre, auteur, langue
      - **Options de format** : Flavor Markdown, mode de compatibilité
+
+7. **Paramètres de l'application** :
+   - Cliquez sur l'icône ⚙️ dans l'en-tête pour ouvrir le panneau de paramètres
+   - Configurez les paramètres utilisateur de l'API (disponible prochainement)
 
 7. **Édition des résultats** :
    - ✏️ **Activer l'édition** : Cliquez sur le bouton (confirmation requise)
