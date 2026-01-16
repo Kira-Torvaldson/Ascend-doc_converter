@@ -65,3 +65,12 @@ export interface ConversionOptions {
   };
   [key: string]: any;
 }
+
+export interface ConversionHistoryItem {
+  id: string;
+  timestamp: number;
+  fromFormat: FormatType;
+  toFormat: FormatType;
+  sourceContent: string;
+  resultContent: string;
+}

@@ -18,7 +18,7 @@
  * - Gestion d'erreurs normalisée et journalisation sécurisée
  */
 
-const { spawn, randomBytes } = require('child_process')
+const { spawn } = require('child_process')
 const { 
   writeFileSync, 
   readFileSync, 
@@ -28,7 +28,7 @@ const {
 } = require('fs')
 const { tmpdir } = require('os')
 const path = require('path')
-const { randomUUID } = require('crypto')
+const { randomBytes, randomUUID } = require('crypto')
 
 // ============================================================================
 // CONFIGURATION DES TOKENS DE CONFIRMATION

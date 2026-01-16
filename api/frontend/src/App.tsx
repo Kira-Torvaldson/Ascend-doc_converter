@@ -57,7 +57,7 @@ import {
   convertText,
   requestConfirmationToken
 } from "./converters";
-import { FormatType } from "./types";
+import { FormatType, ConversionHistoryItem } from "./types";
 
 /**
  * ============================================================================
@@ -148,6 +148,32 @@ function App() {
   
   /** Shows confirmation modal to clear source content */
   const [showClearSourceModal, setShowClearSourceModal] = useState<boolean>(false);
+
+  /** Shows help modal for keyboard shortcuts */
+  const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
+
+  /** Shows history panel */
+  const [showHistoryPanel, setShowHistoryPanel] = useState<boolean>(false);
+
+  /** Current view mode for result panel: 'text' or 'preview' */
+  const [resultViewMode, setResultViewMode] = useState<'text' | 'preview'>('text');
+
+  // ==========================================================================
+  // STATES: CONVERSION HISTORY
+  // ==========================================================================
+  
+  /** History of conversions (stored in localStorage) */
+  const [conversionHistory, setConversionHistory] = useState<ConversionHistoryItem[]>(() => {
+    try {
+      const stored = localStorage.getItem('ascend_conversion_history');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.error('Error loading conversion history:', e);
+    }
+    return [];
+  });
 
   // ==========================================================================
   // STATES: ORIGINAL CONTENT BACKUP (for restoration)
@@ -431,8 +457,10 @@ function App() {
   useEffect(() => {
     if (notification && notification.visible) {
       const timer = setTimeout(() => {
-        setNotification(null);
-      }, 10000); // 10 seconds
+        setNotification(prev => prev ? { ...prev, visible: false } : null);
+        // Remove from DOM after fade out animation
+        setTimeout(() => setNotification(null), 300);
+      }, 5000); // 5 seconds (reduced from 10)
 
       return () => clearTimeout(timer);
     }
@@ -997,6 +1025,160 @@ function App() {
   };
 
   /**
+   * Exports the result content as a file
+   * 
+   * Creates a downloadable file with the result content.
+   * User can choose the filename.
+   */
+  const handleExport = useCallback(() => {
+    // Get content directly from state
+    const textToExport = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+    if (!textToExport || !textToExport.trim()) {
+      setStatus("Aucun contenu à exporter");
+      return;
+    }
+
+    // Determine file extension based on format
+    const extensions: Record<FormatType, string> = {
+      'asciidoc': '.adoc',
+      'markdown': '.md',
+      'html': '.html',
+      'pdf': '.pdf',
+      'yaml': '.yaml',
+      'json': '.json',
+      'txt': '.txt'
+    };
+
+    const extension = extensions[targetFormat] || '.txt';
+    const defaultFileName = `conversion_${new Date().toISOString().slice(0, 10)}${extension}`;
+    
+    // Prompt user for filename
+    const fileName = prompt(`Nom du fichier:`, defaultFileName) || defaultFileName;
+
+    // Create blob and download
+    const blob = new Blob([textToExport], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setStatus(`Fichier exporté: ${fileName}`);
+  }, [targetFormat, adocInput, mdOutput]);
+
+  /**
+   * Saves current conversion to history
+   */
+  const saveToHistory = useCallback(() => {
+    // Get content directly from state
+    const sourceContent = sourceFormat === 'markdown' ? mdOutput : adocInput;
+    const resultContent = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+    
+    if (!sourceContent.trim() || !resultContent.trim()) {
+      return; // Don't save empty conversions
+    }
+
+    const historyItem: ConversionHistoryItem = {
+      id: Date.now().toString(),
+      timestamp: Date.now(),
+      fromFormat: sourceFormat,
+      toFormat: targetFormat,
+      sourceContent,
+      resultContent
+    };
+
+    setConversionHistory(prev => {
+      const newHistory = [historyItem, ...prev].slice(0, 50); // Keep last 50
+      try {
+        localStorage.setItem('ascend_conversion_history', JSON.stringify(newHistory));
+      } catch (e) {
+        console.error('Error saving conversion history:', e);
+      }
+      return newHistory;
+    });
+  }, [sourceFormat, targetFormat, adocInput, mdOutput]);
+
+  /**
+   * Restores a conversion from history
+   */
+  const restoreFromHistory = useCallback((item: ConversionHistoryItem) => {
+    // Set content directly based on format
+    if (item.fromFormat === 'markdown') {
+      setMdOutput(item.sourceContent);
+    } else {
+      setAdocInput(item.sourceContent);
+    }
+    
+    if (item.toFormat === 'asciidoc') {
+      setAdocInput(item.resultContent);
+    } else {
+      setMdOutput(item.resultContent);
+    }
+    
+    setSourceFormat(item.fromFormat);
+    setTargetFormat(item.toFormat);
+    setShowHistoryPanel(false);
+    setStatus(`Conversion restaurée depuis l'historique`);
+  }, []);
+
+  /**
+   * Clears conversion history
+   */
+  const clearHistory = useCallback(() => {
+    if (confirm('Êtes-vous sûr de vouloir effacer tout l\'historique ?')) {
+      setConversionHistory([]);
+      try {
+        localStorage.removeItem('ascend_conversion_history');
+      } catch (e) {
+        console.error('Error clearing conversion history:', e);
+      }
+      setStatus('Historique effacé');
+    }
+  }, []);
+
+  /**
+   * Renders markdown/asciidoc as HTML preview
+   */
+  const renderPreview = useCallback((content: string, format: FormatType): string => {
+    if (!content.trim()) return '';
+
+    // For now, we'll use a simple markdown renderer
+    // In production, you might want to use a library like marked or markdown-it
+    if (format === 'markdown') {
+      // Simple markdown to HTML conversion
+      let html = content
+        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+        .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
+        .replace(/^##### (.*$)/gim, '<h5>$1</h5>')
+        .replace(/^###### (.*$)/gim, '<h6>$1</h6>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/`(.*?)`/g, '<code>$1</code>')
+        .replace(/\n/g, '<br>');
+      return html;
+    } else if (format === 'asciidoc') {
+      // Simple asciidoc to HTML conversion
+      let html = content
+        .replace(/^= (.*$)/gim, '<h1>$1</h1>')
+        .replace(/^== (.*$)/gim, '<h2>$1</h2>')
+        .replace(/^=== (.*$)/gim, '<h3>$1</h3>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/`(.*?)`/g, '<code>$1</code>')
+        .replace(/\n/g, '<br>');
+      return html;
+    } else if (format === 'html') {
+      return content;
+    }
+    return `<pre>${content}</pre>`;
+  }, []);
+
+  /**
    * Triggers result panel clearing (displays confirmation modal)
    */
   const handleClear = () => {
@@ -1053,6 +1235,20 @@ function App() {
       'txt': 'Texte'
     };
     return titles[format];
+  }, []);
+
+  /**
+   * Calculates text statistics (characters, words, lines)
+   * 
+   * @param text - Text to analyze
+   * @returns Object with characterCount, wordCount, lineCount
+   */
+  const getTextStats = useCallback((text: string) => {
+    const trimmed = text.trim();
+    const characterCount = trimmed.length;
+    const wordCount = trimmed.length > 0 ? trimmed.split(/\s+/).filter(word => word.length > 0).length : 0;
+    const lineCount = trimmed.length > 0 ? trimmed.split('\n').length : 0;
+    return { characterCount, wordCount, lineCount };
   }, []);
 
   /**
@@ -1303,28 +1499,189 @@ function App() {
   }, [confirmationToken, pendingConversion, targetFormat, conversionOptions, setNotification, sourceFormat, adocInput, mdOutput]);
 
   // ==========================================================================
+  // EFFECTS: SAVE TO HISTORY AFTER SUCCESSFUL CONVERSION
+  // ==========================================================================
+  
+  /**
+   * Saves conversion to history when conversion completes successfully
+   */
+  useEffect(() => {
+    if (!loading && justConverted) {
+      // Wait a bit for the result to be set
+      const timer = setTimeout(() => {
+        // Get content directly from state
+        const sourceContent = sourceFormat === 'markdown' ? mdOutput : adocInput;
+        const resultContent = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+        
+        if (sourceContent.trim() && resultContent.trim()) {
+          const historyItem: ConversionHistoryItem = {
+            id: Date.now().toString(),
+            timestamp: Date.now(),
+            fromFormat: sourceFormat,
+            toFormat: targetFormat,
+            sourceContent,
+            resultContent
+          };
+
+          setConversionHistory(prev => {
+            const newHistory = [historyItem, ...prev].slice(0, 50); // Keep last 50
+            try {
+              localStorage.setItem('ascend_conversion_history', JSON.stringify(newHistory));
+            } catch (e) {
+              console.error('Error saving conversion history:', e);
+            }
+            return newHistory;
+          });
+        }
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [loading, justConverted, sourceFormat, targetFormat, adocInput, mdOutput]);
+
+  // ==========================================================================
+  // EFFECTS: KEYBOARD SHORTCUTS
+  // ==========================================================================
+  
+  /**
+   * Handles keyboard shortcuts
+   */
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when user is typing in inputs/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        // Allow Ctrl+S in textarea (save)
+        if (e.ctrlKey && e.key === 's' && target.tagName === 'TEXTAREA') {
+          e.preventDefault();
+          if (isEditingResult) {
+            setShowSaveModal(true);
+          }
+          return;
+        }
+        // Allow Ctrl+/ for help
+        if (e.ctrlKey && e.key === '/') {
+          e.preventDefault();
+          setShowShortcutsModal(true);
+          return;
+        }
+        return;
+      }
+
+      // Global shortcuts
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case 's':
+            e.preventDefault();
+            if (isEditingResult) {
+              setShowSaveModal(true);
+            } else {
+              handleExport();
+            }
+            break;
+          case 'Enter':
+            e.preventDefault();
+            if (!loading) {
+              handleConvert();
+            }
+            break;
+          case 'k':
+            e.preventDefault();
+            handleClearSource();
+            break;
+          case '/':
+            e.preventDefault();
+            setShowShortcutsModal(true);
+            break;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isEditingResult, loading, targetFormat, adocInput, mdOutput, requestConversionConfirmation]);
+
+  // ==========================================================================
   // HANDLERS: CONVERSION
   // ==========================================================================
   
   /**
    * Déclenche le processus de conversion
    * 
-   * MODIFIÉ: Ne convertit plus directement. Demande d'abord un token de
-   * confirmation au backend, puis affiche la modale de confirmation.
-   * La conversion réelle se fait dans confirmAndConvert après validation
-   * du token.
-   * 
-   * FLUX:
-   * 1. Appelle requestConversionConfirmation()
-   * 2. requestConversionConfirmation demande un token
-   * 3. Affiche la modale de confirmation
-   * 4. Si l'utilisateur confirme, confirmAndConvert envoie la requête avec le token
+   * Pour les conversions simples (AsciiDoc → Markdown, Markdown → AsciiDoc, etc.),
+   * convertit directement sans token.
+   * Pour les conversions complexes (via /convert), demande un token de confirmation.
    */
   const handleConvert = useCallback(() => {
-    // Au lieu de convertir directement, demander un token de confirmation
-    // et afficher la modal
-    requestConversionConfirmation();
-  }, [requestConversionConfirmation]);
+    // Vérifier si la conversion nécessite un token
+    // Les conversions simples n'en ont pas besoin
+    const needsToken = !(
+      (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
+      (sourceFormat === 'markdown' && targetFormat === 'asciidoc') ||
+      (sourceFormat === 'txt' && targetFormat === 'markdown') ||
+      (sourceFormat === 'html')
+    );
+
+    if (needsToken) {
+      // Conversion complexe : demander un token
+      requestConversionConfirmation();
+    } else {
+      // Conversion simple : convertir directement
+      // Determine source text according to source format
+      let sourceText = "";
+      if (sourceFormat === 'asciidoc') {
+        sourceText = adocInput;
+      } else if (sourceFormat === 'markdown') {
+        sourceText = mdOutput;
+      } else {
+        // For html, pdf, yaml, json, txt - use adocInput
+        sourceText = adocInput;
+      }
+
+      if (!sourceText.trim()) {
+        setStatus("Veuillez entrer du texte à convertir");
+        setNotification({
+          message: "Veuillez entrer du texte à convertir",
+          type: 'error',
+          visible: true
+        });
+        return;
+      }
+
+      if (sourceFormat === targetFormat) {
+        setStatus("Les formats source et destination sont identiques");
+        setNotification({
+          message: "Les formats source et destination sont identiques",
+          type: 'error',
+          visible: true
+        });
+        return;
+      }
+
+      // Determine where to put result according to destination format
+      const setOutput = (result: string) => {
+        if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
+          setMdOutput(result);
+        } else if (targetFormat === 'asciidoc') {
+          setAdocInput(result);
+        }
+      };
+
+      // Lancer la conversion directement sans token
+      setJustConverted(true);
+      convertText(
+        sourceText,
+        sourceFormat,
+        targetFormat,
+        setStatus,
+        setOutput,
+        setLoading,
+        setNotification,
+        conversionOptions,
+        null // Pas de token pour les conversions simples
+      );
+    }
+  }, [requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, setNotification]);
 
   // ==========================================================================
   // HELPERS: CONTENT MANAGEMENT BY FORMAT
@@ -1420,22 +1777,31 @@ function App() {
     const newSourceFormat = targetFormat;
     const newTargetFormat = sourceFormat;
     
-    // Get current content according to existing logic
-    const currentSourceText = getSourceContent(sourceFormat);
-    const currentTargetText = getTargetContent(targetFormat);
+    // Get current content directly from state
+    const currentSourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
+    const currentTargetText = targetFormat === 'asciidoc' ? adocInput : mdOutput;
     
     // Swap formats
     setSourceFormat(newSourceFormat);
     setTargetFormat(newTargetFormat);
     
-    // Swap content:
+    // Swap content directly:
     // - Old result becomes new source
     // - Old source becomes new result
-    setSourceContent(newSourceFormat, currentTargetText);
-    setTargetContent(newTargetFormat, currentSourceText);
+    if (newSourceFormat === 'markdown') {
+      setMdOutput(currentTargetText);
+    } else {
+      setAdocInput(currentTargetText);
+    }
+    
+    if (newTargetFormat === 'asciidoc') {
+      setAdocInput(currentSourceText);
+    } else {
+      setMdOutput(currentSourceText);
+    }
     
     // Note: Source panel always stays on left and result on right
-  }, [sourceFormat, targetFormat, getSourceContent, getTargetContent, setSourceContent, setTargetContent]);
+  }, [sourceFormat, targetFormat, adocInput, mdOutput]);
 
   // Reusable component for source panel
   const renderSourcePanel = (
@@ -1488,14 +1854,102 @@ function App() {
             onClick={onConvert}
             disabled={loading || !value.trim() || !canConvert}
             title={!canConvert ? "Les formats source et destination doivent être différents" : ""}
+            style={{
+              position: "relative",
+              opacity: loading ? 0.7 : 1
+            }}
           >
-            {loading ? "Conversion..." : "Convertir"}
+            {loading ? (
+              <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <div className="spinner" style={{
+                  width: "14px",
+                  height: "14px",
+                  border: "2px solid rgba(255, 255, 255, 0.3)",
+                  borderTop: "2px solid white",
+                  borderRadius: "50%",
+                  animation: "spin 1.2s linear infinite"
+                }}></div>
+                Conversion...
+              </span>
+            ) : (
+              "Convertir"
+            )}
           </button>
         </div>
       </div>
+      {/* Enhanced Loading indicator in source panel */}
+      {loading && (
+        <div style={{
+          padding: "0.875rem",
+          background: "rgba(59, 130, 246, 0.08)",
+          borderRadius: "0.5rem",
+          marginBottom: "0.5rem",
+          border: "1px solid rgba(59, 130, 246, 0.2)",
+          boxShadow: "0 2px 8px rgba(59, 130, 246, 0.1)"
+        }}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "0.625rem"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
+              <div className="spinner" style={{
+                width: "18px",
+                height: "18px",
+                border: "2.5px solid rgba(59, 130, 246, 0.2)",
+                borderTop: "2.5px solid #3b82f6",
+                borderRadius: "50%",
+                animation: "spin 1.2s linear infinite"
+              }}></div>
+              <span style={{ color: "#3b82f6", fontSize: "0.8rem", fontWeight: "600" }}>
+                Conversion en cours...
+              </span>
+            </div>
+          </div>
+          {/* Progress bar */}
+          <div style={{
+            width: "100%",
+            height: "3px",
+            background: "rgba(59, 130, 246, 0.1)",
+            borderRadius: "2px",
+            overflow: "hidden",
+            position: "relative"
+          }}>
+            <div className="progress-bar" style={{
+              height: "100%",
+              background: "linear-gradient(90deg, #3b82f6, #60a5fa, #3b82f6)",
+              backgroundSize: "200% 100%",
+              borderRadius: "2px",
+              animation: "progress 2.5s ease-in-out infinite, shimmer 3s linear infinite",
+              width: "100%"
+            }}></div>
+          </div>
+        </div>
+      )}
       <div className="panel-toolbar">
         {currentFileName && (
           <span className="file-name">{currentFileName}</span>
+        )}
+        {value && (
+          <div style={{ 
+            display: "flex", 
+            gap: "1rem", 
+            fontSize: "0.75rem", 
+            color: "#6b7280",
+            marginLeft: "auto"
+          }}>
+            {(() => {
+              const stats = getTextStats(value);
+              return (
+                <>
+                  <span title="Nombre de caractères">{stats.characterCount.toLocaleString('fr-FR')} caractères</span>
+                  <span title="Nombre de mots">{stats.wordCount.toLocaleString('fr-FR')} mots</span>
+                  <span title="Nombre de lignes">{stats.lineCount.toLocaleString('fr-FR')} lignes</span>
+                </>
+              );
+            })()}
+          </div>
         )}
       </div>
       {folderFiles.length > 0 && (
@@ -1578,7 +2032,7 @@ function App() {
       sourceFormat !== targetFormat, // Can convert if formats are different
       handleClearSource // Function to clear source content
     );
-  }, [sourceFormat, adocInput, mdOutput, currentFileName, status, headings, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, adocTextAreaRef, navigationEnabled]);
+  }, [sourceFormat, adocInput, mdOutput, currentFileName, status, headings, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, adocTextAreaRef, navigationEnabled, getTextStats]);
 
   // Result panel: displays selected destination format
   const resultCard = useMemo(() => {
@@ -1639,6 +2093,18 @@ function App() {
                 {copied ? "✓ Copié" : "📋"}
               </button>
               <button
+                onClick={handleExport}
+                disabled={isEditingResult || !resultValue.trim()}
+                style={{ 
+                  fontSize: "0.85rem", 
+                  padding: "0.4rem 0.9rem",
+                  background: "#3b82f6"
+                }}
+                title="Télécharger le résultat"
+              >
+                ⬇️ 
+              </button>
+              <button
                 onClick={handleClear}
                 disabled={isEditingResult}
                 style={{ 
@@ -1654,25 +2120,140 @@ function App() {
           )}
         </div>
       </div>
+      {/* Enhanced Loading indicator */}
+      {loading && (
+        <div style={{
+          padding: "1rem",
+          background: "rgba(59, 130, 246, 0.08)",
+          borderRadius: "0.5rem",
+          marginBottom: "0.5rem",
+          border: "1px solid rgba(59, 130, 246, 0.2)",
+          boxShadow: "0 2px 8px rgba(59, 130, 246, 0.1)"
+        }}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "0.75rem"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <div className="spinner" style={{
+                width: "20px",
+                height: "20px",
+                border: "3px solid rgba(59, 130, 246, 0.2)",
+                borderTop: "3px solid #3b82f6",
+                borderRadius: "50%",
+                animation: "spin 1.2s linear infinite"
+              }}></div>
+              <span style={{ color: "#3b82f6", fontSize: "0.875rem", fontWeight: "600" }}>
+                Conversion en cours...
+              </span>
+            </div>
+            <span style={{
+              color: "#6b7280",
+              fontSize: "0.75rem",
+              fontFamily: "monospace"
+            }}>
+              {status || "Traitement..."}
+            </span>
+          </div>
+          {/* Progress bar */}
+          <div style={{
+            width: "100%",
+            height: "4px",
+            background: "rgba(59, 130, 246, 0.1)",
+            borderRadius: "2px",
+            overflow: "hidden",
+            position: "relative"
+          }}>
+            <div className="progress-bar" style={{
+              height: "100%",
+              background: "linear-gradient(90deg, #3b82f6, #60a5fa, #3b82f6)",
+              backgroundSize: "200% 100%",
+              borderRadius: "2px",
+              animation: "progress 2.5s ease-in-out infinite, shimmer 3s linear infinite",
+              width: "100%"
+            }}></div>
+          </div>
+        </div>
+      )}
+      {/* Statistics toolbar for result panel */}
+      {resultValue && (
+        <div className="panel-toolbar" style={{ 
+          display: "flex", 
+          justifyContent: "flex-end",
+          padding: "0.5rem 0"
+        }}>
+          <div style={{ 
+            display: "flex", 
+            gap: "1rem", 
+            fontSize: "0.75rem", 
+            color: "#6b7280"
+          }}>
+            {(() => {
+              const stats = getTextStats(resultValue);
+              return (
+                <>
+                  <span title="Nombre de caractères">{stats.characterCount.toLocaleString('fr-FR')} caractères</span>
+                  <span title="Nombre de mots">{stats.wordCount.toLocaleString('fr-FR')} mots</span>
+                  <span title="Nombre de lignes">{stats.lineCount.toLocaleString('fr-FR')} lignes</span>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
       <textarea
         value={resultValue}
         onChange={(e) => setResultValue(e.target.value)}
         readOnly={!isEditingResult}
-        placeholder={`Résultat ${getFormatTitle(targetFormat)}...`}
+        placeholder={loading ? "Conversion en cours..." : `Résultat ${getFormatTitle(targetFormat)}...`}
         style={{
-          cursor: isEditingResult ? "text" : "default"
+          cursor: isEditingResult ? "text" : "default",
+          opacity: loading ? 0.6 : 1,
+          transition: "opacity 0.2s"
         }}
       />
     </section>
     );
-  }, [targetFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, getFormatTitle, setMdOutput, setAdocInput]);
+  }, [targetFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, getFormatTitle, setMdOutput, setAdocInput, handleExport, getTextStats]);
 
   return (
     <div className="page">
       {notification && notification.visible && (
         <div className={`notification notification-${notification.type}`}>
           <div className="notification-content">
-            <span className="notification-message">{notification.message}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: 1 }}>
+              {/* Icon based on type */}
+              {notification.type === 'success' && (
+                <span style={{ fontSize: "1.25rem" }}>✓</span>
+              )}
+              {notification.type === 'error' && (
+                <span style={{ fontSize: "1.25rem" }}>✕</span>
+              )}
+              <span className="notification-message">{notification.message}</span>
+            </div>
+            <button
+              onClick={() => setNotification(null)}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "white",
+                cursor: "pointer",
+                padding: "0.25rem",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "0.25rem",
+                opacity: 0.8,
+                transition: "opacity 0.2s"
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = "1"}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = "0.8"}
+              title="Fermer"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
@@ -1693,17 +2274,46 @@ function App() {
               <h1>Ascend - Convertisseur de documents</h1>
             </div>
           </div>
-          <button
-            type="button"
-            className="settings-button"
-            onClick={() => setSettingsOpen(!settingsOpen)}
-            title="Paramètres"
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M19.4 15C19.2669 15.3016 19.2272 15.6362 19.286 15.9606C19.3448 16.285 19.4995 16.5843 19.73 16.82L19.79 16.88C19.976 17.0657 20.1235 17.2863 20.2241 17.5291C20.3248 17.7719 20.3766 18.0322 20.3766 18.295C20.3766 18.5578 20.3248 18.8181 20.2241 19.0609C20.1235 19.3037 19.976 19.5243 19.79 19.71C19.6043 19.896 19.3837 20.0435 19.1409 20.1441C18.8981 20.2448 18.6378 20.2966 18.375 20.2966C18.1122 20.2966 17.8519 20.2448 17.6091 20.1441C17.3663 20.0435 17.1457 19.896 16.96 19.71L16.9 19.65C16.6643 19.4195 16.365 19.2648 16.0406 19.206C15.7162 19.1472 15.3816 19.1869 15.08 19.32C14.7842 19.4468 14.532 19.6572 14.3543 19.9255C14.1766 20.1938 14.0813 20.5082 14.08 20.83V21C14.08 21.5304 13.8693 22.0391 13.4942 22.4142C13.1191 22.7893 12.6104 23 12.08 23C11.5496 23 11.0409 22.7893 10.6658 22.4142C10.2907 22.0391 10.08 21.5304 10.08 21V20.91C10.0723 20.579 9.96512 20.258 9.77251 19.9887C9.5799 19.7194 9.31074 19.5143 9 19.4C8.69838 19.2669 8.36381 19.2272 8.03941 19.286C7.71502 19.3448 7.41568 19.4995 7.18 19.73L7.12 19.79C6.93425 19.976 6.71368 20.1235 6.47088 20.2241C6.22808 20.3248 5.96783 20.3766 5.705 20.3766C5.44217 20.3766 5.18192 20.3248 4.93912 20.2241C4.69632 20.1235 4.47575 19.976 4.29 19.79C4.10405 19.6043 3.95653 19.3837 3.85588 19.1409C3.75523 18.8981 3.70343 18.6378 3.70343 18.375C3.70343 18.1122 3.75523 17.8519 3.85588 17.6091C3.95653 17.3663 4.10405 17.1457 4.29 16.96L4.35 16.9C4.58054 16.6643 4.73519 16.365 4.794 16.0406C4.85282 15.7162 4.81312 15.3816 4.68 15.08C4.55324 14.7842 4.34276 14.532 4.07447 14.3543C3.80618 14.1766 3.49179 14.0813 3.17 14.08H3C2.46957 14.08 1.96086 13.8693 1.58579 13.4942C1.21071 13.1191 1 12.6104 1 12.08C1 11.5496 1.21071 11.0409 1.58579 10.6658C1.96086 10.2907 2.46957 10.08 3 10.08H3.09C3.42099 10.0723 3.742 9.96512 4.01131 9.77251C4.28062 9.5799 4.48571 9.31074 4.6 9C4.73312 8.69838 4.77282 8.36381 4.714 8.03941C4.65519 7.71502 4.50054 7.41568 4.27 7.18L4.21 7.12C4.02405 6.93425 3.87653 6.71368 3.77588 6.47088C3.67523 6.22808 3.62343 5.96783 3.62343 5.705C3.62343 5.44217 3.67523 5.18192 3.77588 4.93912C3.87653 4.69632 4.02405 4.47575 4.21 4.29C4.39575 4.10405 4.61632 3.95653 4.85912 3.85588C5.10192 3.75523 5.36217 3.70343 5.625 3.70343C5.88783 3.70343 6.14808 3.75523 6.39088 3.85588C6.63368 3.95653 6.85425 4.10405 7.04 4.29L7.1 4.35C7.33568 4.58054 7.63502 4.73519 7.95941 4.794C8.28381 4.85282 8.61838 4.81312 8.92 4.68H9C9.29577 4.55324 9.54802 4.34276 9.72569 4.07447C9.90337 3.80618 9.99872 3.49179 10 3.17V3C10 2.46957 10.2107 1.96086 10.5858 1.58579C10.9609 1.21071 11.4696 1 12 1C12.5304 1 13.0391 1.21071 13.4142 1.58579C13.7893 1.96086 14 2.46957 14 3V3.09C14.0013 3.41179 14.0966 3.72618 14.2743 3.99447C14.452 4.26276 14.7042 4.47324 15 4.6C15.3016 4.73312 15.6362 4.77282 15.9606 4.714C16.285 4.65519 16.5843 4.50054 16.82 4.27L16.88 4.21C17.0657 4.02405 17.2863 3.87653 17.5291 3.77588C17.7719 3.67523 18.0322 3.62343 18.295 3.62343C18.5578 3.62343 18.8181 3.67523 19.0609 3.77588C19.3037 3.87653 19.5243 4.02405 19.71 4.21C19.896 4.39575 20.0435 4.61632 20.1441 4.85912C20.2448 5.10192 20.2966 5.36217 20.2966 5.625C20.2966 5.88783 20.2448 6.14808 20.1441 6.39088C20.0435 6.63368 19.896 6.85425 19.71 7.04L19.65 7.1C19.4195 7.33568 19.2648 7.63502 19.206 7.95941C19.1472 8.28381 19.1869 8.61838 19.32 8.92V9C19.4468 9.29577 19.6572 9.54802 19.9255 9.72569C20.1938 9.90337 20.5082 9.99872 20.83 10H21C21.5304 10 22.0391 10.2107 22.4142 10.5858C22.7893 10.9609 23 11.4696 23 12C23 12.5304 22.7893 13.0391 22.4142 13.4142C22.0391 13.7893 21.5304 14 21 14H20.91C20.5882 14.0013 20.2738 14.0966 20.0055 14.2743C19.7372 14.452 19.5268 14.7042 19.4 15Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <button
+              type="button"
+              className="settings-button"
+              onClick={() => setShowHistoryPanel(!showHistoryPanel)}
+              title="Historique des conversions"
+              style={{ position: "relative" }}
+            >
+              📜
+              {conversionHistory.length > 0 && (
+                <span style={{
+                  position: "absolute",
+                  top: "-4px",
+                  right: "-4px",
+                  background: "#ef4444",
+                  color: "white",
+                  borderRadius: "50%",
+                  width: "18px",
+                  height: "18px",
+                  fontSize: "0.7rem",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}>
+                  {conversionHistory.length > 9 ? "9+" : conversionHistory.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              className="settings-button"
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              title="Paramètres"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M19.4 15C19.2669 15.3016 19.2272 15.6362 19.286 15.9606C19.3448 16.285 19.4995 16.5843 19.73 16.82L19.79 16.88C19.976 17.0657 20.1235 17.2863 20.2241 17.5291C20.3248 17.7719 20.3766 18.0322 20.3766 18.295C20.3766 18.5578 20.3248 18.8181 20.2241 19.0609C20.1235 19.3037 19.976 19.5243 19.79 19.71C19.6043 19.896 19.3837 20.0435 19.1409 20.1441C18.8981 20.2448 18.6378 20.2966 18.375 20.2966C18.1122 20.2966 17.8519 20.2448 17.6091 20.1441C17.3663 20.0435 17.1457 19.896 16.96 19.71L16.9 19.65C16.6643 19.4195 16.365 19.2648 16.0406 19.206C15.7162 19.1472 15.3816 19.1869 15.08 19.32C14.7842 19.4468 14.532 19.6572 14.3543 19.9255C14.1766 20.1938 14.0813 20.5082 14.08 20.83V21C14.08 21.5304 13.8693 22.0391 13.4942 22.4142C13.1191 22.7893 12.6104 23 12.08 23C11.5496 23 11.0409 22.7893 10.6658 22.4142C10.2907 22.0391 10.08 21.5304 10.08 21V20.91C10.0723 20.579 9.96512 20.258 9.77251 19.9887C9.5799 19.7194 9.31074 19.5143 9 19.4C8.69838 19.2669 8.36381 19.2272 8.03941 19.286C7.71502 19.3448 7.41568 19.4995 7.18 19.73L7.12 19.79C6.93425 19.976 6.71368 20.1235 6.47088 20.2241C6.22808 20.3248 5.96783 20.3766 5.705 20.3766C5.44217 20.3766 5.18192 20.3248 4.93912 20.2241C4.69632 20.1235 4.47575 19.976 4.29 19.79C4.10405 19.6043 3.95653 19.3837 3.85588 19.1409C3.75523 18.8981 3.70343 18.6378 3.70343 18.375C3.70343 18.1122 3.75523 17.8519 3.85588 17.6091C3.95653 17.3663 4.10405 17.1457 4.29 16.96L4.35 16.9C4.58054 16.6643 4.73519 16.365 4.794 16.0406C4.85282 15.7162 4.81312 15.3816 4.68 15.08C4.55324 14.7842 4.34276 14.532 4.07447 14.3543C3.80618 14.1766 3.49179 14.0813 3.17 14.08H3C2.46957 14.08 1.96086 13.8693 1.58579 13.4942C1.21071 13.1191 1 12.6104 1 12.08C1 11.5496 1.21071 11.0409 1.58579 10.6658C1.96086 10.2907 2.46957 10.08 3 10.08H3.09C3.42099 10.0723 3.742 9.96512 4.01131 9.77251C4.28062 9.5799 4.48571 9.31074 4.6 9C4.73312 8.69838 4.77282 8.36381 4.714 8.03941C4.65519 7.71502 4.50054 7.41568 4.27 7.18L4.21 7.12C4.02405 6.93425 3.87653 6.71368 3.77588 6.47088C3.67523 6.22808 3.62343 5.96783 3.62343 5.705C3.62343 5.44217 3.67523 5.18192 3.77588 4.93912C3.87653 4.69632 4.02405 4.47575 4.21 4.29C4.39575 4.10405 4.61632 3.95653 4.85912 3.85588C5.10192 3.75523 5.36217 3.70343 5.625 3.70343C5.88783 3.70343 6.14808 3.75523 6.39088 3.85588C6.63368 3.95653 6.85425 4.10405 7.04 4.29L7.1 4.35C7.33568 4.58054 7.63502 4.73519 7.95941 4.794C8.28381 4.85282 8.61838 4.81312 8.92 4.68H9C9.29577 4.55324 9.54802 4.34276 9.72569 4.07447C9.90337 3.80618 9.99872 3.49179 10 3.17V3C10 2.46957 10.2107 1.96086 10.5858 1.58579C10.9609 1.21071 11.4696 1 12 1C12.5304 1 13.0391 1.21071 13.4142 1.58579C13.7893 1.96086 14 2.46957 14 3V3.09C14.0013 3.41179 14.0966 3.72618 14.2743 3.99447C14.452 4.26276 14.7042 4.47324 15 4.6C15.3016 4.73312 15.6362 4.77282 15.9606 4.714C16.285 4.65519 16.5843 4.50054 16.82 4.27L16.88 4.21C17.0657 4.02405 17.2863 3.87653 17.5291 3.77588C17.7719 3.67523 18.0322 3.62343 18.295 3.62343C18.5578 3.62343 18.8181 3.67523 19.0609 3.77588C19.3037 3.87653 19.5243 4.02405 19.71 4.21C19.896 4.39575 20.0435 4.61632 20.1441 4.85912C20.2448 5.10192 20.2966 5.36217 20.2966 5.625C20.2966 5.88783 20.2448 6.14808 20.1441 6.39088C20.0435 6.63368 19.896 6.85425 19.71 7.04L19.65 7.1C19.4195 7.33568 19.2648 7.63502 19.206 7.95941C19.1472 8.28381 19.1869 8.61838 19.32 8.92V9C19.4468 9.29577 19.6572 9.54802 19.9255 9.72569C20.1938 9.90337 20.5082 9.99872 20.83 10H21C21.5304 10 22.0391 10.2107 22.4142 10.5858C22.7893 10.9609 23 11.4696 23 12C23 12.5304 22.7893 13.0391 22.4142 13.4142C22.0391 13.7893 21.5304 14 21 14H20.91C20.5882 14.0013 20.2738 14.0966 20.0055 14.2743C19.7372 14.452 19.5268 14.7042 19.4 15Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -1734,6 +2344,138 @@ function App() {
           </div>
         </>
       )}
+
+      {/* History panel */}
+      {showHistoryPanel && (
+        <>
+          <div className="settings-overlay" onClick={() => setShowHistoryPanel(false)} />
+          <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "600px" }}>
+            <div className="settings-panel-header">
+              <h3>Historique des conversions</h3>
+              <button
+                type="button"
+                className="settings-close-btn"
+                onClick={() => setShowHistoryPanel(false)}
+                title="Fermer"
+              >
+                ×
+              </button>
+            </div>
+            <div className="settings-panel-content">
+              {conversionHistory.length === 0 ? (
+                <p style={{ fontSize: "0.875rem", color: "#6b7280", textAlign: "center", padding: "2rem" }}>
+                  Aucune conversion dans l'historique
+                </p>
+              ) : (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                    <span style={{ fontSize: "0.875rem", color: "#6b7280" }}>
+                      {conversionHistory.length} conversion{conversionHistory.length > 1 ? 's' : ''}
+                    </span>
+                    <button
+                      onClick={clearHistory}
+                      style={{
+                        padding: "0.4rem 0.8rem",
+                        background: "#ef4444",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "0.375rem",
+                        cursor: "pointer",
+                        fontSize: "0.875rem"
+                      }}
+                    >
+                      Effacer l'historique
+                    </button>
+                  </div>
+                  <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
+                    {conversionHistory.map((item) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          padding: "1rem",
+                          marginBottom: "0.5rem",
+                          background: "rgba(255, 255, 255, 0.05)",
+                          borderRadius: "0.5rem",
+                          border: "1px solid rgba(229, 231, 235, 0.1)",
+                          cursor: "pointer"
+                        }}
+                        onClick={() => restoreFromHistory(item)}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(255, 255, 255, 0.1)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)";
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                          <span style={{ fontWeight: "600", color: "#e5e7eb" }}>
+                            {getFormatTitle(item.fromFormat)} → {getFormatTitle(item.toFormat)}
+                          </span>
+                          <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
+                            {new Date(item.timestamp).toLocaleString('fr-FR')}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {item.sourceContent.substring(0, 100)}...
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Keyboard shortcuts modal */}
+      {showShortcutsModal && (
+        <>
+          <div className="settings-overlay" onClick={() => setShowShortcutsModal(false)} />
+          <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
+            <div className="settings-panel-header">
+              <h3>Raccourcis clavier</h3>
+              <button
+                type="button"
+                className="settings-close-btn"
+                onClick={() => setShowShortcutsModal(false)}
+                title="Fermer"
+              >
+                ×
+              </button>
+            </div>
+            <div className="settings-panel-content">
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem", background: "rgba(255, 255, 255, 0.05)", borderRadius: "0.5rem" }}>
+                  <span style={{ color: "#e5e7eb" }}>Convertir</span>
+                  <kbd style={{ padding: "0.25rem 0.5rem", background: "#1f2937", color: "#e5e7eb", borderRadius: "0.25rem", fontSize: "0.875rem" }}>
+                    Ctrl + Enter
+                  </kbd>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem", background: "rgba(255, 255, 255, 0.05)", borderRadius: "0.5rem" }}>
+                  <span style={{ color: "#e5e7eb" }}>Télécharger / Sauvegarder</span>
+                  <kbd style={{ padding: "0.25rem 0.5rem", background: "#1f2937", color: "#e5e7eb", borderRadius: "0.25rem", fontSize: "0.875rem" }}>
+                    Ctrl + S
+                  </kbd>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem", background: "rgba(255, 255, 255, 0.05)", borderRadius: "0.5rem" }}>
+                  <span style={{ color: "#e5e7eb" }}>Effacer la source</span>
+                  <kbd style={{ padding: "0.25rem 0.5rem", background: "#1f2937", color: "#e5e7eb", borderRadius: "0.25rem", fontSize: "0.875rem" }}>
+                    Ctrl + K
+                  </kbd>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem", background: "rgba(255, 255, 255, 0.05)", borderRadius: "0.5rem" }}>
+                  <span style={{ color: "#e5e7eb" }}>Aide (raccourcis)</span>
+                  <kbd style={{ padding: "0.25rem 0.5rem", background: "#1f2937", color: "#e5e7eb", borderRadius: "0.25rem", fontSize: "0.875rem" }}>
+                    Ctrl + /
+                  </kbd>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="main-layout">
         <aside className="sidebar">
           <div className="sidebar-section">
@@ -2204,7 +2946,7 @@ function App() {
       </div>
 
       <footer className="footer">
-        <span className="footer-version">Version : 0.0.1alpha - 2026-01-13</span>
+        <span className="footer-version">Version : 0.0.1.1-alpha</span>
         <span className="footer-author">Make by TBE</span>
       </footer>
 
