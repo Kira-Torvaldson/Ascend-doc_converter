@@ -26,5 +26,9 @@ yarn-error.log*
 .env.*.local
 
 # Assets (logo and background images - not tracked)
-api/backend/public/logo.png
-api/backend/public/rafale.jpg
+api/backend/public/*.png
+api/backend/public/*.jpg
+api/backend/public/*.jpeg
+api/backend/public/*.gif
+api/backend/public/*.svg
+!api/backend/public/.gitkeep
