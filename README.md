@@ -23,16 +23,36 @@ Application web moderne pour convertir des documents entre les formats AsciiDoc 
 
 ## ✨ Fonctionnalités
 
+### Conversion
 - **Conversion bidirectionnelle** : AsciiDoc ↔ Markdown
-- **Interface moderne** : Design épuré avec effet glassmorphism
-- **Import de fichiers** : Support pour fichiers individuels et dossiers complets
-- **Navigation dans le document** : Affichage hiérarchique des chapitres et sections
-- **Mode édition avec confirmation** : Édition sécurisée des résultats avec modales de confirmation
-- **Sauvegarde/Annulation** : Système de sauvegarde avec restauration automatique en cas d'annulation
-- **Copie rapide** : Bouton de copie pour les résultats
-- **Effacement** : Bouton pour effacer le contenu AsciiDoc
+- **Multi-formats** : Support pour HTML, PDF, YAML, JSON, TXT et plus encore
+- **Conversion sécurisée** : Système de tokens de confirmation pour les conversions sensibles
+- **Modes de conversion** : Standard et BookStack/Parsedown compatible
 - **Conversion en temps réel** : Résultats instantanés
+
+### Interface utilisateur
+- **Interface moderne** : Design épuré avec effet glassmorphism et image de fond
+- **Navigation dans le document** : Fenêtre flottante avec affichage hiérarchique des chapitres et sections
+- **Fenêtre de navigation** : Déplaçable, redimensionnable, minimisable et maximisable
+- **Options de conversion** : Panneau d'options compact et organisé
+  - Analyse du contenu
+  - Normalisation (encodage, Unicode, nettoyage)
+  - Rendu documentaire
+  - Métadonnées
+  - Options spécifiques par format
+
+### Gestion de fichiers
+- **Import de fichiers** : Support pour fichiers individuels et dossiers complets
+- **Sélection de fichiers** : Sélecteur pour naviguer dans les fichiers importés
+- **Mode édition avec confirmation** : Édition sécurisée des résultats avec modales de confirmation
+- **Sauvegarde/Annulation** : Système de sauvegarde avec restauration automatique
+- **Copie rapide** : Bouton de copie pour les résultats
+- **Effacement** : Bouton pour effacer le contenu
+
+### Sécurité et fiabilité
 - **Gestion d'erreurs** : Messages d'erreur clairs et informatifs
+- **Timeouts** : Protection contre les conversions trop longues
+- **Validation** : Validation des options de conversion
 
 ## 🛠 Technologies
 
@@ -119,36 +139,46 @@ npm run preview
 
 ## 💻 Utilisation
 
-1. **Ouvrir l'application** dans votre navigateur : `http://localhost:5173`
+### Interface principale
 
-2. **Conversion AsciiDoc → Markdown** :
-   - Entrez ou importez du contenu AsciiDoc dans le panneau de gauche
-   - Cliquez sur "Convertir"
-   - Le résultat Markdown apparaît dans le panneau de droite
+1. **Ouvrir l'application** : `http://localhost:5173`
 
-3. **Conversion Markdown → AsciiDoc** :
-   - Utilisez les flèches pour basculer vers le mode Markdown → AsciiDoc
-   - Entrez ou importez du contenu Markdown
+2. **Sélection des formats** :
+   - Utilisez les menus déroulants pour choisir le format source et de destination
+   - Cliquez sur les flèches ↔️ pour inverser les formats
+
+3. **Conversion** :
+   - Entrez ou importez du contenu dans le panneau source
    - Cliquez sur "Convertir"
-   - Le résultat AsciiDoc apparaît dans le panneau de droite
+   - Le résultat apparaît dans le panneau de destination
+
+### Fonctionnalités avancées
 
 4. **Import de fichiers** :
-   - Cliquez sur 📄 pour importer un fichier individuel
-   - Cliquez sur 📁 pour importer un dossier complet
-   - Sélectionnez le fichier à convertir dans le sélecteur
+   - 📄 **Fichier unique** : Cliquez sur le bouton pour importer un fichier
+   - 📁 **Dossier complet** : Importez un dossier et sélectionnez le fichier dans la liste
 
-5. **Navigation** :
-   - La section "Navigation dans le fichier" affiche la structure hiérarchique
-   - Cliquez sur un chapitre pour naviguer directement
+5. **Navigation dans le document** :
+   - Activez la navigation dans les options
+   - Une fenêtre flottante affiche la structure hiérarchique
+   - Cliquez sur une section pour naviguer directement
+   - La fenêtre est déplaçable, redimensionnable, minimisable et maximisable
 
-6. **Édition des résultats** :
-   - Cliquez sur le bouton ✏️ pour activer le mode édition
-   - Une modale de confirmation s'affiche avec les options "Oui" (vert) et "Non" (rouge)
-   - En mode édition, vous pouvez modifier le contenu directement dans la zone de texte
-   - Les boutons de copie et d'effacement sont désactivés pendant l'édition
-   - Cliquez sur 💾 Sauvegarder pour valider vos modifications (modale de confirmation)
-   - Cliquez sur ✕ Annuler pour annuler l'édition et restaurer le contenu original (modale de confirmation)
-   - Si vous cliquez sur "Non" dans la modale de sauvegarde, les modifications sont annulées automatiquement
+6. **Options de conversion** :
+   - Cliquez sur l'icône ⚙️ pour ouvrir le panneau d'options
+   - Configurez :
+     - **Analyse du contenu** : Mode d'analyse, détection des titres/listes
+     - **Normalisation** : Encodage, Unicode, nettoyage des caractères
+     - **Rendu documentaire** : Table des matières, numérotation, retour à la ligne
+     - **Métadonnées** : Titre, auteur, langue
+     - **Options de format** : Flavor Markdown, mode de compatibilité
+
+7. **Édition des résultats** :
+   - ✏️ **Activer l'édition** : Cliquez sur le bouton (confirmation requise)
+   - 💾 **Sauvegarder** : Validez vos modifications (confirmation requise)
+   - ✕ **Annuler** : Restaure le contenu original (confirmation requise)
+   - 📋 **Copier** : Copie le résultat dans le presse-papiers
+   - 🗑️ **Effacer** : Vide le contenu du panneau
 
 ## ✏️ Mode Édition
 
@@ -188,34 +218,17 @@ Le mode édition permet de modifier directement les résultats de conversion ave
 
 ## 🏗 Architecture
 
+L'application est organisée en trois parties principales pour une séparation claire des responsabilités :
+
+### Structure principale
+
 ```
 Ascend/
 ├── api/
+│   ├── frontend/         # Application React/TypeScript
 │   ├── backend/          # Serveur Express.js
-│   │   ├── server.js     # Point d'entrée du serveur
-│   │   ├── package.json  # Dépendances backend
-│   │   ├── public/       # Fichiers statiques (images)
-│   │   └── static/       # Fichiers HTML statiques
-│   ├── frontend/         # Application React
-│   │   ├── src/
-│   │   │   ├── App.tsx   # Composant principal
-│   │   │   ├── main.tsx  # Point d'entrée React
-│   │   │   └── styles.css # Styles CSS
-│   │   └── package.json  # Dépendances frontend
-│   ├── convert.js        # Module de conversion principal
-│   ├── secure-converter.js # Moteur de conversion sécurisé (tokens + isolation)
-│   ├── secure-converter-integration-example.js # Exemple d'intégration
-│   ├── conversion-options.js # Options de conversion (unifié)
-│   ├── bookstack-adapter.js # Adaptateur BookStack
-│   ├── docverter.js      # Module Docverter (préparé pour intégration)
-│   └── panwriter.js      # Module PanWriter (préparé pour intégration)
-├── doc/                  # Documentation
-│   ├── confirmation-security-guide.md
-│   ├── conversion-options.md
-│   ├── encoding-options.md
-│   ├── normalization-advanced-options.md
-│   ├── secure-converter.md
-│   └── secure-converter-frontend-integration.md
+│   └── shared/           # Code partagé entre frontend et backend
+├── doc/                  # Documentation détaillée
 ├── lib/                  # Bibliothèque downdoc
 ├── bin/                  # Exécutables
 ├── test/                 # Tests
@@ -352,19 +365,13 @@ Ascend utilise deux moteurs de conversion selon le type de conversion :
    - Conversion intelligente sans dépendances externes
    - Idéal pour convertir du texte brut en Markdown structuré
 
-### Modules préparés pour intégration future
+### Modules de conversion
 
-Les modules suivants sont préparés dans le projet mais ne sont pas encore intégrés avec des endpoints :
-
-- **Docverter** (`api/docverter.js`) : Module de conversion de documents
-  - Formats supportés : rtf, pdf, html, txt, markdown, docx, xlsx, pptx, odt, ods, odp, png, jpg, jpeg, gif
-  - Fonction : `convertWithDocverter(content, fromFormat, toFormat)`
-  - Statut : Prêt pour intégration, endpoints à créer
-
-- **PanWriter** (`api/panwriter.js`) : Module d'édition et conversion de documents
-  - Formats supportés : markdown, asciidoc, html, docx, odt, rtf, latex, tex
-  - Fonctions : `convertWithPanWriter(content, fromFormat, toFormat)`, `editWithPanWriter(content, format)`
-  - Statut : Prêt pour intégration, endpoints à créer
+- **downdoc** : Conversion AsciiDoc → Markdown (bibliothèque JavaScript native)
+- **Pandoc** : Conversion Markdown → AsciiDoc et HTML → autres formats
+- **text2markdown** : Conversion texte brut → Markdown avec détection automatique
+- **Docverter** : Module préparé pour conversion de documents (rtf, pdf, docx, etc.)
+- **PanWriter** : Module préparé pour édition et conversion de documents
 
 ### Exemple avec cURL
 
@@ -494,66 +501,47 @@ Ascend/
 └── README.md                 # Ce fichier
 ```
 
-### 🎯 Organisation du dossier `api/`
+### 🎯 Organisation du code
 
-Le dossier `api/` est organisé en trois dossiers principaux pour une séparation claire des responsabilités :
-
-#### 1. **frontend/** - Application React
-Contient toute l'interface utilisateur React avec une structure modulaire :
-- **components/** : Composants UI réutilisables (Panel, Modal, NavigationWindow, etc.)
-- **hooks/** : Hooks React personnalisés (useHeadings, useFileHandling, useNavigationWindow)
+#### Frontend (`api/frontend/`)
+Application React/TypeScript modulaire :
+- **components/** : Composants UI réutilisables
+- **hooks/** : Hooks personnalisés (useHeadings, useFileHandling, useNavigationWindow)
 - **converters/** : Logique de conversion côté client
 - **types/** : Définitions TypeScript centralisées
 - **utils/** : Utilitaires frontend
 - **constants/** : Constantes de l'application
 
-#### 2. **backend/** - Serveur et services
-Contient toute la logique serveur et les services de conversion :
-- **server.js** : Serveur Express principal
-- **services/** : Services de conversion (convert.js, secure-converter.js, docverter.js, panwriter.js)
+#### Backend (`api/backend/`)
+Serveur Express avec services modulaires :
+- **server.js** : Point d'entrée du serveur
+- **services/** : Services de conversion (convert, secure-converter, docverter, panwriter)
 - **config/** : Configuration centralisée
 - **conversion-options.js** : Gestion des options de conversion
-- **examples/** : Exemples d'utilisation
-- **public/** et **static/** : Fichiers statiques
+- **public/** : Fichiers statiques (logo, images de fond)
+- **static/** : Fichiers HTML statiques
 
-#### 3. **shared/** - Éléments partagés
-Contient le code partagé entre frontend et backend :
-- **adapters/** : Adaptateurs de format (BookStack, etc.)
+#### Shared (`api/shared/`)
+Code partagé entre frontend et backend :
+- **adapters/** : Adaptateurs de format (BookStack/Parsedown)
 - **utils/** : Utilitaires partagés
 
 ### 📦 Imports recommandés
 
 **Backend :**
 ```javascript
-// Services de conversion
 const { convertAsciiDoc } = require('./services/convert.js')
 const { generateConfirmationToken } = require('./services/secure-converter.js')
-
-// Options de conversion
-const { mergeOptions, validateOptions } = require('./conversion-options.js')
-
-// Adaptateurs partagés
 const { adaptForBookStack } = require('../shared/adapters/bookstack-adapter.js')
 ```
 
 **Frontend :**
 ```typescript
-// Composants
 import { Panel, Modal } from './components'
-
-// Hooks
 import { useHeadings, useFileHandling } from './hooks'
-
-// Convertisseurs
-import { convertText } from './converters'
+import { convertText, convertAsciiDocToMarkdown } from './converters'
+import { FormatType, PendingConversion } from './types'
 ```
-
-### 📝 Notes importantes
-
-- **Séparation claire** : Frontend et backend sont complètement séparés
-- **Code partagé** : Utiliser `shared/` pour le code commun
-- **Organisation modulaire** : Chaque dossier a une responsabilité claire
-- **Exports centralisés** : Chaque dossier contient un fichier `index.ts` ou `index.js` pour faciliter les imports
 
 ## 🤝 Contribuer
 
