@@ -1,4 +1,4 @@
-# 🚀 Ascend - Convertisseur AsciiDoc ⇄ Markdown
+# 🚀 Ascend - Convertisseur de documents
 
 Application web moderne pour convertir des documents entre les formats AsciiDoc et Markdown, avec une interface utilisateur intuitive et élégante.
 
