@@ -442,7 +442,7 @@ Ascend/
 │   │   │   │   ├── asciidoc-to-markdown.ts
 │   │   │   │   ├── markdown-to-asciidoc.ts
 │   │   │   │   ├── generic-converter.ts
-│   │   │   │   ├── bookstack-adapter.js
+│   │   │   │   ├── bookstack-adapter.ts
 │   │   │   │   └── index.ts
 │   │   │   ├── types/        # Types TypeScript
 │   │   │   │   └── index.ts
@@ -483,7 +483,8 @@ Ascend/
 │   │
 │   └── shared/               # Éléments partagés entre frontend et backend
 │       ├── adapters/         # Adaptateurs de format
-│       │   └── bookstack-adapter.js
+│       │   ├── bookstack-adapter.js  # Version CommonJS pour backend
+│       │   └── bookstack-adapter.ts  # Version TypeScript pour frontend
 │       └── utils/            # Utilitaires partagés
 │           └── index.js
 │
