@@ -416,31 +416,70 @@ Pour modifier ces ports, éditez :
 
 ```
 Ascend/
-├── api/
-│   ├── backend/              # Backend Node.js/Express
-│   │   ├── server.js         # Serveur principal
+├── api/                      # Dossier principal de l'application
+│   ├── frontend/             # Application frontend React
+│   │   ├── src/
+│   │   │   ├── components/   # Composants React réutilisables
+│   │   │   │   ├── Panel.tsx
+│   │   │   │   ├── FormatSelector.tsx
+│   │   │   │   ├── Modal.tsx
+│   │   │   │   ├── NavigationWindow.tsx
+│   │   │   │   └── index.ts
+│   │   │   ├── hooks/        # Hooks React personnalisés
+│   │   │   │   ├── useHeadings.ts
+│   │   │   │   ├── useFileHandling.ts
+│   │   │   │   ├── useNavigationWindow.ts
+│   │   │   │   └── index.ts
+│   │   │   ├── converters/   # Convertisseurs frontend
+│   │   │   │   ├── api.ts
+│   │   │   │   ├── asciidoc-to-markdown.ts
+│   │   │   │   ├── markdown-to-asciidoc.ts
+│   │   │   │   ├── generic-converter.ts
+│   │   │   │   ├── bookstack-adapter.js
+│   │   │   │   └── index.ts
+│   │   │   ├── types/        # Types TypeScript
+│   │   │   │   └── index.ts
+│   │   │   ├── utils/        # Utilitaires frontend
+│   │   │   │   └── formatHelpers.ts
+│   │   │   ├── constants/    # Constantes frontend
+│   │   │   │   └── index.ts
+│   │   │   ├── App.tsx       # Composant principal
+│   │   │   ├── main.tsx      # Point d'entrée
+│   │   │   └── styles.css    # Styles globaux
+│   │   ├── index.html        # Template HTML
 │   │   ├── package.json      # Configuration npm
-│   │   ├── public/           # Assets statiques
+│   │   ├── tsconfig.json     # Configuration TypeScript
+│   │   └── vite.config.ts    # Configuration Vite
+│   │
+│   ├── backend/              # Application backend Node.js
+│   │   ├── server.js         # Serveur Express principal
+│   │   ├── services/         # Services de conversion
+│   │   │   ├── convert.js    # Module de conversion principal
+│   │   │   ├── secure-converter.js  # Moteur de conversion sécurisé
+│   │   │   ├── docverter.js  # Module Docverter
+│   │   │   ├── panwriter.js  # Module PanWriter
+│   │   │   └── index.js      # Exports centralisés
+│   │   ├── config/           # Configuration backend
+│   │   │   └── index.js
+│   │   ├── routes/           # Routes API (à venir)
+│   │   ├── middleware/       # Middleware Express (à venir)
+│   │   ├── examples/         # Exemples d'utilisation
+│   │   │   └── secure-converter-integration-example.js
+│   │   ├── public/           # Fichiers statiques
 │   │   │   ├── logo.png
 │   │   │   └── rafale.jpg
-│   │   └── static/          # Fichiers HTML
-│   │       └── index.html
-│   ├── frontend/             # Frontend React/TypeScript
-│   │   ├── src/
-│   │   │   ├── App.tsx      # Composant principal
-│   │   │   ├── main.tsx     # Point d'entrée
-│   │   │   └── styles.css   # Styles
-│   │   ├── index.html       # Template HTML
-│   │   ├── package.json      # Configuration npm
-│   │   ├── tsconfig.json    # Configuration TypeScript
-│   │   └── vite.config.ts   # Configuration Vite
-│   ├── convert.js           # Module de conversion principal
-│   ├── secure-converter.js  # Moteur de conversion sécurisé (tokens + isolation)
-│   ├── secure-converter-integration-example.js # Exemple d'intégration
-│   ├── conversion-options.js # Options de conversion (unifié : encodage + normalisation)
-│   ├── bookstack-adapter.js # Adaptateur BookStack
-│   ├── docverter.js         # Module Docverter (préparé pour intégration)
-│   └── panwriter.js         # Module PanWriter (préparé pour intégration)
+│   │   ├── static/           # Fichiers HTML
+│   │   │   └── index.html
+│   │   ├── conversion-options.js      # Options de conversion
+│   │   ├── conversion-options.schema.json  # Schéma JSON
+│   │   └── package.json      # Configuration npm
+│   │
+│   └── shared/               # Éléments partagés entre frontend et backend
+│       ├── adapters/         # Adaptateurs de format
+│       │   └── bookstack-adapter.js
+│       └── utils/            # Utilitaires partagés
+│           └── index.js
+│
 ├── doc/                      # Documentation
 │   ├── confirmation-security-guide.md
 │   ├── conversion-options.md
@@ -454,6 +493,67 @@ Ascend/
 ├── LICENSE                   # Licence MIT
 └── README.md                 # Ce fichier
 ```
+
+### 🎯 Organisation du dossier `api/`
+
+Le dossier `api/` est organisé en trois dossiers principaux pour une séparation claire des responsabilités :
+
+#### 1. **frontend/** - Application React
+Contient toute l'interface utilisateur React avec une structure modulaire :
+- **components/** : Composants UI réutilisables (Panel, Modal, NavigationWindow, etc.)
+- **hooks/** : Hooks React personnalisés (useHeadings, useFileHandling, useNavigationWindow)
+- **converters/** : Logique de conversion côté client
+- **types/** : Définitions TypeScript centralisées
+- **utils/** : Utilitaires frontend
+- **constants/** : Constantes de l'application
+
+#### 2. **backend/** - Serveur et services
+Contient toute la logique serveur et les services de conversion :
+- **server.js** : Serveur Express principal
+- **services/** : Services de conversion (convert.js, secure-converter.js, docverter.js, panwriter.js)
+- **config/** : Configuration centralisée
+- **conversion-options.js** : Gestion des options de conversion
+- **examples/** : Exemples d'utilisation
+- **public/** et **static/** : Fichiers statiques
+
+#### 3. **shared/** - Éléments partagés
+Contient le code partagé entre frontend et backend :
+- **adapters/** : Adaptateurs de format (BookStack, etc.)
+- **utils/** : Utilitaires partagés
+
+### 📦 Imports recommandés
+
+**Backend :**
+```javascript
+// Services de conversion
+const { convertAsciiDoc } = require('./services/convert.js')
+const { generateConfirmationToken } = require('./services/secure-converter.js')
+
+// Options de conversion
+const { mergeOptions, validateOptions } = require('./conversion-options.js')
+
+// Adaptateurs partagés
+const { adaptForBookStack } = require('../shared/adapters/bookstack-adapter.js')
+```
+
+**Frontend :**
+```typescript
+// Composants
+import { Panel, Modal } from './components'
+
+// Hooks
+import { useHeadings, useFileHandling } from './hooks'
+
+// Convertisseurs
+import { convertText } from './converters'
+```
+
+### 📝 Notes importantes
+
+- **Séparation claire** : Frontend et backend sont complètement séparés
+- **Code partagé** : Utiliser `shared/` pour le code commun
+- **Organisation modulaire** : Chaque dossier a une responsabilité claire
+- **Exports centralisés** : Chaque dossier contient un fichier `index.ts` ou `index.js` pour faciliter les imports
 
 ## 🤝 Contribuer
 

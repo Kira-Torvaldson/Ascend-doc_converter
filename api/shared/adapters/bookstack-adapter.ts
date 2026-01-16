@@ -6,10 +6,12 @@
  * 
  * This function performs a comprehensive cleanup of AsciiDoc remnants and
  * ensures the output is 100% Parsedown-compatible Markdown.
+ * 
+ * NOTE: This is a CommonJS version for backend use.
  */
-function adaptForBookStack(markdown) {
+function adaptForBookStack(markdown: string | null | undefined): string {
   if (!markdown || typeof markdown !== 'string') {
-    return markdown
+    return markdown || ''
   }
 
   let result = markdown
@@ -33,7 +35,8 @@ function adaptForBookStack(markdown) {
     // Match "- --" with any amount of whitespace
     if (trimmed === '- --' || trimmed === '-  --' || /^-\s*--\s*$/.test(trimmed)) {
       // Preserve original indentation if any, otherwise return '---'
-      const indent = line.match(/^(\s*)/)[1]
+      const indentMatch = line.match(/^(\s*)/)
+      const indent = indentMatch ? indentMatch[1] : ''
       return indent + '---'
     }
     return line
@@ -164,7 +167,7 @@ function adaptForBookStack(markdown) {
   // PHASE 3: Process admonitions - convert to Markdown blockquotes
   // ============================================================================
   
-  const admonitionEmojis = {
+  const admonitionEmojis: Record<string, string> = {
     '📝': 'note',
     '📌': 'note',
     '💡': 'tip', 
@@ -175,10 +178,10 @@ function adaptForBookStack(markdown) {
   }
   
   const lines = result.split('\n')
-  const processedLines = []
+  const processedLines: string[] = []
   let inAdmonition = false
   let admonitionType = ''
-  let admonitionContent = []
+  let admonitionContent: string[] = []
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -442,10 +445,14 @@ function adaptForBookStack(markdown) {
   // ============================================================================
   
   const finalLines = result.split('\n')
-  const finalProcessed = []
+  const finalProcessed: string[] = []
   let inCodeBlock = false
   let inTable = false
-  let tableBuffer = []
+  interface TableRow {
+    line: string
+    isSeparator: boolean
+  }
+  const tableBuffer: TableRow[] = []
   
   for (let i = 0; i < finalLines.length; i++) {
     const line = finalLines[i]
@@ -454,7 +461,6 @@ function adaptForBookStack(markdown) {
     
     // Track code blocks
     if (line.match(/^```/)) {
-      const wasInCodeBlock = inCodeBlock
       inCodeBlock = !inCodeBlock
       
       if (inCodeBlock) {
@@ -466,7 +472,7 @@ function adaptForBookStack(markdown) {
         const langMatch = line.match(/^```(\w+)/)
         if (langMatch) {
           const cleanLang = langMatch[1].toLowerCase().split(/[\s,=]/)[0]
-          const langMap = {
+          const langMap: Record<string, string> = {
             'bash': 'bash', 'sh': 'bash', 'shell': 'bash', 'console': 'bash',
             'javascript': 'javascript', 'js': 'javascript',
             'python': 'python', 'py': 'python',
@@ -507,7 +513,7 @@ function adaptForBookStack(markdown) {
       
       let simplifiedLine = line.trim()
       
-      const isSeparator = simplifiedLine.match(/[-=]{3,}/) || simplifiedLine.match(/^\|\s*[-=]+\s*\|/)
+      const isSeparator = simplifiedLine.match(/[-=]{3,}/) !== null || simplifiedLine.match(/^\|\s*[-=]+\s*\|/) !== null
       const hasContent = simplifiedLine.replace(/\|/g, '').replace(/[-=]/g, '').trim().length > 0
       
       if (!hasContent && !isSeparator) {
@@ -544,9 +550,9 @@ function adaptForBookStack(markdown) {
       if (tableBuffer.length > 0) {
         const separatorIdx = tableBuffer.findIndex(r => r.isSeparator)
         
-        let headers = []
-        let separator = null
-        let dataRows = []
+        let headers: TableRow[] = []
+        let separator: TableRow | null = null
+        let dataRows: TableRow[] = []
         
         if (separatorIdx >= 0) {
           if (separatorIdx === 0) {
@@ -556,7 +562,7 @@ function adaptForBookStack(markdown) {
               dataRows = tableBuffer.slice(2)
             } else {
               tableBuffer.forEach(r => finalProcessed.push(r.line))
-              tableBuffer = []
+              tableBuffer.length = 0
               inTable = false
               if (line.trim() === '') {
                 finalProcessed.push('')
@@ -596,7 +602,7 @@ function adaptForBookStack(markdown) {
         dataRows.forEach(r => finalProcessed.push(r.line))
       }
       
-      tableBuffer = []
+      tableBuffer.length = 0
       inTable = false
       
       if (line.trim() === '') {
@@ -656,8 +662,8 @@ function adaptForBookStack(markdown) {
     // Check trimmed line first to catch "- --" patterns
     const trimmedLine = line.trim()
     if (trimmedLine === '- --' || trimmedLine === '-  --' || 
-        trimmedLine.match(/^-\s*--\s*$/) || trimmedLine.match(/^-\s*--$/) ||
-        trimmedLine.match(/^---+$/) || trimmedLine.match(/^\*\*\*+$/) || trimmedLine.match(/^'''+$/)) {
+        trimmedLine.match(/^-\s*--\s*$/) !== null || trimmedLine.match(/^-\s*--$/) !== null ||
+        trimmedLine.match(/^---+$/) !== null || trimmedLine.match(/^\*\*\*+$/) !== null || trimmedLine.match(/^'''+$/) !== null) {
       if (prevLine.trim()) {
         finalProcessed.push('')
       }
@@ -667,8 +673,8 @@ function adaptForBookStack(markdown) {
     }
     
     // Also check original line pattern (before trimming)
-    if (line.match(/^-\s*--\s*$/) || line.match(/^-\s*--$/) || 
-        line.match(/^---+$/) || line.match(/^\*\*\*+$/) || line.match(/^'''+$/)) {
+    if (line.match(/^-\s*--\s*$/) !== null || line.match(/^-\s*--$/) !== null || 
+        line.match(/^---+$/) !== null || line.match(/^\*\*\*+$/) !== null || line.match(/^'''+$/) !== null) {
       if (prevLine.trim()) {
         finalProcessed.push('')
       }
@@ -683,9 +689,9 @@ function adaptForBookStack(markdown) {
   // Flush any remaining table buffer
   if (inTable && tableBuffer.length > 0) {
     const separatorIdx = tableBuffer.findIndex(r => r.isSeparator)
-    let headers = []
-    let separator = null
-    let dataRows = []
+    let headers: TableRow[] = []
+    let separator: TableRow | null = null
+    let dataRows: TableRow[] = []
     
     if (separatorIdx >= 0) {
       if (separatorIdx === 0) {
@@ -761,7 +767,7 @@ function adaptForBookStack(markdown) {
     let language = ''
     if (lang) {
       const cleanLang = lang.toLowerCase().trim().split(/[\s,=]/)[0]
-      const langMap = {
+      const langMap: Record<string, string> = {
         'bash': 'bash', 'sh': 'bash', 'shell': 'bash', 'console': 'bash',
         'javascript': 'javascript', 'js': 'javascript',
         'python': 'python', 'py': 'python',
@@ -782,7 +788,7 @@ function adaptForBookStack(markdown) {
   
   // Fix list formatting
   const listLines = result.split('\n')
-  const listProcessed = []
+  const listProcessed: string[] = []
   let prevWasList = false
   
   for (let i = 0; i < listLines.length; i++) {
@@ -827,7 +833,8 @@ function adaptForBookStack(markdown) {
   result = result.split('\n').map(line => {
     const trimmed = line.trim()
     if (trimmed === '- --' || trimmed === '-  --' || /^-\s*--\s*$/.test(trimmed)) {
-      const indent = line.match(/^(\s*)/)[1]
+      const indentMatch = line.match(/^(\s*)/)
+      const indent = indentMatch ? indentMatch[1] : ''
       return indent + '---'
     }
     return line

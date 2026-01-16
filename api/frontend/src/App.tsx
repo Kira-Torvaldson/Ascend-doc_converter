@@ -8,13 +8,13 @@
  * 
  * MAIN ARCHITECTURE:
  * ------------------
- * 1. Conversion utility functions (lines 5-322)
+ * 1. Conversion utility functions (imported from ./converters)
  *    - convertAsciiDocToMarkdown: AsciiDoc → Markdown conversion via downdoc
  *    - convertMarkdownToAsciiDoc: Markdown → AsciiDoc conversion via Pandoc
  *    - requestConfirmationToken: Secure confirmation token request
  *    - convertText: Generic multi-format conversion function
  * 
- * 2. App Component (line 324+)
+ * 2. App Component
  *    - Manages all application states
  *    - Handlers for user interactions
  *    - Conditional rendering based on formats and modes
@@ -51,450 +51,13 @@
  */
 
 import { useMemo, useRef, useState, useCallback, useEffect } from "react";
-
-/**
- * Backend API base URL
- * IMPORTANT: Modify this constant if the backend runs on a different port
- * or address (e.g., production, Docker, etc.)
- */
-const API_BASE = "http://localhost:3003";
-
-/**
- * Converts AsciiDoc content to Markdown
- * 
- * @param text - AsciiDoc content to convert
- * @param setStatus - Function to update status message
- * @param setOutput - Function to set Markdown result
- * @param setLoading - Function to manage loading state
- * @param setNotification - Function to display notifications
- * 
- * ENDPOINT USED: POST /to-markdown
- * ENGINE: downdoc (native JavaScript library)
- * TIMEOUT: 30 seconds
- * 
- * ERROR HANDLING:
- * - Timeout: Explicit message if conversion exceeds 30s
- * - Network error: Backend connection verification
- * - HTTP error: Display error code and message
- */
-async function convertAsciiDocToMarkdown(
-  text: string,
-  setStatus: (s: string) => void,
-  setOutput: (s: string) => void,
-  setLoading: (b: boolean) => void,
-  setNotification: (n: { message: string; type: 'success' | 'error'; visible: boolean } | null) => void
-) {
-  if (!text.trim()) {
-    setStatus("Veuillez entrer du texte à convertir");
-    return;
-  }
-
-  setStatus("Conversion en cours...");
-  setLoading(true);
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 secondes de timeout
-
-    const res = await fetch(`${API_BASE}/to-markdown`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ text }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "");
-      throw new Error(`Erreur HTTP ${res.status}${errorText ? `: ${errorText}` : ""}`);
-    }
-
-    const data = await res.json();
-    setOutput(data.markdown ?? "");
-    setStatus("Conversion réussie ✔");
-    setNotification({
-      message: "Conversion réussie ✔",
-      type: 'success',
-      visible: true
-    });
-  } catch (e: any) {
-    if (e.name === "AbortError") {
-      const timeoutMessage = "Erreur : Timeout - La conversion prend trop de temps. Le fichier est peut-être trop volumineux.";
-      setStatus(timeoutMessage);
-      setNotification({
-        message: timeoutMessage,
-        type: 'error',
-        visible: true
-      });
-    } else if (e.message?.includes("NetworkError") || e.message?.includes("Failed to fetch")) {
-      const networkMessage = `Erreur réseau : Impossible de contacter l'API à ${API_BASE}. Vérifiez que le serveur backend est démarré.`;
-      setStatus(networkMessage);
-      setNotification({
-        message: networkMessage,
-        type: 'error',
-        visible: true
-      });
-    } else {
-      const errorMessage = `Erreur lors de l'appel à l'API : ${e.message ?? e}`;
-      setStatus(errorMessage);
-      setNotification({
-        message: errorMessage,
-        type: 'error',
-        visible: true
-      });
-    }
-  } finally {
-    setLoading(false);
-  }
-}
-
-/**
- * Converts Markdown content to AsciiDoc
- * 
- * @param text - Markdown content to convert
- * @param setStatus - Function to update status message
- * @param setOutput - Function to set AsciiDoc result
- * @param setLoading - Function to manage loading state
- * @param setNotification - Function to display notifications
- * @param setConversionMode - Optional function to update conversion mode
- * 
- * ENDPOINT USED: POST /to-asciidoc
- * ENGINE: Pandoc (external tool, must be installed)
- * TIMEOUT: 30 seconds
- * 
- * ERROR HANDLING:
- * - Timeout: Explicit message if conversion exceeds 30s
- * - Network error: Backend connection verification
- * - HTTP error: Display error code and message
- */
-async function convertMarkdownToAsciiDoc(
-  text: string,
-  setStatus: (s: string) => void,
-  setOutput: (s: string) => void,
-  setLoading: (b: boolean) => void,
-  setNotification: (n: { message: string; type: 'success' | 'error'; visible: boolean } | null) => void,
-  setConversionMode?: (mode: 'adoc-to-md' | 'md-to-adoc') => void
-) {
-  if (!text.trim()) {
-    setStatus("Veuillez entrer du texte à convertir");
-    return;
-  }
-
-  setStatus("Conversion en cours...");
-  setLoading(true);
-  if (setConversionMode) {
-    setConversionMode('md-to-adoc');
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    const res = await fetch(`${API_BASE}/to-asciidoc`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ text }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "");
-      throw new Error(`Erreur HTTP ${res.status}${errorText ? `: ${errorText}` : ""}`);
-    }
-
-    const data = await res.json();
-    setOutput(data.asciidoc ?? "");
-    setStatus("Conversion réussie ✔");
-    setNotification({
-      message: "Conversion réussie ✔",
-      type: 'success',
-      visible: true
-    });
-  } catch (e: any) {
-    if (e.name === "AbortError") {
-      const timeoutMessage = "Erreur : Timeout - La conversion prend trop de temps. Le fichier est peut-être trop volumineux.";
-      setStatus(timeoutMessage);
-      setNotification({
-        message: timeoutMessage,
-        type: 'error',
-        visible: true
-      });
-    } else if (e.message?.includes("NetworkError") || e.message?.includes("Failed to fetch")) {
-      const networkMessage = `Erreur réseau : Impossible de contacter l'API à ${API_BASE}. Vérifiez que le serveur backend est démarré.`;
-      setStatus(networkMessage);
-      setNotification({
-        message: networkMessage,
-        type: 'error',
-        visible: true
-      });
-    } else {
-      const errorMessage = `Erreur lors de l'appel à l'API : ${e.message ?? e}`;
-      setStatus(errorMessage);
-      setNotification({
-        message: errorMessage,
-        type: 'error',
-        visible: true
-      });
-    }
-  } finally {
-    setLoading(false);
-  }
-}
-
-/**
- * ============================================================================
- * CONFIRMATION TOKEN MANAGEMENT (SECURITY)
- * ============================================================================
- * 
- * Confirmation tokens are used to secure sensitive conversions. The backend
- * generates a unique, single-use, time-limited token. The frontend must request
- * this token BEFORE displaying the confirmation modal, then send it with the
- * conversion request.
- * 
- * FLOW:
- * 1. Frontend requests token → POST /api/confirmation/request
- * 2. Backend generates and returns token
- * 3. Frontend displays confirmation modal
- * 4. If user confirms, token is sent with conversion
- * 5. Backend validates and consumes token (single use)
- * 
- * ============================================================================
- */
-
-/**
- * Requests a confirmation token from the backend
- * 
- * This function must be called BEFORE displaying the confirmation modal.
- * The returned token must be included in the conversion request for the
- * backend to accept the conversion.
- * 
- * @param fromFormat - Source format of the conversion
- * @param toFormat - Destination format of the conversion
- * @param contentSize - Content size in bytes (optional, for logging)
- * @returns Promise<string> Unique confirmation token
- * 
- * @throws Error if request fails or response is invalid
- * 
- * ENDPOINT: POST /api/confirmation/request
- */
-async function requestConfirmationToken(
-  fromFormat: string,
-  toFormat: string,
-  contentSize?: number
-): Promise<string> {
-  try {
-    const res = await fetch(`${API_BASE}/api/confirmation/request`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        fromFormat,
-        toFormat,
-        contentSize
-      })
-    });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.message || `Failed to request confirmation token: ${res.status}`);
-    }
-
-    const data = await res.json();
-    if (!data.success || !data.token) {
-      throw new Error('Invalid response from confirmation token endpoint');
-    }
-
-    return data.token;
-  } catch (error: any) {
-    throw new Error(`Erreur lors de la demande de confirmation: ${error.message || error}`);
-  }
-}
-
-/**
- * ============================================================================
- * GENERIC MULTI-FORMAT CONVERSION FUNCTION
- * ============================================================================
- * 
- * This function handles all conversions between different document formats.
- * It automatically selects the correct endpoint and conversion engine based
- * on source and destination formats.
- * 
- * ENDPOINTS USED BY FORMAT:
- * -------------------------
- * - AsciiDoc → Markdown: /to-markdown (downdoc)
- * - Markdown → AsciiDoc: /to-asciidoc (Pandoc)
- * - Plain text → Markdown: /text-to-markdown (text2markdown)
- * - HTML → other formats: /from-html (Pandoc)
- * - Other conversions: /convert (Pandoc, requires confirmation token)
- * 
- * SECURITY:
- * ---------
- * - The /convert endpoint REQUIRES a confirmation token
- * - Other endpoints are less sensitive but may require a token depending
- *   on backend configuration
- * 
- * CONVERSION OPTIONS:
- * -------------------
- * - conversionOptions: Object containing normalization, encoding,
- *   format-specific options, etc. (see ConversionOptions type)
- * 
- * ERROR HANDLING:
- * --------------
- * - Validation: Checks that text is not empty
- * - Validation: Checks that source and destination formats are different
- * - Timeout: 30 seconds maximum per conversion
- * - Network: Connection error detection
- * - HTTP: Error code and message display
- * 
- * ============================================================================
- */
-
-/**
- * Converts text from a source format to a destination format
- * 
- * @param text - Content to convert
- * @param sourceFormat - Source format (asciidoc, markdown, html, pdf, yaml, json, txt)
- * @param targetFormat - Destination format (asciidoc, markdown, html, pdf, yaml, json, txt)
- * @param setStatus - Function to update status message
- * @param setOutput - Function to set converted result
- * @param setLoading - Function to manage loading state
- * @param setNotification - Function to display notifications
- * @param conversionOptions - Conversion options (normalization, encoding, etc.)
- * @param confirmationToken - Confirmation token (REQUIRED for /convert)
- * 
- * @throws Error if text is empty, if formats are identical,
- *         if token is missing for /convert, or on network/HTTP error
- */
-async function convertText(
-  text: string,
-  sourceFormat: 'asciidoc' | 'markdown' | 'html' | 'pdf' | 'yaml' | 'json' | 'txt',
-  targetFormat: 'asciidoc' | 'markdown' | 'html' | 'pdf' | 'yaml' | 'json' | 'txt',
-  setStatus: (s: string) => void,
-  setOutput: (s: string) => void,
-  setLoading: (b: boolean) => void,
-  setNotification: (n: { message: string; type: 'success' | 'error'; visible: boolean } | null) => void,
-  conversionOptions?: any,
-  confirmationToken?: string | null
-) {
-  if (!text.trim()) {
-    setStatus("Veuillez entrer du texte à convertir");
-    return;
-  }
-
-  if (sourceFormat === targetFormat) {
-    setStatus("Les formats source et destination sont identiques");
-    return;
-  }
-
-  setStatus("Conversion en cours...");
-  setLoading(true);
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    let endpoint = '';
-    let body: any = { text };
-
-    // Determine endpoint according to formats
-    if (sourceFormat === 'asciidoc' && targetFormat === 'markdown') {
-      // AsciiDoc → Markdown: use downdoc
-      endpoint = `${API_BASE}/to-markdown`;
-      // Include options if Parsedown is enabled
-      if (conversionOptions?.formatSpecific?.markdown?.parsedown) {
-        body = { text, options: conversionOptions };
-      }
-    } else if (sourceFormat === 'markdown' && targetFormat === 'asciidoc') {
-      // Markdown → AsciiDoc: use Pandoc
-      endpoint = `${API_BASE}/to-asciidoc`;
-    } else if (sourceFormat === 'txt' && targetFormat === 'markdown') {
-      // Plain text → Markdown: use text2markdown
-      endpoint = `${API_BASE}/text-to-markdown`;
-    } else if (sourceFormat === 'html') {
-      // HTML → other formats: use from-html endpoint
-      endpoint = `${API_BASE}/from-html`;
-      body = { text, to: targetFormat };
-    } else {
-      // For all other conversions (TXT to others, PDF, YAML, JSON, etc.): use generic /convert endpoint
-      endpoint = `${API_BASE}/convert`;
-      body = { 
-        text, 
-        from: sourceFormat, 
-        to: targetFormat, 
-        options: conversionOptions,
-        confirmationToken: confirmationToken || null // Confirmation token REQUIRED
-      };
-      
-      // Verify that token is present for /convert endpoint
-      if (!confirmationToken) {
-        throw new Error('Confirmation token is required for conversion');
-      }
-    }
-
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "");
-      throw new Error(`HTTP Error ${res.status}${errorText ? `: ${errorText}` : ""}`);
-    }
-
-    const data = await res.json();
-    // Handle different responses according to endpoint
-    const result = data.markdown || data.asciidoc || data.result || "";
-    setOutput(result);
-    setStatus("Conversion réussie ✔");
-    setNotification({
-      message: "Conversion réussie ✔",
-      type: 'success',
-      visible: true
-    });
-  } catch (e: any) {
-    if (e.name === "AbortError") {
-      const timeoutMessage = "Erreur : Timeout - La conversion prend trop de temps. Le fichier est peut-être trop volumineux.";
-      setStatus(timeoutMessage);
-      setNotification({
-        message: timeoutMessage,
-        type: 'error',
-        visible: true
-      });
-    } else if (e.message?.includes("NetworkError") || e.message?.includes("Failed to fetch")) {
-      const networkMessage = `Erreur réseau : Impossible de contacter l'API à ${API_BASE}. Vérifiez que le serveur backend est démarré.`;
-      setStatus(networkMessage);
-      setNotification({
-        message: networkMessage,
-        type: 'error',
-        visible: true
-      });
-    } else {
-      const errorMessage = `Erreur lors de l'appel à l'API : ${e.message ?? e}`;
-      setStatus(errorMessage);
-      setNotification({
-        message: errorMessage,
-        type: 'error',
-        visible: true
-      });
-    }
-  } finally {
-    setLoading(false);
-  }
-}
+import {
+  convertAsciiDocToMarkdown,
+  convertMarkdownToAsciiDoc,
+  convertText,
+  requestConfirmationToken
+} from "./converters";
+import { FormatType } from "./types";
 
 /**
  * ============================================================================
@@ -613,9 +176,9 @@ function App() {
   
   /** Stores conversion parameters pending confirmation */
   const [pendingConversion, setPendingConversion] = useState<{
-    text: string;
     fromFormat: FormatType;
     toFormat: FormatType;
+    token: string;
   } | null>(null);
 
   // ==========================================================================
@@ -630,9 +193,6 @@ function App() {
   
   /** Visual mode to determine which panels to display (changes with arrows) */
   const [visualMode, setVisualMode] = useState<'adoc-to-md' | 'md-to-adoc'>('adoc-to-md');
-  
-  /** Format type supported by the application */
-  type FormatType = 'asciidoc' | 'markdown' | 'html' | 'pdf' | 'yaml' | 'json' | 'txt';
   
   /** Current source format (determines which content to display in source panel) */
   const [sourceFormat, setSourceFormat] = useState<FormatType>('asciidoc');
@@ -1665,9 +1225,9 @@ function App() {
       // Token will be used only if user clicks "Yes"
       setConfirmationToken(token);
       setPendingConversion({
-        text: sourceText,
         fromFormat: sourceFormat,
-        toFormat: targetFormat
+        toFormat: targetFormat,
+        token: token
       });
 
       // STEP 3: Display confirmation modal
@@ -1710,10 +1270,20 @@ function App() {
       }
     };
 
+    // Determine source text according to source format
+    let sourceText = "";
+    if (sourceFormat === 'asciidoc') {
+      sourceText = adocInput;
+    } else if (sourceFormat === 'markdown') {
+      sourceText = mdOutput;
+    } else if (sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
+      sourceText = adocInput;
+    }
+
     // Lancer la conversion avec le token de confirmation
     setJustConverted(true);
     convertText(
-      pendingConversion.text,
+      sourceText,
       pendingConversion.fromFormat,
       pendingConversion.toFormat,
       setStatus,
@@ -1730,7 +1300,7 @@ function App() {
       setConfirmationToken(null);
       setPendingConversion(null);
     }, 2000);
-  }, [confirmationToken, pendingConversion, targetFormat, conversionOptions, setNotification]);
+  }, [confirmationToken, pendingConversion, targetFormat, conversionOptions, setNotification, sourceFormat, adocInput, mdOutput]);
 
   // ==========================================================================
   // HANDLERS: CONVERSION
@@ -2300,39 +1870,39 @@ function App() {
                   </button>
                   {expandedSections.has('contentAnalysis') && (
                     <div className="option-section-content">
-                      <div className="option-group">
-                        <label className="option-label">Mode d'analyse</label>
-                        <select
-                          value={conversionOptions.contentAnalysis?.analysisMode || 'heuristic'}
-                          onChange={(e) => updateOption(['contentAnalysis', 'analysisMode'], e.target.value)}
-                          className="option-select"
-                        >
-                          <option value="basic">Basique</option>
-                          <option value="heuristic">Heuristique</option>
-                          <option value="strict">Strict</option>
-                        </select>
-                      </div>
-                      <div className="option-group">
-                        <label className="option-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={conversionOptions.contentAnalysis?.headingDetection?.enabled !== false}
-                            onChange={(e) => updateOption(['contentAnalysis', 'headingDetection', 'enabled'], e.target.checked)}
-                            className="option-checkbox"
-                          />
-                          <span>Détection des titres</span>
-                        </label>
-                      </div>
-                      <div className="option-group">
-                        <label className="option-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={conversionOptions.contentAnalysis?.listDetection?.enabled !== false}
-                            onChange={(e) => updateOption(['contentAnalysis', 'listDetection', 'enabled'], e.target.checked)}
-                            className="option-checkbox"
-                          />
-                          <span>Détection des listes</span>
-                        </label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <div className="option-group">
+                          <label className="option-label">Mode d'analyse</label>
+                          <select
+                            value={conversionOptions.contentAnalysis?.analysisMode || 'heuristic'}
+                            onChange={(e) => updateOption(['contentAnalysis', 'analysisMode'], e.target.value)}
+                            className="option-select"
+                          >
+                            <option value="basic">Basique</option>
+                            <option value="heuristic">Heuristique</option>
+                            <option value="strict">Strict</option>
+                          </select>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <label className="option-checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={conversionOptions.contentAnalysis?.headingDetection?.enabled !== false}
+                              onChange={(e) => updateOption(['contentAnalysis', 'headingDetection', 'enabled'], e.target.checked)}
+                              className="option-checkbox"
+                            />
+                            <span>Détection des titres</span>
+                          </label>
+                          <label className="option-checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={conversionOptions.contentAnalysis?.listDetection?.enabled !== false}
+                              onChange={(e) => updateOption(['contentAnalysis', 'listDetection', 'enabled'], e.target.checked)}
+                              className="option-checkbox"
+                            />
+                            <span>Détection des listes</span>
+                          </label>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2352,7 +1922,7 @@ function App() {
                   </button>
                   {expandedSections.has('normalization') && (
                     <div className="option-section-content">
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
                         <div className="option-group">
                           <label className="option-label">Encodage</label>
                           <select
@@ -2378,7 +1948,7 @@ function App() {
                           </select>
                         </div>
                       </div>
-                      <div className="option-group">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                         <label className="option-checkbox-label">
                           <input
                             type="checkbox"
@@ -2386,10 +1956,8 @@ function App() {
                             onChange={(e) => updateOption(['normalization', 'tabs', 'convertToSpaces'], e.target.checked)}
                             className="option-checkbox"
                           />
-                          <span>Tabulations → Espaces</span>
+                          <span>Convertir les tabulations en espaces</span>
                         </label>
-                      </div>
-                      <div className="option-group">
                         <label className="option-checkbox-label">
                           <input
                             type="checkbox"
@@ -2397,52 +1965,44 @@ function App() {
                             onChange={(e) => updateOption(['normalization', 'advanced', 'unicode', 'detectConfusables'], e.target.checked)}
                             className="option-checkbox"
                           />
-                          <span>Détecter confusables</span>
+                          <span>Détecter les caractères confusables</span>
                         </label>
-                      </div>
-                      <div style={{ 
-                        marginTop: '0.75rem', 
-                        paddingTop: '0.75rem', 
-                        borderTop: '1px solid rgba(229, 231, 235, 0.15)' 
-                      }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                          <label className="option-checkbox-label">
-                            <input
-                              type="checkbox"
-                              checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeControlChars || false}
-                              onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeControlChars'], e.target.checked)}
-                              className="option-checkbox"
-                            />
-                            <span>Contrôle</span>
-                          </label>
-                          <label className="option-checkbox-label">
-                            <input
-                              type="checkbox"
-                              checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeDirectionalChars || false}
-                              onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeDirectionalChars'], e.target.checked)}
-                              className="option-checkbox"
-                            />
-                            <span>Directionnels</span>
-                          </label>
-                          <label className="option-checkbox-label">
-                            <input
-                              type="checkbox"
-                              checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeNonPrintableChars || false}
-                              onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeNonPrintableChars'], e.target.checked)}
-                              className="option-checkbox"
-                            />
-                            <span>Non imprimables</span>
-                          </label>
-                          <label className="option-checkbox-label">
-                            <input
-                              type="checkbox"
-                              checked={conversionOptions.normalization?.advanced?.validation?.rejectInvalidSequences !== false}
-                              onChange={(e) => updateOption(['normalization', 'advanced', 'validation', 'rejectInvalidSequences'], e.target.checked)}
-                              className="option-checkbox"
-                            />
-                            <span>Invalides</span>
-                          </label>
-                        </div>
+                        <label className="option-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeControlChars || false}
+                            onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeControlChars'], e.target.checked)}
+                            className="option-checkbox"
+                          />
+                          <span>Supprimer les caractères de contrôle</span>
+                        </label>
+                        <label className="option-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeDirectionalChars || false}
+                            onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeDirectionalChars'], e.target.checked)}
+                            className="option-checkbox"
+                          />
+                          <span>Supprimer les caractères directionnels</span>
+                        </label>
+                        <label className="option-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeNonPrintableChars || false}
+                            onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeNonPrintableChars'], e.target.checked)}
+                            className="option-checkbox"
+                          />
+                          <span>Supprimer les caractères non imprimables</span>
+                        </label>
+                        <label className="option-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={conversionOptions.normalization?.advanced?.validation?.rejectInvalidSequences !== false}
+                            onChange={(e) => updateOption(['normalization', 'advanced', 'validation', 'rejectInvalidSequences'], e.target.checked)}
+                            className="option-checkbox"
+                          />
+                          <span>Rejeter les séquences invalides</span>
+                        </label>
                       </div>
                     </div>
                   )}
@@ -2462,7 +2022,7 @@ function App() {
                   </button>
                   {expandedSections.has('rendering') && (
                     <div className="option-section-content">
-                      <div className="option-group">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                         <label className="option-checkbox-label">
                           <input
                             type="checkbox"
@@ -2472,8 +2032,6 @@ function App() {
                           />
                           <span>Table des matières</span>
                         </label>
-                      </div>
-                      <div className="option-group">
                         <label className="option-checkbox-label">
                           <input
                             type="checkbox"
@@ -2483,28 +2041,29 @@ function App() {
                           />
                           <span>Numérotation des sections</span>
                         </label>
-                      </div>
-                      <div className="option-group">
-                        <label className="option-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={conversionOptions.rendering?.lineWrap?.enabled || false}
-                            onChange={(e) => updateOption(['rendering', 'lineWrap', 'enabled'], e.target.checked)}
-                            className="option-checkbox"
-                          />
-                          <span>Retour à la ligne automatique</span>
-                        </label>
-                        {conversionOptions.rendering?.lineWrap?.enabled && (
-                          <input
-                            type="number"
-                            value={conversionOptions.rendering?.lineWrap?.maxWidth || 80}
-                            onChange={(e) => updateOption(['rendering', 'lineWrap', 'maxWidth'], parseInt(e.target.value) || 80)}
-                            className="option-input"
-                            min="40"
-                            max="200"
-                            placeholder="Largeur max (caractères)"
-                          />
-                        )}
+                        <div>
+                          <label className="option-checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={conversionOptions.rendering?.lineWrap?.enabled || false}
+                              onChange={(e) => updateOption(['rendering', 'lineWrap', 'enabled'], e.target.checked)}
+                              className="option-checkbox"
+                            />
+                            <span>Retour à la ligne automatique</span>
+                          </label>
+                          {conversionOptions.rendering?.lineWrap?.enabled && (
+                            <input
+                              type="number"
+                              value={conversionOptions.rendering?.lineWrap?.maxWidth || 80}
+                              onChange={(e) => updateOption(['rendering', 'lineWrap', 'maxWidth'], parseInt(e.target.value) || 80)}
+                              className="option-input"
+                              style={{ marginTop: '0.5rem', width: '100%' }}
+                              min="40"
+                              max="200"
+                              placeholder="Largeur max (caractères)"
+                            />
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2583,38 +2142,40 @@ function App() {
                   </button>
                   {expandedSections.has('metadata') && (
                     <div className="option-section-content">
-                      <div className="option-group">
-                        <label className="option-label">Titre</label>
-                        <input
-                          type="text"
-                          value={conversionOptions.metadata?.title || ''}
-                          onChange={(e) => updateOption(['metadata', 'title'], e.target.value || null)}
-                          className="option-input"
-                          placeholder="Titre du document"
-                        />
-                      </div>
-                      <div className="option-group">
-                        <label className="option-label">Auteur</label>
-                        <input
-                          type="text"
-                          value={conversionOptions.metadata?.author || ''}
-                          onChange={(e) => updateOption(['metadata', 'author'], e.target.value || null)}
-                          className="option-input"
-                          placeholder="Auteur"
-                        />
-                      </div>
-                      <div className="option-group">
-                        <label className="option-label">Langue</label>
-                        <select
-                          value={conversionOptions.metadata?.language || 'fr'}
-                          onChange={(e) => updateOption(['metadata', 'language'], e.target.value)}
-                          className="option-select"
-                        >
-                          <option value="fr">Français</option>
-                          <option value="en">Anglais</option>
-                          <option value="es">Espagnol</option>
-                          <option value="de">Allemand</option>
-                        </select>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <div className="option-group">
+                          <label className="option-label">Titre</label>
+                          <input
+                            type="text"
+                            value={conversionOptions.metadata?.title || ''}
+                            onChange={(e) => updateOption(['metadata', 'title'], e.target.value || null)}
+                            className="option-input"
+                            placeholder="Titre du document"
+                          />
+                        </div>
+                        <div className="option-group">
+                          <label className="option-label">Auteur</label>
+                          <input
+                            type="text"
+                            value={conversionOptions.metadata?.author || ''}
+                            onChange={(e) => updateOption(['metadata', 'author'], e.target.value || null)}
+                            className="option-input"
+                            placeholder="Auteur"
+                          />
+                        </div>
+                        <div className="option-group">
+                          <label className="option-label">Langue</label>
+                          <select
+                            value={conversionOptions.metadata?.language || 'fr'}
+                            onChange={(e) => updateOption(['metadata', 'language'], e.target.value)}
+                            className="option-select"
+                          >
+                            <option value="fr">Français</option>
+                            <option value="en">Anglais</option>
+                            <option value="es">Espagnol</option>
+                            <option value="de">Allemand</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                   )}
