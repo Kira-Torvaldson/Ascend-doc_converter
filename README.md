@@ -2,7 +2,8 @@
 
 Application web moderne pour convertir des documents entre les formats AsciiDoc et Markdown, avec une interface utilisateur intuitive et élégante.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-0.0.1.1--alpha-orange)
+![Status](https://img.shields.io/badge/status-alpha-orange)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -175,7 +176,7 @@ npm run preview
 
 7. **Paramètres de l'application** :
    - Cliquez sur l'icône ⚙️ dans l'en-tête pour ouvrir le panneau de paramètres
-   - Configurez les paramètres utilisateur de l'API (disponible prochainement)
+   - Configurez les paramètres utilisateur de l'API
 
 7. **Édition des résultats** :
    - ✏️ **Activer l'édition** : Cliquez sur le bouton (confirmation requise)
