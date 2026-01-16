@@ -52,12 +52,14 @@ body {
   flex-direction: column;
   width: 100%;
   /* Rafale background for frontend, served by backend */
-  background-image: url("http://localhost:3003/public/rafale.jpg");
+  background-image: url("http://localhost:3003/public/rafale.jpg?v=2");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   background-attachment: fixed;
   position: relative;
+  /* Fallback background color */
+  background-color: #0b1120;
 }
 
 /* ============================================

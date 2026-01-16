@@ -2,15 +2,15 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { convertAsciiDoc, convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown } = require('../convert.js');
-const { mergeOptions, validateOptions } = require('../conversion-options.js');
+const { convertAsciiDoc, convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown } = require('./services/convert.js');
+const { mergeOptions, validateOptions } = require('./conversion-options.js');
 const { 
   generateConfirmationToken, 
   validateAndConsumeToken, 
   getTokenStats,
   secureConvertWithToken,
   ConfirmationTokenError
-} = require('../secure-converter.js');
+} = require('./services/secure-converter.js');
 
 // __dirname est automatiquement disponible en CommonJS
 const PROJECT_ROOT = path.join(__dirname, '..', '..');

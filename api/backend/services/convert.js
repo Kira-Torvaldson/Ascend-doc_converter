@@ -5,8 +5,8 @@ const { writeFileSync, unlinkSync, readFileSync } = require('fs')
 const { tmpdir } = require('os')
 const path = require('path')
 const { randomUUID } = require('crypto')
-const downdoc = require('../lib/index.js')
-const { adaptForBookStack } = require('./frontend/bookstack-adapter.js')
+const downdoc = require('../../../lib/index.js')
+const { adaptForBookStack } = require('../../shared/adapters/bookstack-adapter.js')
 
 /**
  * Converts AsciiDoc content to Markdown using the downdoc CLI tool

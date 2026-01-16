@@ -5,7 +5,7 @@ const cors = require('cors')
 const { convertAsciiDoc } = require('./convert.js')
 // Keep old imports for backward compatibility if needed
 const downdoc = require('../lib/index.js')
-const { adaptForBookStack } = require('./bookstack-adapter.js')
+const { adaptForBookStack } = require('./adapters/bookstack-adapter.js')
 
 const app = express()
 const PORT = process.env.PORT || 3001
