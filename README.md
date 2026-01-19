@@ -2,7 +2,7 @@
 
 Application web moderne et sécurisée pour la conversion de documents entre différents formats, avec une architecture modulaire basée sur un pipeline de conversion isolé et un système de lazy loading pour optimiser les performances.
 
-![Version](https://img.shields.io/badge/version-0.0.1.2-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.2.1-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -910,18 +910,33 @@ Ascend/
 │   │   └── vite.config.ts    # Configuration Vite
 │   │
 │   ├── backend/              # Application backend Node.js
-│   │   ├── server.js         # Serveur Express principal
-│   │   ├── services/         # Services de conversion
-│   │   │   ├── convert.js                   # Module de conversion principal
-│   │   │   ├── secure-converter.js          # Moteur de conversion sécurisé
-│   │   │   ├── pipeline-security.js         # Module de sécurité du pipeline (PIPELINE.md)
-│   │   │   ├── modules/                     # Modules de conversion modulaires
-│   │   │   │   ├── downdoc.module.js        # Module downdoc conforme à l'interface
-│   │   │   │   ├── lazyload.module.js       # Module de lazy loading
-│   │   │   │   └── index.js                 # Exports centralisés
-│   │   │   ├── docverter.js                 # Module Docverter
-│   │   │   ├── panwriter.js                 # Module PanWriter
-│   │   │   └── index.js                     # Exports centralisés
+│   │   ├── server.js         # Point d'entrée du serveur (démarre le serveur)
+│   │   ├── app.js            # Configuration Express (middleware, routes)
+│   │   ├── routes/           # Routes organisées par domaine
+│   │   │   ├── conversion.routes.js  # Routes de conversion
+│   │   │   └── api.routes.js         # Routes API (tokens, logs)
+│   │   ├── middleware/       # Middleware Express
+│   │   │   ├── cors.middleware.js           # Configuration CORS
+│   │   │   └── error-handler.middleware.js  # Gestionnaire d'erreurs global
+│   │   ├── services/         # Services organisés par catégorie
+│   │   │   ├── conversion/   # Services de conversion
+│   │   │   │   ├── convert.js               # Fonctions de conversion principales
+│   │   │   │   └── secure-converter.js      # Moteur de conversion sécurisé
+│   │   │   ├── security/    # Sécurité du pipeline
+│   │   │   │   └── pipeline-security.js     # Module de sécurité (PIPELINE.md)
+│   │   │   ├── logging/     # Logging structuré
+│   │   │   │   └── structured-logger.js     # Journalisation JSON structurée
+│   │   │   └── modules/     # Modules de conversion modulaires
+│   │   │       ├── downdoc.module.js        # Module AsciiDoc → Markdown
+│   │   │       ├── text2markdown.module.js  # Module Text → Markdown
+│   │   │       ├── panwriter.module.js      # Module multi-formats (placeholder)
+│   │   │       ├── docverter.module.js      # Service de conversion (placeholder)
+│   │   │       ├── lazyload.module.js       # Gestionnaire de lazy loading
+│   │   │       ├── converter-orchestrator.module.js  # Orchestrateur central
+│   │   │       ├── main-orchestrator.js     # Orchestrateur principal
+│   │   │       ├── execution-orchestrator.js # Orchestrateur d'exécution
+│   │   │       ├── orchestrator.js          # Orchestrateur linéaire (legacy)
+│   │   │       └── index.js                 # Exports centralisés
 │   │   ├── config/           # Configuration backend
 │   │   │   └── index.js
 │   │   ├── conversion-options.js            # Options de conversion
@@ -935,12 +950,16 @@ Ascend/
 │   │   │   └── index.html
 │   │   └── package.json     # Configuration npm
 │   │
-│   └── shared/               # Éléments partagés entre frontend et backend
-│       ├── adapters/         # Adaptateurs de format
-│       │   ├── bookstack-adapter.js  # Version CommonJS pour backend
-│       │   └── bookstack-adapter.ts  # Version TypeScript pour frontend
-│       └── utils/            # Utilitaires partagés
-│           └── index.js
+│   ├── shared/               # Éléments partagés entre frontend et backend
+│   │   ├── adapters/         # Adaptateurs de format
+│   │   │   ├── bookstack-adapter.js  # Version CommonJS pour backend
+│   │   │   └── bookstack-adapter.ts  # Version TypeScript pour frontend
+│   │   └── utils/            # Utilitaires partagés
+│   │       └── index.js
+│   │
+│   └── logs/                 # Logs structurés des conversions
+│       ├── .gitkeep         # Maintient le dossier dans Git
+│       └── list-logs.js     # Script Node.js pour visualiser les logs
 │
 ├── doc/                      # Documentation complète
 │   ├── README.md            # Index de la documentation
@@ -1181,6 +1200,90 @@ Code partagé entre frontend et backend :
 - **adapters/** : Adaptateurs de format (BookStack/Parsedown)
   - **bookstack-adapter.js** : Version CommonJS pour backend
   - **bookstack-adapter.ts** : Version TypeScript pour frontend
+
+#### Logs (`api/logs/`)
+Dossier contenant les logs structurés de toutes les conversions effectuées.
+
+**Structure :**
+- **Format** : Fichiers JSON (`.log`)
+- **Nommage** : `{conversionId}.log` où `conversionId` est un UUID unique
+- **Création** : Automatique lors de chaque conversion
+- **Fichiers** :
+  - **.gitkeep** : Maintient le dossier dans Git
+  - **list-logs.js** : Script Node.js pour visualiser les logs depuis le terminal
+
+**Visualisation des logs :**
+
+**Option 1 : Script Node.js (Recommandé)**
+```bash
+# Depuis le dossier api/logs
+cd api/logs
+
+# Lister tous les logs
+node list-logs.js
+
+# Afficher un log spécifique
+node list-logs.js {conversionId}
+
+# Aide
+node list-logs.js --help
+```
+
+**Option 2 : Via l'API**
+```bash
+# Lire un log spécifique
+curl http://localhost:3003/api/logs/{conversionId}
+
+# Lister tous les logs
+curl http://localhost:3003/api/logs
+
+# Avec jq pour formater le JSON
+curl -s http://localhost:3003/api/logs/{conversionId} | jq
+```
+
+**Option 3 : Directement depuis le terminal**
+```bash
+# Depuis le dossier api/logs
+cd api/logs
+
+# Lister tous les fichiers de logs
+ls *.log
+
+# Afficher un log spécifique (JSON brut)
+cat {conversionId}.log
+
+# Afficher avec formatage (si jq est installé)
+cat {conversionId}.log | jq
+
+# Rechercher dans les logs
+grep -r "error" *.log
+```
+
+**Format des logs :**
+Chaque fichier de log contient un objet JSON avec :
+- **conversionId** : Identifiant unique de la conversion
+- **timestamp** : Dates de début et de fin
+- **formats** : Format source et cible
+- **status** : Statut (running, success, error)
+- **execution** : Détails des étapes d'exécution
+- **files** : Fichiers d'entrée, de sortie et intermédiaires
+- **logs** : Messages de log détaillés
+- **error** : Message d'erreur (si échec)
+
+**Nettoyage :**
+Les logs sont automatiquement nettoyés après 30 jours (configurable via `LOG_RETENTION_DAYS`).
+
+Pour nettoyer manuellement :
+```bash
+# Supprimer les logs de plus de 30 jours
+find api/logs -name "*.log" -mtime +30 -delete
+```
+
+**Configuration :**
+Le chemin des logs peut être personnalisé via la variable d'environnement `LOGS_DIR` :
+```bash
+export LOGS_DIR=/chemin/vers/logs
+```
 
 ### 📦 Imports recommandés
 
