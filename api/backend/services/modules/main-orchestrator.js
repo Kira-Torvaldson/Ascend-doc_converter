@@ -36,7 +36,7 @@ const {
   recordInputFile,
   recordOutputFile,
   finalizeLog
-} = require('../../logging/structured-logger.js')
+} = require('../logging/structured-logger.js')
 
 // ============================================================================
 // CONFIGURATION

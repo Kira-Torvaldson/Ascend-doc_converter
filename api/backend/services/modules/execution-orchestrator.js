@@ -26,7 +26,7 @@ const {
   addLogMessage,
   recordStep,
   recordOutputFile
-} = require('../../logging/structured-logger.js')
+} = require('../logging/structured-logger.js')
 
 // ============================================================================
 // CONFIGURATION
