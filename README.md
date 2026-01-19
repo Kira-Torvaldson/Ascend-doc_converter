@@ -2,8 +2,8 @@
 
 Application web moderne et sécurisée pour la conversion de documents entre différents formats, avec une architecture modulaire basée sur un pipeline de conversion isolé et un système de lazy loading pour optimiser les performances.
 
-![Version](https://img.shields.io/badge/version-0.0.1.2--alpha-orange)
-![Status](https://img.shields.io/badge/status-alpha-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.2-orange)
+![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
