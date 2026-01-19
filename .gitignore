@@ -20,6 +20,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Conversion logs (structured logs are generated at runtime)
+# Keep logs directory structure but ignore log files
+api/logs/*.log
+!api/logs/.gitkeep
+
 # Environment variables
 .env
 .env.local

@@ -46,9 +46,20 @@ const AVAILABLE_MODULES = {
   'downdoc': {
     path: path.join(MODULES_DIR, 'downdoc.module.js'),
     name: 'downdoc'
+  },
+  'text2markdown': {
+    path: path.join(MODULES_DIR, 'text2markdown.module.js'),
+    name: 'text2markdown'
+  },
+  'panwriter': {
+    path: path.join(MODULES_DIR, 'panwriter.module.js'),
+    name: 'panwriter'
+  },
+  'docverter': {
+    path: path.join(MODULES_DIR, 'docverter.module.js'),
+    name: 'docverter'
   }
-  // Other modules (pandoc, text2markdown, docverter, panwriter) will be added
-  // when they are created according to the modules.interface.md interface
+  // Note: pandoc is executed via command-line, not as a lazy-loaded module
 }
 
 // ============================================================================

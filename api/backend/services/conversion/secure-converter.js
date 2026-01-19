@@ -40,7 +40,7 @@ const {
   MimeTypeDetector,
   SecurityLogger,
   SECURITY_CONFIG: PIPELINE_SECURITY_CONFIG
-} = require('./pipeline-security.js')
+} = require('../security/pipeline-security.js')
 
 // ============================================================================
 // CONFIGURATION DES TOKENS DE CONFIRMATION

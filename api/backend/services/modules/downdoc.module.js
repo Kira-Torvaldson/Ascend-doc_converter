@@ -16,8 +16,20 @@
 
 const { readFileSync, writeFileSync, statSync, existsSync, unlinkSync } = require('fs')
 const path = require('path')
-const downdoc = require('../../../../lib/index.js')
 const { adaptForBookStack } = require('../../../shared/adapters/bookstack-adapter.js')
+
+// Load downdoc library with absolute path resolution
+const libPath = path.resolve(__dirname, '../../../../lib/index.js')
+let downdoc
+try {
+  downdoc = require(libPath)
+  if (typeof downdoc !== 'function') {
+    throw new Error(`downdoc library at ${libPath} is not a function (type: ${typeof downdoc})`)
+  }
+} catch (error) {
+  console.error(`[downdoc.module] Failed to load downdoc library from ${libPath}:`, error.message)
+  throw error
+}
 
 // ============================================================================
 // CONFIGURATION
@@ -220,6 +232,8 @@ const downdocModule = {
 
       // Step 3: In-memory conversion via downdoc (downdoc.module.md)
       logs.push(`[${conversionId}] Converting AsciiDoc to Markdown...`)
+      logs.push(`[${conversionId}] Input content preview (first 100 chars): ${asciidocContent.substring(0, 100)}...`)
+      
       let markdown
       try {
         const mode = options.mode || 'default'
@@ -230,9 +244,54 @@ const downdocModule = {
           logs.push(`[${conversionId}] Using BookStack/Parsedown mode`)
         }
 
+        // Verify downdoc function is available
+        if (typeof downdoc !== 'function') {
+          const duration = (Date.now() - startTime) / 1000
+          logs.push(`[${conversionId}] ERROR: downdoc is not a function. Type: ${typeof downdoc}`)
+          logs.push(`[${conversionId}] Library path: ${libPath}`)
+          return {
+            success: false,
+            logs: logs,
+            error: 'downdoc library is not properly loaded',
+            duration: duration
+          }
+        }
+
         // Conversion via downdoc
+        logs.push(`[${conversionId}] Calling downdoc function...`)
+        logs.push(`[${conversionId}] Input sample: ${asciidocContent.substring(0, 50)}...`)
         markdown = downdoc(asciidocContent, downdocOptions)
+        logs.push(`[${conversionId}] Downdoc returned: ${markdown ? markdown.substring(0, 50) + '...' : 'null/undefined'}`)
+        
+        // Verify conversion actually happened
+        if (!markdown || typeof markdown !== 'string') {
+          const duration = (Date.now() - startTime) / 1000
+          logs.push(`[${conversionId}] ERROR: downdoc returned invalid result. Type: ${typeof markdown}`)
+          return {
+            success: false,
+            logs: logs,
+            error: 'downdoc returned invalid result',
+            duration: duration
+          }
+        }
+        
+        // Check if result is different from input (basic sanity check)
+        if (markdown === asciidocContent) {
+          const duration = (Date.now() - startTime) / 1000
+          logs.push(`[${conversionId}] ERROR: Conversion result is identical to input - conversion failed!`)
+          logs.push(`[${conversionId}] Input length: ${asciidocContent.length}, Output length: ${markdown.length}`)
+          logs.push(`[${conversionId}] This indicates downdoc did not perform the conversion`)
+          return {
+            success: false,
+            logs: logs,
+            error: 'Conversion failed: output is identical to input. The downdoc library may not be working correctly.',
+            duration: duration
+          }
+        }
+        
         logs.push(`[${conversionId}] Conversion completed`)
+        logs.push(`[${conversionId}] Output content preview (first 100 chars): ${markdown.substring(0, 100)}...`)
+        logs.push(`[${conversionId}] Output length: ${markdown.length} characters`)
       } catch (error) {
         const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Conversion failed: ${error.message}`)
@@ -246,20 +305,120 @@ const downdocModule = {
 
       // Step 4: Result post-processing (downdoc.module.md)
       logs.push(`[${conversionId}] Applying post-processing...`)
+      const markdownBeforeCleanup = markdown
       markdown = basicCleanup(markdown)
+      
+      // Verify cleanup didn't break the conversion
+      if (!markdown || markdown.trim().length === 0) {
+        const duration = (Date.now() - startTime) / 1000
+        logs.push(`[${conversionId}] ERROR: Post-processing resulted in empty markdown`)
+        logs.push(`[${conversionId}] Reverting to pre-cleanup version`)
+        markdown = markdownBeforeCleanup
+      }
+      
+      // Verify markdown is still different from input after cleanup
+      if (markdown === asciidocContent) {
+        const duration = (Date.now() - startTime) / 1000
+        logs.push(`[${conversionId}] ERROR: After cleanup, markdown is identical to input - conversion failed!`)
+        return {
+          success: false,
+          logs: logs,
+          error: 'Conversion failed: output is identical to input after post-processing.',
+          duration: duration
+        }
+      }
 
       // Apply BookStack adapter if necessary
       if (options.mode === 'bookstack') {
         logs.push(`[${conversionId}] Applying BookStack adapter...`)
+        const markdownBeforeAdapter = markdown
         markdown = adaptForBookStack(markdown)
+        
+        // Verify adapter didn't break the conversion
+        if (!markdown || markdown.trim().length === 0) {
+          logs.push(`[${conversionId}] WARNING: BookStack adapter resulted in empty markdown, using pre-adapter version`)
+          markdown = markdownBeforeAdapter
+        }
+        
+        // Verify markdown is still different from input after adapter
+        if (markdown === asciidocContent) {
+          logs.push(`[${conversionId}] WARNING: After BookStack adapter, markdown is identical to input, using pre-adapter version`)
+          markdown = markdownBeforeAdapter
+        }
       }
       logs.push(`[${conversionId}] Post-processing completed`)
+      logs.push(`[${conversionId}] Final markdown length: ${markdown.length} characters`)
 
       // Step 5: Write result (downdoc.module.md)
       logs.push(`[${conversionId}] Writing output file...`)
+      logs.push(`[${conversionId}] Output path: ${outputPath}`)
+      logs.push(`[${conversionId}] Markdown length before write: ${markdown.length} characters`)
+      
+      // Verify markdown is different from input (sanity check)
+      if (markdown === asciidocContent) {
+        logs.push(`[${conversionId}] ERROR: Markdown output is identical to AsciiDoc input - conversion failed!`)
+        const duration = (Date.now() - startTime) / 1000
+        return {
+          success: false,
+          logs: logs,
+          error: 'Conversion failed: output is identical to input. The downdoc library may not be working correctly.',
+          duration: duration
+        }
+      }
+      
       try {
         writeFileSync(outputPath, markdown, 'utf8')
+        
+        // Verify file was written correctly
+        if (!existsSync(outputPath)) {
+          const duration = (Date.now() - startTime) / 1000
+          logs.push(`[${conversionId}] ERROR: Output file was not created`)
+          return {
+            success: false,
+            logs: logs,
+            error: 'Output file was not created',
+            duration: duration
+          }
+        }
+        
+        // Verify file content matches what we wrote
+        const writtenContent = readFileSync(outputPath, 'utf8')
+        if (writtenContent !== markdown) {
+          logs.push(`[${conversionId}] WARNING: Written content differs from expected markdown`)
+          logs.push(`[${conversionId}] Expected length: ${markdown.length}, Written length: ${writtenContent.length}`)
+        }
+        
+        // Final verification: ensure output is Markdown, not AsciiDoc
+        if (writtenContent === asciidocContent) {
+          const duration = (Date.now() - startTime) / 1000
+          logs.push(`[${conversionId}] CRITICAL ERROR: Written file content is identical to input AsciiDoc!`)
+          logs.push(`[${conversionId}] This means the conversion did not happen or the wrong file was written`)
+          
+          // Try to remove the incorrect file
+          try {
+            unlinkSync(outputPath)
+            logs.push(`[${conversionId}] Incorrect output file removed`)
+          } catch (unlinkError) {
+            logs.push(`[${conversionId}] Warning: Failed to remove incorrect output file`)
+          }
+          
+          return {
+            success: false,
+            logs: logs,
+            error: 'Conversion failed: output file contains AsciiDoc instead of Markdown. The conversion did not occur.',
+            duration: duration
+          }
+        }
+        
+        // Verify output looks like Markdown (basic check: should have # for headers, not =)
+        if (writtenContent.includes('=') && writtenContent.match(/^=+\s+\w+/m)) {
+          logs.push(`[${conversionId}] WARNING: Output file may still contain AsciiDoc syntax (starts with =)`)
+          logs.push(`[${conversionId}] First line: ${writtenContent.split('\n')[0]}`)
+        }
+        
         logs.push(`[${conversionId}] Output file written successfully`)
+        logs.push(`[${conversionId}] Output file size: ${writtenContent.length} characters`)
+        logs.push(`[${conversionId}] Output preview (first 200 chars): ${writtenContent.substring(0, 200)}...`)
       } catch (error) {
         // Obligation 3 - Secure error handling: do not create partial file
         // If writing fails, remove file if it was partially created
