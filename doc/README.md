@@ -6,9 +6,14 @@ Bienvenue dans la documentation d'Ascend. Cette documentation est organisée par
 
 ```
 doc/
+├── README.md                    # Index de la documentation
 ├── specifications/              # Spécifications et architecture
 │   ├── PIPELINE.md            # Spécification complète du pipeline
-│   └── secure-converter.md    # Moteur de conversion sécurisé
+│   ├── modules.interface.md   # Contrat d'interface des modules
+│   ├── secure-converter.md    # Moteur de conversion sécurisé
+│   └── modules/               # Spécifications des modules
+│       ├── lazyload.module.md # Module de lazy loading
+│       └── downdoc.module.md  # Module Downdoc
 │
 ├── guides/                     # Guides pratiques
 │   ├── security/              # Guides de sécurité
@@ -35,6 +40,23 @@ Documents de référence décrivant l'architecture et les spécifications du sys
   - Validation et sécurité
   - Cycle de vie d'une conversion
   - **Document de référence principal**
+
+- **[modules.interface.md](specifications/modules.interface.md)** - Contrat d'interface des modules
+  - Spécification technique du contrat des modules
+  - Propriétés obligatoires (nom, formats supportés)
+  - Méthode standard `run()` avec structure de retour uniforme
+  - Contraintes d'exécution et comportement attendu
+  - **Document de référence pour créer ou intégrer un module**
+
+- **[lazyload.module.md](specifications/modules/lazyload.module.md)** - Module de lazy loading
+  - Gestionnaire centralisé de chargement différé pour tous les converters
+  - Interface uniforme compatible avec tous les wrappers
+  - Réduction de la consommation mémoire
+  - Journalisation et gestion sécurisée des erreurs
+
+- **[downdoc.module.md](specifications/modules/downdoc.module.md)** - Module Downdoc
+  - Spécification du wrapper downdoc
+  - Exemple de module conforme à l'interface
 
 - **[secure-converter.md](specifications/secure-converter.md)** - Moteur de conversion sécurisé
   - Vue d'ensemble du moteur

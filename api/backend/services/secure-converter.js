@@ -845,15 +845,34 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
     }
 
     // Step 6: Execute conversion securely
-    modulesExecuted.push('pandoc')
-    await SecureCommandExecutor.executePandoc(
-      conversionId,
-      fromFormat,
-      toFormat,
-      inputFile,
-      outputFile,
-      timeout
-    )
+    // Utiliser le lazy loader pour les conversions AsciiDoc → Markdown
+    if (normalizedFrom === 'asciidoc' && normalizedTo === 'markdown') {
+      modulesExecuted.push('downdoc')
+      const { runConverter } = require('./modules/lazyload.module.js')
+      const result = await runConverter('downdoc', inputFile, outputFile, {
+        conversionId: conversionId,
+        mode: options?.formatSpecific?.markdown?.parsedown ? 'bookstack' : 'default'
+      })
+      
+      if (!result.success) {
+        throw new ConversionError(
+          'CONVERSION_FAILED',
+          result.error || 'Module conversion failed',
+          conversionId
+        )
+      }
+    } else {
+      // Utiliser Pandoc pour les autres conversions
+      modulesExecuted.push('pandoc')
+      await SecureCommandExecutor.executePandoc(
+        conversionId,
+        fromFormat,
+        toFormat,
+        inputFile,
+        outputFile,
+        timeout
+      )
+    }
 
     // Règle 22.2 : Vérification du budget après exécution
     const postBudgetCheck = resourceBudgetManager.checkBudget(conversionId)
