@@ -14,6 +14,8 @@ doc/
 │   └── modules/               # Spécifications des modules
 │       ├── lazyload.module.md # Module de lazy loading
 │       ├── converter-orchestrator.module.md # Module orchestrateur
+│       ├── orchestrator-comm.module.md # Communication entre orchestrateurs
+│       ├── logs.module.md              # Module de logs structurés
 │       ├── downdoc.module.md  # Module Downdoc
 │       ├── pandoc.module.md   # Module Pandoc
 │       ├── text2markdown.module.md # Module Text2Markdown
@@ -83,10 +85,20 @@ Documents de référence décrivant l'architecture et les spécifications du sys
   - Service de conversion de documents
   - Support multi-formats (Office, images, PDF)
 
-- **[converter-orchestrator.module.md](specifications/modules/converter-orchestrator.module.md)** - Module Orchestrateur
+- **[converter-orchestrator.module.md](specifications/modules/converter-orchestrator.module.md)** - Module Orchestrateur de Converters
   - Orchestrateur central pour tous les converters
   - Identification automatique du converter approprié
   - Standardisation des retours et intégration du lazy loading
+
+- **[orchestrator.module.md](specifications/modules/orchestrator.module.md)** - Module Orchestrateur Linéaire (legacy)
+  - Mini-orchestrateur pour flux linéaire de conversion multi-étapes
+  - Chaînage séquentiel de modules de conversion
+  - Gestion automatique des dossiers temporaires et nettoyage
+
+- **[orchestrator-comm.module.md](specifications/modules/orchestrator-comm.module.md)** - Communication entre Orchestrateurs
+  - Architecture de communication entre orchestrateur principal et orchestrateur d'exécution
+  - Flux de communication et gestion des dossiers temporaires
+  - Format de retour standardisé et sécurité
 
 - **[secure-converter.md](specifications/secure-converter.md)** - Moteur de conversion sécurisé
   - Vue d'ensemble du moteur

@@ -120,6 +120,23 @@ Pour ajouter un nouveau converter au registre :
 
 Aucune modification du code existant n'est nécessaire, seule l'ajout d'une entrée dans le registre suffit.
 
+## Communication avec le linear orchestrator
+
+Le module `converter-orchestrator` communique avec le `linear orchestrator` pour éviter la surcharge du système :
+
+### Gestion du contrôle de charge
+
+- **Appels externes** : Pour les appels directs (non depuis le linear orchestrator), le converter-orchestrator gère le contrôle de charge
+- **Appels internes** : Pour les appels depuis le linear orchestrator (marqués avec `_internal: true`), le contrôle de charge est géré par le linear orchestrator
+- **Pas de double comptage** : Les appels internes n'acquièrent pas de slot de concurrence séparé
+- **Suivi unifié** : Les succès et échecs sont enregistrés uniquement pour les appels externes
+
+### Mécanismes de protection
+
+1. **Détection du type d'appel** : Le module détecte si l'appel est interne ou externe via l'option `_internal`
+2. **Contrôle de charge conditionnel** : Le contrôle de charge n'est appliqué que pour les appels externes
+3. **Libération garantie** : Les slots de concurrence sont toujours libérés dans un bloc `finally`
+
 ## Sécurité et isolation
 
 ### Obligations de sécurité minimales (V1)

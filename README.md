@@ -720,12 +720,29 @@ Le projet dispose d'une documentation complète dans le dossier [`doc/`](doc/). 
   - Service de conversion de documents
   - Support multi-formats (Office, images, PDF)
 
-- **[converter-orchestrator.module.md](doc/specifications/modules/converter-orchestrator.module.md)** - **Module Orchestrateur**
+- **[converter-orchestrator.module.md](doc/specifications/modules/converter-orchestrator.module.md)** - **Module Orchestrateur de Converters**
   - Orchestrateur central pour tous les converters
   - Identification automatique du converter approprié
   - Standardisation des retours et intégration du lazy loading
+
+- **[orchestrator.module.md](doc/specifications/modules/orchestrator.module.md)** - **Module Orchestrateur Linéaire (legacy)**
+  - Mini-orchestrateur pour flux linéaire de conversion multi-étapes
+  - Chaînage séquentiel de modules de conversion
+  - Gestion automatique des dossiers temporaires et nettoyage
   - Processus de conversion détaillé
   - Post-traitement et mode BookStack
+
+- **[orchestrator-comm.module.md](doc/specifications/modules/orchestrator-comm.module.md)** - **Communication entre Orchestrateurs**
+  - Architecture de communication entre orchestrateur principal et orchestrateur d'exécution
+  - Flux de communication et gestion des dossiers temporaires
+  - Format de retour standardisé et sécurité
+  - Répartition de charge et évolution future
+
+- **[logs.module.md](doc/specifications/modules/logs.module.md)** - **Module de Logs Structurés**
+  - Système de logs JSON structurés pour chaque conversion
+  - Endpoint API `/api/logs` pour accès depuis terminal
+  - Métriques et données collectées (durée, modules, fichiers)
+  - Sécurité et audit (sanitisation, rétention, conformité)
 
 - **[secure-converter.md](doc/specifications/secure-converter.md)** - **Moteur de conversion sécurisé**
   - Vue d'ensemble du moteur de conversion sécurisé
@@ -826,8 +843,14 @@ doc/
 │   ├── modules.interface.md                # Contrat d'interface des modules
 │   ├── secure-converter.md                 # Moteur de conversion sécurisé
 │   └── modules/                            # Spécifications des modules
+│       ├── ... (autres modules)
+│       ├── orchestrator-comm.module.md      # Communication entre orchestrateurs
+│       └── logs.module.md                   # Module de logs structurés
 │       ├── lazyload.module.md              # Module de lazy loading
-│       ├── converter-orchestrator.module.md # Module orchestrateur
+│       ├── converter-orchestrator.module.md # Module orchestrateur de converters
+│       ├── orchestrator.module.md          # Module orchestrateur linéaire (legacy)
+│       ├── orchestrator-comm.module.md      # Communication entre orchestrateurs
+│       ├── logs.module.md                   # Module de logs structurés
 │       ├── downdoc.module.md               # Module Downdoc
 │       ├── pandoc.module.md                # Module Pandoc
 │       ├── text2markdown.module.md         # Module Text2Markdown
@@ -959,29 +982,199 @@ Ascend/
 ### 🎯 Organisation du code
 
 #### Frontend (`api/frontend/`)
-Application React/TypeScript modulaire :
-- **components/** : Composants UI réutilisables (Panel, FormatSelector, Modal, NavigationWindow)
-- **hooks/** : Hooks personnalisés (useHeadings, useFileHandling, useNavigationWindow)
-- **converters/** : Logique de conversion côté client (API calls, adaptateurs)
-- **types/** : Définitions TypeScript centralisées
-- **utils/** : Utilitaires frontend (formatHelpers)
-- **constants/** : Constantes de l'application
+Application React/TypeScript modulaire avec organisation claire :
+
+**Structure des dossiers :**
+```
+src/
+├── components/          # Composants React réutilisables
+│   ├── Panel.tsx       # Panneau générique pour afficher du contenu
+│   ├── FormatSelector.tsx  # Sélecteur de format
+│   ├── Modal.tsx       # Modal générique
+│   ├── NavigationWindow.tsx # Fenêtre de navigation flottante
+│   └── index.ts        # Exports centralisés
+├── converters/          # Modules de conversion
+│   ├── api.ts          # Configuration API
+│   ├── asciidoc-to-markdown.ts
+│   ├── markdown-to-asciidoc.ts
+│   ├── generic-converter.ts
+│   ├── bookstack-adapter.ts
+│   └── index.ts        # Exports centralisés
+├── hooks/              # Hooks React personnalisés
+│   ├── useHeadings.ts  # Extraction des headings
+│   ├── useFileHandling.ts  # Gestion des fichiers
+│   ├── useNavigationWindow.ts  # Gestion de la fenêtre de navigation
+│   └── index.ts        # Exports centralisés
+├── types/              # Définitions TypeScript
+│   └── index.ts        # Types et interfaces
+├── utils/              # Utilitaires
+│   └── formatHelpers.ts  # Helpers pour les formats
+├── constants/          # Constantes de l'application
+│   └── index.ts        # Constantes centralisées
+├── App.tsx             # Composant principal
+├── main.tsx            # Point d'entrée
+└── styles.css          # Styles globaux
+```
+
+**Principes d'organisation :**
+- **Séparation des responsabilités** : Composants UI, hooks pour la logique métier, converters pour la conversion
+- **Exports centralisés** : Chaque dossier contient un fichier `index.ts` pour faciliter les imports
+- **Types TypeScript** : Tous les types sont centralisés dans `types/index.ts`
+- **Hooks personnalisés** : Encapsulation de la logique réutilisable
+
+**Imports recommandés :**
+```typescript
+// Types
+import { FormatType, Notification, Heading } from './types'
+
+// Hooks
+import { useHeadings, useFileHandling, useNavigationWindow } from './hooks'
+
+// Composants
+import { Panel, FormatSelector, Modal, NavigationWindow } from './components'
+
+// Utilitaires
+import { getFormatTitle, getFormatPlaceholder, extractHeadings } from './utils/formatHelpers'
+
+// Constantes
+import { FORMAT_TITLES, FORMAT_PLACEHOLDERS } from './constants'
+
+// Converters
+import { convertText, requestConfirmationToken } from './converters'
+```
 
 #### Backend (`api/backend/`)
 Serveur Express avec services modulaires :
-- **server.js** : Point d'entrée du serveur avec tous les endpoints
-- **services/** : Services de conversion
-  - **convert.js** : Module de conversion principal (downdoc, pandoc, text2markdown)
-  - **secure-converter.js** : Moteur de conversion sécurisé avec tokens
-  - **pipeline-security.js** : Module de sécurité du pipeline (implémente PIPELINE.md)
-  - **modules/** : Modules de conversion modulaires
-    - **downdoc.module.js** : Module downdoc conforme à l'interface
-    - **lazyload.module.js** : Module de lazy loading
+- **server.js** : Point d'entrée du serveur (démarre le serveur)
+- **app.js** : Configuration Express (middleware, routes)
+- **routes/** : Routes organisées par domaine
+  - **conversion.routes.js** : Routes de conversion (AsciiDoc → Markdown, Markdown → AsciiDoc, HTML → autres formats, Text → Markdown)
+  - **api.routes.js** : Routes API (tokens de confirmation, logs)
+- **middleware/** : Middleware Express
+  - **cors.middleware.js** : Configuration CORS
+  - **error-handler.middleware.js** : Gestionnaire d'erreurs global
+- **services/** : Services organisés par catégorie
+  - **conversion/** : Services de conversion
+    - **convert.js** : Fonctions de conversion principales (Pandoc, text2markdown)
+    - **secure-converter.js** : Moteur de conversion sécurisé avec validation de tokens
+  - **security/** : Sécurité du pipeline
+    - **pipeline-security.js** : Module de sécurité (concurrence, limites de ressources, détection d'anomalies)
+  - **logging/** : Logging structuré
+    - **structured-logger.js** : Journalisation JSON structurée pour les conversions
+  - **modules/** : Modules de conversion modulaires (conformes à modules.interface.md)
+    - **downdoc.module.js** : Module AsciiDoc → Markdown
+    - **text2markdown.module.js** : Module Text → Markdown
+    - **panwriter.module.js** : Module multi-formats (placeholder)
+    - **docverter.module.js** : Service de conversion de documents (placeholder)
+    - **lazyload.module.js** : Gestionnaire de lazy loading pour les modules
+    - **converter-orchestrator.module.js** : Orchestrateur central des converters
+    - **main-orchestrator.js** : Orchestrateur principal (reçoit les requêtes)
+    - **execution-orchestrator.js** : Orchestrateur d'exécution (exécute les étapes)
+    - **orchestrator.js** : Orchestrateur linéaire (legacy)
     - **index.js** : Exports centralisés
 - **config/** : Configuration centralisée
 - **conversion-options.js** : Gestion des options de conversion
 - **public/** : Fichiers statiques (logo, images de fond)
 - **static/** : Fichiers HTML statiques
+
+**Imports recommandés pour le backend :**
+```javascript
+// Modules via lazy loader
+const { runConverter } = require('./services/modules/lazyload.module.js')
+
+// Conversion sécurisée
+const { secureConvertWithToken, generateConfirmationToken } = require('./services/conversion/secure-converter.js')
+
+// Utilitaires de conversion
+const { convertMarkdownWithPandoc, text2markdown } = require('./services/conversion/convert.js')
+
+// Composants de sécurité
+const { concurrencyController, gracefulDegradationManager } = require('./services/security/pipeline-security.js')
+
+// Logging structuré
+const { initializeLog, finalizeLog } = require('./services/logging/structured-logger.js')
+```
+
+#### Logs (`api/logs/`)
+Dossier contenant les logs structurés de toutes les conversions effectuées.
+
+**Structure :**
+- **Format** : Fichiers JSON (`.log`)
+- **Nommage** : `{conversionId}.log` où `conversionId` est un UUID unique
+- **Création** : Automatique lors de chaque conversion
+
+**Visualisation des logs :**
+
+**Option 1 : Script Node.js (Recommandé)**
+```bash
+# Depuis le dossier api/logs
+cd api/logs
+
+# Lister tous les logs
+node list-logs.js
+
+# Afficher un log spécifique
+node list-logs.js {conversionId}
+
+# Aide
+node list-logs.js --help
+```
+
+**Option 2 : Via l'API**
+```bash
+# Lire un log spécifique
+curl http://localhost:3003/api/logs/{conversionId}
+
+# Lister tous les logs
+curl http://localhost:3003/api/logs
+
+# Avec jq pour formater le JSON
+curl -s http://localhost:3003/api/logs/{conversionId} | jq
+```
+
+**Option 3 : Directement depuis le terminal**
+```bash
+# Depuis le dossier api/logs
+cd api/logs
+
+# Lister tous les fichiers de logs
+ls *.log
+
+# Afficher un log spécifique (JSON brut)
+cat {conversionId}.log
+
+# Afficher avec formatage (si jq est installé)
+cat {conversionId}.log | jq
+
+# Rechercher dans les logs
+grep -r "error" *.log
+```
+
+**Format des logs :**
+Chaque fichier de log contient un objet JSON avec :
+- **conversionId** : Identifiant unique de la conversion
+- **timestamp** : Dates de début et de fin
+- **formats** : Format source et cible
+- **status** : Statut (running, success, error)
+- **execution** : Détails des étapes d'exécution
+- **files** : Fichiers d'entrée, de sortie et intermédiaires
+- **logs** : Messages de log détaillés
+- **error** : Message d'erreur (si échec)
+
+**Nettoyage :**
+Les logs sont automatiquement nettoyés après 30 jours (configurable via `LOG_RETENTION_DAYS`).
+
+Pour nettoyer manuellement :
+```bash
+# Supprimer les logs de plus de 30 jours
+find api/logs -name "*.log" -mtime +30 -delete
+```
+
+**Configuration :**
+Le chemin des logs peut être personnalisé via la variable d'environnement `LOGS_DIR` :
+```bash
+export LOGS_DIR=/chemin/vers/logs
+```
 
 #### Shared (`api/shared/`)
 Code partagé entre frontend et backend :

@@ -19,6 +19,13 @@ const { runConverter } = require('./lazyload.module.js')
 const { spawn } = require('child_process')
 const { existsSync } = require('fs')
 
+// Import pipeline security for load control (only for external calls)
+const {
+  concurrencyController,
+  gracefulDegradationManager,
+  resourceBudgetManager
+} = require('../security/pipeline-security.js')
+
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
@@ -131,11 +138,58 @@ class ConverterOrchestrator {
     const conversionId = options.conversionId || 'unknown'
     const startTime = Date.now()
     const logs = []
+    
+    // Check if this is an internal call (from linear orchestrator)
+    // Internal calls don't need load control as it's managed by the linear orchestrator
+    const isInternalCall = options._internal === true
+    let slotAcquired = false
 
     try {
       // Minimal logging: conversion start
       logs.push(`[${conversionId}] Starting conversion: ${fromFormat} → ${toFormat}`)
       logs.push(`[${conversionId}] Orchestrator: Finding appropriate converter...`)
+
+      // Step 0: Load control (only for external calls)
+      if (!isInternalCall) {
+        logs.push(`[${conversionId}] Checking system load (external call)...`)
+        const canAccept = gracefulDegradationManager.canAcceptNewConversion()
+        if (!canAccept.canAccept) {
+          const duration = (Date.now() - startTime) / 1000
+          const error = `System overloaded: ${canAccept.message || 'System is temporarily overloaded'}`
+          logs.push(`[${conversionId}] ${error}`)
+          
+          return {
+            success: false,
+            logs: logs,
+            error: error,
+            duration: duration
+          }
+        }
+
+        // Acquire concurrency slot
+        logs.push(`[${conversionId}] Acquiring concurrency slot...`)
+        const slotAcquisition = concurrencyController.acquireSlot(conversionId)
+        if (!slotAcquisition.allowed) {
+          const duration = (Date.now() - startTime) / 1000
+          const error = `Concurrency limit reached: ${slotAcquisition.message || 'Maximum concurrent conversions reached'}`
+          logs.push(`[${conversionId}] ${error}`)
+          
+          return {
+            success: false,
+            logs: logs,
+            error: error,
+            duration: duration
+          }
+        }
+        slotAcquired = true
+        logs.push(`[${conversionId}] Concurrency slot acquired`)
+
+        // Initialize resource budget
+        resourceBudgetManager.initializeBudget(conversionId)
+        logs.push(`[${conversionId}] Resource budget initialized`)
+      } else {
+        logs.push(`[${conversionId}] Internal call - load control managed by linear orchestrator`)
+      }
 
       // Step 1: Find the appropriate converter
       const converter = this.findConverter(fromFormat, toFormat)
@@ -209,6 +263,15 @@ class ConverterOrchestrator {
       allLogs.push(`[${conversionId}] Conversion completed: ${result.success ? 'SUCCESS' : 'FAILED'}`)
       allLogs.push(`[${conversionId}] Total duration: ${duration.toFixed(3)}s`)
 
+      // Record success/failure for graceful degradation (only for external calls)
+      if (!isInternalCall) {
+        if (result.success !== false) {
+          gracefulDegradationManager.recordSuccess(conversionId)
+        } else {
+          gracefulDegradationManager.recordFailure(conversionId)
+        }
+      }
+
       return {
         success: result.success !== false, // Ensure success is a boolean
         logs: allLogs,
@@ -221,11 +284,23 @@ class ConverterOrchestrator {
       const duration = (Date.now() - startTime) / 1000
       logs.push(`[${conversionId}] Unexpected error in orchestrator: ${error.message}`)
 
+      // Record failure for graceful degradation (only for external calls)
+      if (!isInternalCall) {
+        gracefulDegradationManager.recordFailure(conversionId)
+      }
+
       return {
         success: false,
         logs: logs,
         error: `Orchestrator error: ${error.message}`,
         duration: duration
+      }
+    } finally {
+      // Release concurrency slot (only for external calls)
+      if (!isInternalCall && slotAcquired) {
+        logs.push(`[${conversionId}] Releasing concurrency slot...`)
+        concurrencyController.releaseSlot(conversionId)
+        logs.push(`[${conversionId}] Concurrency slot released`)
       }
     }
   }
