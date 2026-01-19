@@ -54,7 +54,9 @@ Application web moderne et sécurisée pour la conversion de documents entre dif
 
 - **Conversion bidirectionnelle** : AsciiDoc ↔ Markdown avec support complet
 - **Multi-formats** : Support pour HTML, PDF, YAML, JSON, TXT et plus encore
+- **Orchestration centralisée** : Module orchestrateur qui identifie automatiquement le converter approprié selon les formats
 - **Conversion sécurisée** : Système de tokens de confirmation pour les conversions sensibles
+- **Formats/langages disponibles** : Seules les conversions vers les formats/langages définis dans les options de conversion sont disponibles pour cette version. D'autres formats/langages pourront être ajoutés dans les versions futures
 - **Modes de conversion** : 
   - Mode standard pour conversions classiques
   - Mode BookStack/Parsedown compatible pour intégration avec BookStack
@@ -384,6 +386,16 @@ Les modules de conversion respectent l'interface définie dans [modules.interfac
 
 Tous les modules sont chargés via le système de lazy loading pour optimiser la consommation mémoire.
 
+### Orchestrateur de conversion
+
+Le module **converter-orchestrator** coordonne l'exécution de tous les converters :
+
+- **Identification automatique** : Trouve le converter approprié selon les formats source et destination
+- **Standardisation** : Retourne un format uniforme `{ success, logs, error, duration }` pour tous les converters
+- **Lazy loading intégré** : Utilise le lazy loading pour optimiser la consommation mémoire
+- **Extensibilité** : Permet d'ajouter facilement de nouveaux converters sans modifier le code existant
+- **Formats/langages** : Seules les conversions vers les formats/langages définis dans les options de conversion sont disponibles pour cette version. D'autres formats/langages pourront être ajoutés dans les versions futures
+
 ## 🔌 API
 
 ### Endpoints de conversion
@@ -687,6 +699,31 @@ Le projet dispose d'une documentation complète dans le dossier [`doc/`](doc/). 
 - **[downdoc.module.md](doc/specifications/modules/downdoc.module.md)** - **Module Downdoc**
   - Spécification du wrapper downdoc
   - Exemple de module conforme à l'interface
+
+- **[pandoc.module.md](doc/specifications/modules/pandoc.module.md)** - **Module Pandoc**
+  - Spécification du wrapper Pandoc
+  - Exécution sécurisée via child_process.spawn
+  - Support multi-formats avec whitelist stricte
+
+- **[text2markdown.module.md](doc/specifications/modules/text2markdown.module.md)** - **Module Text2Markdown**
+  - Spécification du wrapper text2markdown
+  - Conversion texte brut → Markdown avec détection automatique
+  - Bibliothèque JavaScript native
+
+- **[panwriter.module.md](doc/specifications/modules/panwriter.module.md)** - **Module PanWriter**
+  - Spécification du wrapper PanWriter (en préparation)
+  - Éditeur et convertisseur de documents
+  - Formats Office et documents
+
+- **[docverter.module.md](doc/specifications/modules/docverter.module.md)** - **Module Docverter**
+  - Spécification du wrapper Docverter (en préparation)
+  - Service de conversion de documents
+  - Support multi-formats (Office, images, PDF)
+
+- **[converter-orchestrator.module.md](doc/specifications/modules/converter-orchestrator.module.md)** - **Module Orchestrateur**
+  - Orchestrateur central pour tous les converters
+  - Identification automatique du converter approprié
+  - Standardisation des retours et intégration du lazy loading
   - Processus de conversion détaillé
   - Post-traitement et mode BookStack
 
@@ -739,6 +776,10 @@ Le projet dispose d'une documentation complète dans le dossier [`doc/`](doc/). 
 - [modules.interface.md](doc/specifications/modules.interface.md) - Contrat d'interface des modules
 - [lazyload.module.md](doc/specifications/modules/lazyload.module.md) - Module de lazy loading
 - [downdoc.module.md](doc/specifications/modules/downdoc.module.md) - Module Downdoc
+- [pandoc.module.md](doc/specifications/modules/pandoc.module.md) - Module Pandoc
+- [text2markdown.module.md](doc/specifications/modules/text2markdown.module.md) - Module Text2Markdown
+- [panwriter.module.md](doc/specifications/modules/panwriter.module.md) - Module PanWriter
+- [docverter.module.md](doc/specifications/modules/docverter.module.md) - Module Docverter
 - [secure-converter.md](doc/specifications/secure-converter.md) - Moteur de conversion sécurisé
 
 **🔐 Guides de sécurité :**
@@ -786,7 +827,12 @@ doc/
 │   ├── secure-converter.md                 # Moteur de conversion sécurisé
 │   └── modules/                            # Spécifications des modules
 │       ├── lazyload.module.md              # Module de lazy loading
-│       └── downdoc.module.md               # Module Downdoc
+│       ├── converter-orchestrator.module.md # Module orchestrateur
+│       ├── downdoc.module.md               # Module Downdoc
+│       ├── pandoc.module.md                # Module Pandoc
+│       ├── text2markdown.module.md         # Module Text2Markdown
+│       ├── panwriter.module.md             # Module PanWriter
+│       └── docverter.module.md             # Module Docverter
 ├── guides/                                  # Guides pratiques
 │   ├── security/                           # Guides de sécurité
 │   │   └── confirmation-security-guide.md # Guide des tokens de confirmation

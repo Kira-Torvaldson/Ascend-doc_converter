@@ -1,21 +1,21 @@
 'use strict'
 
 /**
- * MOTEUR DE CONVERSION SÉCURISÉ COMPLET
+ * COMPLETE SECURE CONVERSION ENGINE
  * 
- * Ce module unifié implémente :
- * - Un système de tokens de confirmation sécurisés
- * - Une couche de sécurité complète pour les conversions de fichiers
- * - Isolation stricte, validation, et gestion d'erreurs normalisée
+ * This unified module implements:
+ * - Secure confirmation token system
+ * - Complete security layer for file conversions
+ * - Strict isolation, validation, and normalized error handling
  * 
- * Sécurité par conception :
- * - Le backend ne fait AUCUNE confiance à l'UI frontend
- * - Tokens de confirmation à usage unique et temporaires
- * - Isolation stricte par conversion (dossiers temporaires uniques)
- * - Exécution sécurisée des commandes (spawn uniquement, whitelist stricte)
- * - Timeout et arrêt forcé des processus
- * - Validation et filtrage des fichiers d'entrée
- * - Gestion d'erreurs normalisée et journalisation sécurisée
+ * Security by design:
+ * - Backend does NOT trust the frontend UI
+ * - Single-use and temporary confirmation tokens
+ * - Strict isolation per conversion (unique temporary directories)
+ * - Secure command execution (spawn only, strict whitelist)
+ * - Timeout and forced process termination
+ * - Input file validation and filtering
+ * - Normalized error handling and secure logging
  */
 
 const { spawn } = require('child_process')
@@ -30,7 +30,7 @@ const { tmpdir } = require('os')
 const path = require('path')
 const { randomBytes, randomUUID } = require('crypto')
 
-// Import du module de sécurité du pipeline (PIPELINE.md)
+// Import pipeline security module (PIPELINE.md)
 const {
   concurrencyController,
   resourceBudgetManager,
@@ -725,7 +725,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
   const modulesExecuted = []
 
   try {
-    // Règle 24.2 : Vérification de dégradation contrôlée avant d'accepter
+    // Rule 24.2: Controlled degradation check before accepting
     const canAccept = gracefulDegradationManager.canAcceptNewConversion()
     if (!canAccept.canAccept) {
       throw new ConversionError(
@@ -735,7 +735,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
       )
     }
 
-    // Règle 21 : Contrôle de concurrence (Règle 21.1)
+    // Rule 21: Concurrency control (Rule 21.1)
     const slotAcquisition = concurrencyController.acquireSlot(conversionId)
     if (!slotAcquisition.allowed) {
       throw new ConversionError(
@@ -745,7 +745,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
       )
     }
 
-    // Règle 22.1 : Initialisation du budget de ressources
+    // Rule 22.1: Resource budget initialization
     resourceBudgetManager.initializeBudget(conversionId)
 
     // Step 0: User confirmation verification (MANDATORY)
@@ -792,7 +792,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
     const inputFile = isolation.getFilePath(`input.${inputExt}`)
     const outputFile = isolation.getFilePath(`output.${outputExt}`)
 
-    // Règle 19.1 : Validation stricte des chemins (Règle 19.1)
+    // Rule 19.1: Strict path validation (Rule 19.1)
     const inputPathValidation = PathValidator.validatePath(inputFile, workDir)
     if (!inputPathValidation.valid) {
       throw new ConversionError(
@@ -814,7 +814,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
     // Write input file
     writeFileSync(inputFile, content, 'utf8')
 
-    // Règle 19.2 : Validation du type réel de fichier (Règle 19.2)
+    // Rule 19.2: Real file type validation (Rule 19.2)
     const mimeValidation = MimeTypeDetector.detectAndValidate(inputFile, fromFormat)
     if (!mimeValidation.valid) {
       throw new ConversionError(
@@ -824,7 +824,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
       )
     }
 
-    // Règle 22.2 : Surveillance continue des ressources (vérification avant exécution)
+    // Rule 22.2: Continuous resource monitoring (check before execution)
     const budgetCheck = resourceBudgetManager.checkBudget(conversionId)
     if (!budgetCheck.withinBudget) {
       throw new ConversionError(
@@ -834,7 +834,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
       )
     }
 
-    // Règle 23.1 : Détection d'accès non autorisé avant exécution
+    // Rule 23.1: Unauthorized access detection before execution
     const unauthorizedCheck = anomalyDetector.detectUnauthorizedAccess(inputFile, workDir, conversionId)
     if (unauthorizedCheck.isAnomaly) {
       throw new ConversionError(
@@ -845,7 +845,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
     }
 
     // Step 6: Execute conversion securely
-    // Utiliser le lazy loader pour les conversions AsciiDoc → Markdown
+    // Use lazy loader for AsciiDoc → Markdown conversions
     if (normalizedFrom === 'asciidoc' && normalizedTo === 'markdown') {
       modulesExecuted.push('downdoc')
       const { runConverter } = require('./modules/lazyload.module.js')
@@ -862,7 +862,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
         )
       }
     } else {
-      // Utiliser Pandoc pour les autres conversions
+      // Use Pandoc for other conversions
       modulesExecuted.push('pandoc')
       await SecureCommandExecutor.executePandoc(
         conversionId,
@@ -874,7 +874,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
       )
     }
 
-    // Règle 22.2 : Vérification du budget après exécution
+    // Rule 22.2: Budget check after execution
     const postBudgetCheck = resourceBudgetManager.checkBudget(conversionId)
     if (!postBudgetCheck.withinBudget) {
       throw new ConversionError(
@@ -887,7 +887,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
     // Step 7: Read result
     const result = readFileSync(outputFile, 'utf8')
 
-    // Règle 23.3 : Détection de profils d'exécution anormaux
+    // Rule 23.3: Abnormal execution profile detection
     const endTime = new Date()
     const duration = endTime.getTime() - startTime.getTime()
     const stats = resourceBudgetManager.getStats(conversionId)
@@ -900,15 +900,15 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
         stats.memoryMB
       )
       if (profileCheck.isAnomaly) {
-        // On log l'anomalie mais on ne fait pas échouer la conversion
-        // car elle a réussi, c'est juste un signal d'alerte
+        // Log the anomaly but don't fail the conversion
+        // because it succeeded, it's just an alert signal
         SecurityLogger.logAnomaly(conversionId, 'ABNORMAL_PROFILE_SUCCESS', profileCheck.details)
       }
     }
 
     logConversion(conversionId, 'SUCCESS', 'Conversion completed')
     
-    // Règle 18 : Journalisation minimale de sécurité (Règle 18.1)
+    // Rule 18: Minimal security logging (Rule 18.1)
     SecurityLogger.logConversion(
       conversionId,
       fromFormat,
@@ -920,34 +920,34 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
       endTime
     )
 
-    // Règle 24.1 : Enregistrement du succès
+    // Rule 24.1: Success recording
     gracefulDegradationManager.recordSuccess(conversionId)
 
     return result
 
   } catch (error) {
-    // Règle 20.2 : Capture exhaustive des erreurs (Règle 20.2)
-    // Toute erreur non gérée doit être transformée en ConversionError
+    // Rule 20.2: Exhaustive error capture (Rule 20.2)
+    // Any unhandled error must be transformed into ConversionError
     let conversionError = error
     
     if (!(error instanceof ConversionError)) {
-      // Règle 20.2 : Transformation en échec contrôlé
+      // Rule 20.2: Transform into controlled failure
       conversionError = new ConversionError(
         'UNEXPECTED_ERROR',
         'An unexpected error occurred during conversion',
         conversionId
       )
-      // Logger l'erreur originale pour diagnostic (sans exposer à l'utilisateur)
+      // Log original error for diagnostics (without exposing to user)
       console.error(`[${conversionId}] Unexpected error:`, error.message)
     }
 
     // Log error (without user data)
     logConversion(conversionId, conversionError.code, conversionError.message)
 
-    // Règle 24.1 : Enregistrement de l'échec pour dégradation contrôlée
+    // Rule 24.1: Failure recording for controlled degradation
     gracefulDegradationManager.recordFailure(conversionId)
 
-    // Règle 18 : Journalisation minimale de sécurité même en cas d'échec (Règle 18.1)
+    // Rule 18: Minimal security logging even on failure (Rule 18.1)
     const endTime = new Date()
     const duration = endTime.getTime() - startTime.getTime()
     SecurityLogger.logConversion(
