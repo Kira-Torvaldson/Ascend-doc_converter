@@ -186,13 +186,18 @@ git clone https://github.com/Kira-Torvaldson/ASCEND.git
 cd ASCEND
 ```
 
-2. **Installer les dépendances du backend**
+2. **Installer safe-npm** (recommandé pour la sécurité)
+```bash
+npm install -g safe-npm
+```
+
+3. **Installer les dépendances du backend**
 ```bash
 cd api/backend
 npm install
 ```
 
-3. **Installer les dépendances du frontend**
+4. **Installer les dépendances du frontend**
 ```bash
 cd ../frontend
 npm install
