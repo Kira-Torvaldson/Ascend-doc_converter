@@ -1,6 +1,6 @@
 # 🚀 Ascend - Pipeline de Conversion Documentaire Modulaire et Sécurisé
 
-Application web moderne et sécurisée pour la conversion de documents entre différents formats, avec une architecture modulaire basée sur un pipeline de conversion isolé et un système de lazy loading pour optimiser les performances.
+Application web moderne et sécurisée pour la conversion de documents. Version alpha supportant actuellement les conversions AsciiDoc ↔ Markdown, avec une architecture modulaire préparée pour l'ajout futur d'autres formats. Pipeline de conversion isolé et système de lazy loading pour optimiser les performances.
 
 ![Version](https://img.shields.io/badge/version-0.0.1.2.1-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
@@ -9,11 +9,11 @@ Application web moderne et sécurisée pour la conversion de documents entre dif
 
 ## 🎯 À propos du projet
 
-**Ascend** est une application web moderne et sécurisée pour la conversion de documents entre différents formats (AsciiDoc, Markdown, HTML, PDF, YAML, JSON, TXT, etc.). Le projet se distingue par son architecture modulaire, son pipeline de conversion sécurisé avec isolation stricte, et son système de lazy loading pour optimiser la consommation mémoire.
+**Ascend** est une application web moderne et sécurisée pour la conversion de documents. Actuellement en version alpha, l'application supporte les conversions AsciiDoc ↔ Markdown, avec une architecture modulaire préparée pour l'ajout futur d'autres formats (HTML, PDF, YAML, JSON, TXT, etc.). Le projet se distingue par son architecture modulaire, son pipeline de conversion sécurisé avec isolation stricte, et son système de lazy loading pour optimiser la consommation mémoire.
 
 ### Objectifs du projet
 
-- **Conversion multi-formats** : Support d'une large gamme de formats de documents avec conversion bidirectionnelle
+- **Conversion multi-formats** : Support actuel des conversions AsciiDoc ↔ Markdown, avec architecture préparée pour l'ajout futur d'autres formats
 - **Sécurité par conception** : Architecture sécurisée avec isolation stricte des conversions, validation exhaustive des entrées, contrôle de ressources, et protection contre les abus
 - **Interface intuitive** : Interface utilisateur moderne avec navigation dans les documents, options de conversion avancées, et expérience utilisateur optimisée
 - **Pipeline modulaire** : Architecture modulaire avec système de lazy loading permettant l'intégration facile de nouveaux modules de conversion
@@ -53,10 +53,13 @@ Application web moderne et sécurisée pour la conversion de documents entre dif
 ### Conversion de documents
 
 - **Conversion bidirectionnelle** : AsciiDoc ↔ Markdown avec support complet
-- **Multi-formats** : Support pour HTML, PDF, YAML, JSON, TXT et plus encore
+- **Formats disponibles** : 
+  - ✅ **AsciiDoc → Markdown** : Conversion via downdoc avec support BookStack/Parsedown
+  - ✅ **Markdown → AsciiDoc** : Conversion via Pandoc
+  - ⏳ **Autres formats** : HTML, PDF, YAML, JSON, TXT (coming soon - visibles mais non disponibles)
+- **Limitation actuelle** : Seules les conversions AsciiDoc ↔ Markdown sont fonctionnelles dans cette version alpha. Les autres formats sont visibles dans l'interface mais marqués comme "coming soon"
 - **Orchestration centralisée** : Module orchestrateur qui identifie automatiquement le converter approprié selon les formats
 - **Conversion sécurisée** : Système de tokens de confirmation pour les conversions sensibles
-- **Formats/langages disponibles** : Seules les conversions vers les formats/langages définis dans les options de conversion sont disponibles pour cette version. D'autres formats/langages pourront être ajoutés dans les versions futures
 - **Modes de conversion** : 
   - Mode standard pour conversions classiques
   - Mode BookStack/Parsedown compatible pour intégration avec BookStack
@@ -250,7 +253,7 @@ npm run preview
 
 2. **Sélection des formats** :
    - Utilisez les menus déroulants pour choisir le format source et de destination
-   - Formats disponibles : AsciiDoc, Markdown, HTML, PDF, YAML, JSON, TXT
+   - Formats disponibles dans l'interface : AsciiDoc, Markdown, HTML, PDF, YAML, JSON, TXT (seuls AsciiDoc ↔ Markdown sont fonctionnels)
    - Cliquez sur les flèches ↔️ pour inverser les formats
 
 3. **Conversion** :
@@ -378,11 +381,11 @@ Le pipeline de conversion suit les principes définis dans [PIPELINE.md](doc/spe
 
 Les modules de conversion respectent l'interface définie dans [modules.interface.md](doc/specifications/modules.interface.md) :
 
-- **downdoc** : Conversion AsciiDoc → Markdown (bibliothèque JavaScript native)
-- **pandoc** : Conversion Markdown → AsciiDoc et HTML → autres formats (via Pandoc)
-- **text2markdown** : Conversion texte brut → Markdown avec détection automatique
-- **docverter** : Module préparé pour conversion de documents (rtf, pdf, docx, etc.)
-- **panwriter** : Module préparé pour édition et conversion de documents
+- **downdoc** : Conversion AsciiDoc → Markdown (bibliothèque JavaScript native) ✅ **Fonctionnel**
+- **pandoc** : Conversion Markdown → AsciiDoc (via Pandoc) ✅ **Fonctionnel**
+- **text2markdown** : Conversion texte brut → Markdown avec détection automatique ✅ **Fonctionnel**
+- **docverter** : Module préparé pour conversion de documents (rtf, pdf, docx, etc.) ⏳ **Placeholder (coming soon)**
+- **panwriter** : Module préparé pour édition et conversion de documents ⏳ **Placeholder (coming soon)**
 
 Tous les modules sont chargés via le système de lazy loading pour optimiser la consommation mémoire.
 
@@ -394,7 +397,9 @@ Le module **converter-orchestrator** coordonne l'exécution de tous les converte
 - **Standardisation** : Retourne un format uniforme `{ success, logs, error, duration }` pour tous les converters
 - **Lazy loading intégré** : Utilise le lazy loading pour optimiser la consommation mémoire
 - **Extensibilité** : Permet d'ajouter facilement de nouveaux converters sans modifier le code existant
-- **Formats/langages** : Seules les conversions vers les formats/langages définis dans les options de conversion sont disponibles pour cette version. D'autres formats/langages pourront être ajoutés dans les versions futures
+- **Formats/langages disponibles** : 
+  - ✅ **AsciiDoc ↔ Markdown** : Seules ces conversions sont fonctionnelles dans cette version alpha
+  - ⏳ **Autres formats** : HTML, PDF, YAML, JSON, TXT sont visibles dans l'interface mais marqués comme "coming soon"
 
 ## 🔌 API
 
@@ -452,6 +457,8 @@ Convertit du contenu Markdown en AsciiDoc (utilise Pandoc).
 #### `POST /from-html`
 Convertit du contenu HTML vers d'autres formats (utilise Pandoc).
 
+**⚠️ Note :** Cet endpoint est disponible mais les conversions HTML ne sont pas activées dans l'interface utilisateur pour cette version alpha.
+
 **Requête :**
 ```json
 {
@@ -475,6 +482,8 @@ Convertit du contenu HTML vers d'autres formats (utilise Pandoc).
 #### `POST /text-to-markdown`
 Convertit du texte brut vers Markdown (utilise text2markdown).
 
+**⚠️ Note :** Cet endpoint est disponible mais les conversions Text → Markdown ne sont pas activées dans l'interface utilisateur pour cette version alpha. Seules les conversions AsciiDoc ↔ Markdown sont disponibles dans l'UI.
+
 **Requête :**
 ```json
 {
@@ -492,23 +501,25 @@ Convertit du texte brut vers Markdown (utilise text2markdown).
 #### `POST /convert`
 Convertit depuis n'importe quel format vers un autre format (utilise le moteur de conversion sécurisé avec lazy loading).
 
+**⚠️ Note :** Dans l'interface utilisateur, seules les conversions AsciiDoc ↔ Markdown sont disponibles pour cette version alpha. Les autres formats sont visibles mais marqués comme "coming soon".
+
 **Requête :**
 ```json
 {
-  "text": "Contenu à convertir",
-  "from": "txt",
-  "to": "markdown",
-  "confirmed": true,
-  "confirmationToken": "token-uuid-here"
+  "content": "Contenu à convertir",
+  "fromFormat": "asciidoc",
+  "toFormat": "markdown",
+  "token": "token-uuid-here",
+  "options": {}
 }
 ```
 
 **Paramètres :**
-- `text` (requis) : Le contenu à convertir
-- `from` (requis) : Le format source (txt, html, markdown, asciidoc, pdf, yaml, json, etc.)
-- `to` (requis) : Le format de destination (markdown, asciidoc, html, pdf, yaml, json, txt, etc.)
-- `confirmed` (requis) : Confirmation utilisateur (doit être `true`)
-- `confirmationToken` (requis) : Token de confirmation obtenu via `/api/confirmation/request`
+- `content` (requis) : Le contenu à convertir
+- `fromFormat` (requis) : Le format source (asciidoc, markdown, txt, html, pdf, yaml, json, etc.)
+- `toFormat` (requis) : Le format de destination (markdown, asciidoc, html, pdf, yaml, json, txt, etc.)
+- `token` (requis) : Token de confirmation obtenu via `/api/confirmation/request`
+- `options` (optionnel) : Options de conversion
 
 **Réponse :**
 ```json
@@ -1067,7 +1078,7 @@ Serveur Express avec services modulaires :
 - **server.js** : Point d'entrée du serveur (démarre le serveur)
 - **app.js** : Configuration Express (middleware, routes)
 - **routes/** : Routes organisées par domaine
-  - **conversion.routes.js** : Routes de conversion (AsciiDoc → Markdown, Markdown → AsciiDoc, HTML → autres formats, Text → Markdown)
+  - **conversion.routes.js** : Routes de conversion (AsciiDoc → Markdown, Markdown → AsciiDoc uniquement pour cette version)
   - **api.routes.js** : Routes API (tokens de confirmation, logs)
 - **middleware/** : Middleware Express
   - **cors.middleware.js** : Configuration CORS
@@ -1408,5 +1419,5 @@ Pour toute question ou problème, veuillez ouvrir une [issue](https://github.com
 
 ---
 
-**Version :** 0.0.1.2-alpha  
+**Version :** 0.0.1.2.1 alpha  
 **Dernière mise à jour :** 2026
