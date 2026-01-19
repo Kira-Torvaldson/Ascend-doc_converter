@@ -1613,13 +1613,26 @@ function App() {
    * For complex conversions (via /convert), requests a confirmation token.
    */
   const handleConvert = useCallback(() => {
+    // Only allow AsciiDoc ↔ Markdown conversions
+    const isAllowedConversion = 
+      (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
+      (sourceFormat === 'markdown' && targetFormat === 'asciidoc');
+
+    if (!isAllowedConversion) {
+      setStatus("Seules les conversions AsciiDoc ↔ Markdown sont disponibles pour le moment");
+      setNotification({
+        message: "Seules les conversions AsciiDoc ↔ Markdown sont disponibles pour le moment",
+        type: 'error',
+        visible: true
+      });
+      return;
+    }
+
     // Check if conversion requires a token
     // Simple conversions don't need one
     const needsToken = !(
       (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
-      (sourceFormat === 'markdown' && targetFormat === 'asciidoc') ||
-      (sourceFormat === 'txt' && targetFormat === 'markdown') ||
-      (sourceFormat === 'html')
+      (sourceFormat === 'markdown' && targetFormat === 'asciidoc')
     );
 
     if (needsToken) {
@@ -1660,10 +1673,13 @@ function App() {
 
       // Determine where to put result according to destination format
       const setOutput = (result: string) => {
-        if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
+        if (targetFormat === 'markdown') {
           setMdOutput(result);
         } else if (targetFormat === 'asciidoc') {
           setAdocInput(result);
+        } else {
+          // For other formats (html, pdf, yaml, json, txt), use mdOutput
+          setMdOutput(result);
         }
       };
 
@@ -2021,6 +2037,11 @@ function App() {
       sourceRef = adocTextAreaRef;
     }
 
+      // Check if conversion is allowed (only AsciiDoc ↔ Markdown)
+      const isAllowedConversion = 
+        (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
+        (sourceFormat === 'markdown' && targetFormat === 'asciidoc');
+      
       return renderSourcePanel(
       getFormatTitle(sourceFormat),
       sourceValue,
@@ -2029,7 +2050,7 @@ function App() {
       sourceRef,
       handleConvert,
       (sourceFormat === 'asciidoc' || sourceFormat === 'markdown'), // Show headings for AsciiDoc and Markdown
-      sourceFormat !== targetFormat, // Can convert if formats are different
+      sourceFormat !== targetFormat && isAllowedConversion, // Can convert if formats are different AND conversion is allowed
       handleClearSource // Function to clear source content
     );
   }, [sourceFormat, adocInput, mdOutput, currentFileName, status, headings, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, adocTextAreaRef, navigationEnabled, getTextStats]);
@@ -2490,20 +2511,32 @@ function App() {
                     setSourceFormat(newFormat);
                     // Adjust destination format if necessary
                     if (newFormat === targetFormat) {
-                      const alternatives: FormatType[] = ['asciidoc', 'markdown', 'html', 'pdf', 'yaml', 'json', 'txt'];
-                      const newTarget = alternatives.find(f => f !== newFormat) || 'markdown';
-                      setTargetFormat(newTarget);
+                      // Only allow AsciiDoc ↔ Markdown conversions
+                      if (newFormat === 'asciidoc') {
+                        setTargetFormat('markdown');
+                      } else if (newFormat === 'markdown') {
+                        setTargetFormat('asciidoc');
+                      } else {
+                        // For other formats, default to markdown if source is not asciidoc/markdown
+                        setTargetFormat('markdown');
+                      }
+                    } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
+                      // If source is not adoc/md, set target to markdown
+                      setTargetFormat('markdown');
+                    } else if (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') {
+                      // If target is not adoc/md, set it to the opposite of source
+                      setTargetFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
                     }
                   }}
                   className="format-select"
                 >
                   <option value="asciidoc">adoc</option>
                   <option value="markdown">md</option>
-                  <option value="html">html</option>
-                  <option value="pdf">pdf</option>
-                  <option value="yaml">yaml</option>
-                  <option value="json">json</option>
-                  <option value="txt">txt</option>
+                  <option value="html" disabled>html (coming soon)</option>
+                  <option value="pdf" disabled>pdf (coming soon)</option>
+                  <option value="yaml" disabled>yaml (coming soon)</option>
+                  <option value="json" disabled>json (coming soon)</option>
+                  <option value="txt" disabled>txt (coming soon)</option>
                 </select>
               </div>
               <div className="format-selector-group">
@@ -2515,22 +2548,48 @@ function App() {
                     setTargetFormat(newFormat);
                     // Adjust source format if necessary
                     if (newFormat === sourceFormat) {
-                      const alternatives: FormatType[] = ['asciidoc', 'markdown', 'html', 'pdf', 'yaml', 'json', 'txt'];
-                      const newSource = alternatives.find(f => f !== newFormat) || 'asciidoc';
-                      setSourceFormat(newSource);
+                      // Only allow AsciiDoc ↔ Markdown conversions
+                      if (newFormat === 'asciidoc') {
+                        setSourceFormat('markdown');
+                      } else if (newFormat === 'markdown') {
+                        setSourceFormat('asciidoc');
+                      } else {
+                        // For other formats, default to asciidoc if target is not asciidoc/markdown
+                        setSourceFormat('asciidoc');
+                      }
+                    } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
+                      // If target is not adoc/md, set source to asciidoc
+                      setSourceFormat('asciidoc');
+                    } else if (sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') {
+                      // If source is not adoc/md, set it to the opposite of target
+                      setSourceFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
                     }
                   }}
                   className="format-select"
                 >
                   <option value="markdown">md</option>
                   <option value="asciidoc">adoc</option>
-                  <option value="html">html</option>
-                  <option value="pdf">pdf</option>
-                  <option value="yaml">yaml</option>
-                  <option value="json">json</option>
-                  <option value="txt">txt</option>
+                  <option value="html" disabled>html (coming soon)</option>
+                  <option value="pdf" disabled>pdf (coming soon)</option>
+                  <option value="yaml" disabled>yaml (coming soon)</option>
+                  <option value="json" disabled>json (coming soon)</option>
+                  <option value="txt" disabled>txt (coming soon)</option>
                 </select>
               </div>
+              {(sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') || 
+               (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') ? (
+                <div className="conversion-warning" style={{ 
+                  marginTop: '10px', 
+                  padding: '10px', 
+                  backgroundColor: '#fff3cd', 
+                  border: '1px solid #ffc107', 
+                  borderRadius: '4px',
+                  color: '#856404',
+                  fontSize: '14px'
+                }}>
+                  ⚠️ Seules les conversions AsciiDoc ↔ Markdown sont disponibles pour le moment.
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="sidebar-section">
@@ -2946,7 +3005,7 @@ function App() {
       </div>
 
       <footer className="footer">
-        <span className="footer-version">Version : 0.0.1.1-alpha</span>
+        <span className="footer-version">Version : 0.0.1.2.1 alpha</span>
         <span className="footer-author">Make by TBE</span>
       </footer>
 
