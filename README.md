@@ -65,6 +65,9 @@ Application web moderne et sécurisée pour la conversion de documents. Version 
   - Mode BookStack/Parsedown compatible pour intégration avec BookStack
 - **Conversion en temps réel** : Résultats instantanés avec indicateur de progression
 - **Lazy loading des modules** : Chargement différé des converters pour optimiser la mémoire
+- **Normalisation automatique des données** : Proxy qui supprime les BOM, normalise l'encodage UTF-8, et remplace les Smart Quotes avant conversion
+- **Traitement en lot** : Service frontend pour convertir plusieurs fichiers en une seule opération avec suivi de progression
+- **Diagnostic d'environnement** : Script de pré-vérification pour valider l'installation (Pandoc, permissions, Node.js)
 
 ### Interface utilisateur
 
@@ -209,6 +212,20 @@ npm install
 ```
 
 ## 🚀 Démarrage
+
+### Vérification de l'environnement (recommandé)
+
+Avant de démarrer le serveur, il est recommandé de vérifier que l'environnement est correctement configuré :
+
+```bash
+cd api/backend
+node bin/check-env.js
+```
+
+Ce script vérifie :
+- ✅ Version de Node.js (>= 16.17.0)
+- ✅ Installation de Pandoc et accessibilité
+- ✅ Permissions d'écriture sur les répertoires requis
 
 ### Démarrage en mode développement
 
@@ -895,6 +912,8 @@ Ascend/
 │   │   │   │   ├── NavigationWindow.tsx   # Fenêtre de navigation
 │   │   │   │   └── index.ts                # Exports centralisés
 │   │   │   ├── hooks/        # Hooks React personnalisés
+│   │   │   ├── services/     # Services frontend
+│   │   │   │   └── bulk-processor.ts  # Traitement en lot
 │   │   │   │   ├── useHeadings.ts         # Extraction des titres
 │   │   │   │   ├── useFileHandling.ts     # Gestion des fichiers
 │   │   │   │   ├── useNavigationWindow.ts # Gestion de la fenêtre de navigation
@@ -1077,6 +1096,8 @@ import { convertText, requestConfirmationToken } from './converters'
 Serveur Express avec services modulaires :
 - **server.js** : Point d'entrée du serveur (démarre le serveur)
 - **app.js** : Configuration Express (middleware, routes)
+- **bin/** : Scripts utilitaires
+  - **check-env.js** : Script de diagnostic d'environnement (vérifie Pandoc, permissions, Node.js version)
 - **routes/** : Routes organisées par domaine
   - **conversion.routes.js** : Routes de conversion (AsciiDoc → Markdown, Markdown → AsciiDoc uniquement pour cette version)
   - **api.routes.js** : Routes API (tokens de confirmation, logs)
@@ -1091,6 +1112,8 @@ Serveur Express avec services modulaires :
     - **pipeline-security.js** : Module de sécurité (concurrence, limites de ressources, détection d'anomalies)
   - **logging/** : Logging structuré
     - **structured-logger.js** : Journalisation JSON structurée pour les conversions
+  - **proxy/** : Proxy de normalisation des données
+    - **secure-proxy.js** : Proxy qui normalise les données d'entrée (supprime BOM, normalise encodage, remplace Smart Quotes) avant conversion
   - **modules/** : Modules de conversion modulaires (conformes à modules.interface.md)
     - **downdoc.module.js** : Module AsciiDoc → Markdown
     - **text2markdown.module.js** : Module Text → Markdown

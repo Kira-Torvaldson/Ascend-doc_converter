@@ -15,6 +15,7 @@ const errorHandler = require('./middleware/error-handler.middleware.js')
 // Import routes
 const conversionRoutes = require('./routes/conversion.routes.js')
 const apiRoutes = require('./routes/api.routes.js')
+const proxyRoutes = require('./services/proxy/secure-proxy.js')
 
 // Import security and logging
 const {
@@ -71,6 +72,9 @@ app.use('/', conversionRoutes)
 
 // API routes
 app.use('/api', apiRoutes)
+
+// Proxy routes (secure data normalization)
+app.use('/api/proxy', proxyRoutes)
 
 // ============================================================================
 // ERROR HANDLING
