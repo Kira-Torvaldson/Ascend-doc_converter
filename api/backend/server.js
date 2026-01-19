@@ -2,7 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { convertAsciiDoc, convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown } = require('./services/convert.js');
+const { writeFileSync, readFileSync, unlinkSync, mkdirSync } = require('fs');
+const { tmpdir } = require('os');
+const { randomUUID } = require('crypto');
+const { convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown } = require('./services/convert.js');
+const { runConverter } = require('./services/modules/lazyload.module.js');
 const { mergeOptions, validateOptions } = require('./conversion-options.js');
 const { 
   generateConfirmationToken, 
@@ -54,8 +58,13 @@ app.get('/', (req, res) => {
   }
 });
 
-// Endpoint: AsciiDoc → Markdown (utilise downdoc uniquement)
+// Endpoint: AsciiDoc → Markdown (utilise lazy loader avec downdoc)
 app.post('/to-markdown', async (req, res) => {
+  const conversionId = randomUUID();
+  const tempDir = path.join(tmpdir(), `ascend-temp-${conversionId}`);
+  let inputFile = null;
+  let outputFile = null;
+
   try {
     const { text, options } = req.body;
 
@@ -69,10 +78,33 @@ app.post('/to-markdown', async (req, res) => {
     const useParsedown = options?.formatSpecific?.markdown?.parsedown || false;
     const mode = useParsedown ? 'bookstack' : 'default';
 
-    console.log(`[INFO] Converting ${text.length} characters (AsciiDoc → Markdown) with downdoc${useParsedown ? ' (Parsedown/BookStack mode)' : ''}`);
+    console.log(`[INFO] Converting ${text.length} characters (AsciiDoc → Markdown) with lazy loader${useParsedown ? ' (Parsedown/BookStack mode)' : ''}`);
 
-    // Use downdoc with appropriate mode
-    const markdown = await convertAsciiDoc(text, mode);
+    // Créer le dossier temporaire
+    mkdirSync(tempDir, { recursive: true });
+
+    // Créer les fichiers temporaires
+    inputFile = path.join(tempDir, 'input.adoc');
+    outputFile = path.join(tempDir, 'output.md');
+
+    // Écrire le contenu d'entrée
+    writeFileSync(inputFile, text, 'utf8');
+
+    // Utiliser le lazy loader pour exécuter la conversion
+    const result = await runConverter('downdoc', inputFile, outputFile, {
+      conversionId: conversionId,
+      mode: mode
+    });
+
+    if (!result.success) {
+      console.error(`[ERROR] Conversion failed: ${result.error}`);
+      return res.status(500).json({
+        detail: `Conversion error: ${result.error}`
+      });
+    }
+
+    // Lire le résultat
+    const markdown = readFileSync(outputFile, 'utf8');
 
     console.log(`[INFO] Conversion successful: ${markdown.length} Markdown characters generated`);
 
@@ -82,6 +114,21 @@ app.post('/to-markdown', async (req, res) => {
     return res.status(500).json({
       detail: `Conversion error: ${error.message || String(error)}`
     });
+  } finally {
+    // Nettoyer les fichiers temporaires
+    try {
+      if (inputFile && require('fs').existsSync(inputFile)) {
+        unlinkSync(inputFile);
+      }
+      if (outputFile && require('fs').existsSync(outputFile)) {
+        unlinkSync(outputFile);
+      }
+      if (require('fs').existsSync(tempDir)) {
+        require('fs').rmSync(tempDir, { recursive: true, force: true });
+      }
+    } catch (cleanupError) {
+      console.warn(`[WARN] Failed to cleanup temp files: ${cleanupError.message}`);
+    }
   }
 });
 
