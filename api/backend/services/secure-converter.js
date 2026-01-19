@@ -30,6 +30,18 @@ const { tmpdir } = require('os')
 const path = require('path')
 const { randomBytes, randomUUID } = require('crypto')
 
+// Import du module de sécurité du pipeline (PIPELINE.md)
+const {
+  concurrencyController,
+  resourceBudgetManager,
+  gracefulDegradationManager,
+  anomalyDetector,
+  PathValidator,
+  MimeTypeDetector,
+  SecurityLogger,
+  SECURITY_CONFIG: PIPELINE_SECURITY_CONFIG
+} = require('./pipeline-security.js')
+
 // ============================================================================
 // CONFIGURATION DES TOKENS DE CONFIRMATION
 // ============================================================================
@@ -709,8 +721,33 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
   const isolation = new IsolationManager()
   const conversionId = isolation.getConversionId()
   const timeout = options.timeout || SECURITY_CONFIG.DEFAULT_TIMEOUT
+  const startTime = new Date()
+  const modulesExecuted = []
 
   try {
+    // Règle 24.2 : Vérification de dégradation contrôlée avant d'accepter
+    const canAccept = gracefulDegradationManager.canAcceptNewConversion()
+    if (!canAccept.canAccept) {
+      throw new ConversionError(
+        canAccept.reason || 'SYSTEM_OVERLOADED',
+        canAccept.message || 'System is temporarily overloaded',
+        conversionId
+      )
+    }
+
+    // Règle 21 : Contrôle de concurrence (Règle 21.1)
+    const slotAcquisition = concurrencyController.acquireSlot(conversionId)
+    if (!slotAcquisition.allowed) {
+      throw new ConversionError(
+        slotAcquisition.reason || 'CAPACITY_EXCEEDED',
+        slotAcquisition.message || 'Maximum concurrent conversions reached',
+        conversionId
+      )
+    }
+
+    // Règle 22.1 : Initialisation du budget de ressources
+    resourceBudgetManager.initializeBudget(conversionId)
+
     // Step 0: User confirmation verification (MANDATORY)
     // This verification ensures that a confirmation window was validated on frontend
     if (options.confirmed !== true) {
@@ -755,10 +792,60 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
     const inputFile = isolation.getFilePath(`input.${inputExt}`)
     const outputFile = isolation.getFilePath(`output.${outputExt}`)
 
+    // Règle 19.1 : Validation stricte des chemins (Règle 19.1)
+    const inputPathValidation = PathValidator.validatePath(inputFile, workDir)
+    if (!inputPathValidation.valid) {
+      throw new ConversionError(
+        inputPathValidation.error || 'PATH_VALIDATION_ERROR',
+        inputPathValidation.message || 'Invalid file path',
+        conversionId
+      )
+    }
+
+    const outputPathValidation = PathValidator.validatePath(outputFile, workDir)
+    if (!outputPathValidation.valid) {
+      throw new ConversionError(
+        outputPathValidation.error || 'PATH_VALIDATION_ERROR',
+        outputPathValidation.message || 'Invalid output path',
+        conversionId
+      )
+    }
+
     // Write input file
     writeFileSync(inputFile, content, 'utf8')
 
+    // Règle 19.2 : Validation du type réel de fichier (Règle 19.2)
+    const mimeValidation = MimeTypeDetector.detectAndValidate(inputFile, fromFormat)
+    if (!mimeValidation.valid) {
+      throw new ConversionError(
+        mimeValidation.error || 'MIME_TYPE_MISMATCH',
+        mimeValidation.message || 'File type does not match declared format',
+        conversionId
+      )
+    }
+
+    // Règle 22.2 : Surveillance continue des ressources (vérification avant exécution)
+    const budgetCheck = resourceBudgetManager.checkBudget(conversionId)
+    if (!budgetCheck.withinBudget) {
+      throw new ConversionError(
+        'RESOURCE_LIMIT_EXCEEDED',
+        `Resource limit exceeded: ${budgetCheck.exceeded}`,
+        conversionId
+      )
+    }
+
+    // Règle 23.1 : Détection d'accès non autorisé avant exécution
+    const unauthorizedCheck = anomalyDetector.detectUnauthorizedAccess(inputFile, workDir, conversionId)
+    if (unauthorizedCheck.isAnomaly) {
+      throw new ConversionError(
+        unauthorizedCheck.type || 'SECURITY_VIOLATION',
+        'Unauthorized file access detected',
+        conversionId
+      )
+    }
+
     // Step 6: Execute conversion securely
+    modulesExecuted.push('pandoc')
     await SecureCommandExecutor.executePandoc(
       conversionId,
       fromFormat,
@@ -768,25 +855,104 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
       timeout
     )
 
+    // Règle 22.2 : Vérification du budget après exécution
+    const postBudgetCheck = resourceBudgetManager.checkBudget(conversionId)
+    if (!postBudgetCheck.withinBudget) {
+      throw new ConversionError(
+        'RESOURCE_LIMIT_EXCEEDED',
+        `Resource limit exceeded during execution: ${postBudgetCheck.exceeded}`,
+        conversionId
+      )
+    }
+
     // Step 7: Read result
     const result = readFileSync(outputFile, 'utf8')
 
+    // Règle 23.3 : Détection de profils d'exécution anormaux
+    const endTime = new Date()
+    const duration = endTime.getTime() - startTime.getTime()
+    const stats = resourceBudgetManager.getStats(conversionId)
+    if (stats) {
+      const profileCheck = anomalyDetector.detectAbnormalProfile(
+        conversionId,
+        fromFormat,
+        toFormat,
+        duration,
+        stats.memoryMB
+      )
+      if (profileCheck.isAnomaly) {
+        // On log l'anomalie mais on ne fait pas échouer la conversion
+        // car elle a réussi, c'est juste un signal d'alerte
+        SecurityLogger.logAnomaly(conversionId, 'ABNORMAL_PROFILE_SUCCESS', profileCheck.details)
+      }
+    }
+
     logConversion(conversionId, 'SUCCESS', 'Conversion completed')
+    
+    // Règle 18 : Journalisation minimale de sécurité (Règle 18.1)
+    SecurityLogger.logConversion(
+      conversionId,
+      fromFormat,
+      toFormat,
+      modulesExecuted,
+      duration,
+      'SUCCESS',
+      startTime,
+      endTime
+    )
+
+    // Règle 24.1 : Enregistrement du succès
+    gracefulDegradationManager.recordSuccess(conversionId)
+
     return result
 
   } catch (error) {
-    // Log error (without user data)
-    if (error instanceof ConversionError) {
-      logConversion(conversionId, error.code, error.message)
-    } else {
-      logConversion(conversionId, 'UNEXPECTED_ERROR', error.message)
+    // Règle 20.2 : Capture exhaustive des erreurs (Règle 20.2)
+    // Toute erreur non gérée doit être transformée en ConversionError
+    let conversionError = error
+    
+    if (!(error instanceof ConversionError)) {
+      // Règle 20.2 : Transformation en échec contrôlé
+      conversionError = new ConversionError(
+        'UNEXPECTED_ERROR',
+        'An unexpected error occurred during conversion',
+        conversionId
+      )
+      // Logger l'erreur originale pour diagnostic (sans exposer à l'utilisateur)
+      console.error(`[${conversionId}] Unexpected error:`, error.message)
     }
 
+    // Log error (without user data)
+    logConversion(conversionId, conversionError.code, conversionError.message)
+
+    // Règle 24.1 : Enregistrement de l'échec pour dégradation contrôlée
+    gracefulDegradationManager.recordFailure(conversionId)
+
+    // Règle 18 : Journalisation minimale de sécurité même en cas d'échec (Règle 18.1)
+    const endTime = new Date()
+    const duration = endTime.getTime() - startTime.getTime()
+    SecurityLogger.logConversion(
+      conversionId,
+      fromFormat,
+      toFormat,
+      modulesExecuted,
+      duration,
+      conversionError.code,
+      startTime,
+      endTime
+    )
+
     // Propagate error
-    throw error
+    throw conversionError
 
   } finally {
-    // Step 8: Guaranteed cleanup (even on error)
+    // Règle 21.3 : Libération garantie du slot de concurrence (Règle 21.3)
+    concurrencyController.releaseSlot(conversionId)
+    
+    // Règle 22 : Libération du budget de ressources
+    resourceBudgetManager.releaseBudget(conversionId)
+
+    // Step 8: Guaranteed cleanup (even on error) - Règle 4
     isolation.cleanup()
   }
 }

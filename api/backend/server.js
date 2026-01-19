@@ -9,8 +9,13 @@ const {
   validateAndConsumeToken, 
   getTokenStats,
   secureConvertWithToken,
-  ConfirmationTokenError
+  ConfirmationTokenError,
+  ConversionError
 } = require('./services/secure-converter.js');
+const {
+  ModuleIntegrityChecker,
+  gracefulDegradationManager
+} = require('./services/pipeline-security.js');
 
 // __dirname est automatiquement disponible en CommonJS
 const PROJECT_ROOT = path.join(__dirname, '..', '..');
@@ -267,7 +272,18 @@ app.get('/api/confirmation/stats', (req, res) => {
  * - Backend does NOT trust the frontend UI
  */
 app.post('/convert', async (req, res) => {
+  // Règle 20.1 : Isolation des échecs - wrapper pour capturer toutes les erreurs
   try {
+    // Règle 24.2 : Vérification de dégradation contrôlée avant traitement
+    const canAccept = gracefulDegradationManager.canAcceptNewConversion();
+    if (!canAccept.canAccept) {
+      return res.status(503).json({
+        error: true,
+        code: canAccept.reason || 'SYSTEM_OVERLOADED',
+        message: canAccept.message || 'System is temporarily overloaded. Please try again later.'
+      });
+    }
+
     const { text, from, to, options, confirmationToken } = req.body;
 
     // Validate required parameters
@@ -385,12 +401,24 @@ app.post('/convert', async (req, res) => {
     });
 
   } catch (error) {
+    // Règle 20.2 : Capture exhaustive des erreurs (Règle 20.2)
+    // Toute erreur doit être transformée en réponse contrôlée
+    
     // Handle conversion errors
     if (error instanceof ConfirmationTokenError) {
       return res.status(403).json(error.toSafeResponse());
     }
 
-    console.error('[ERROR] Error during conversion:', error.message);
+    if (error instanceof ConversionError) {
+      // Erreur de conversion normalisée
+      return res.status(500).json(error.toSafeResponse());
+    }
+
+    // Règle 20.2 : Transformation des erreurs non gérées en échec contrôlé
+    console.error('[ERROR] Unexpected error during conversion:', error.message);
+    console.error('[ERROR] Stack:', error.stack);
+    
+    // Règle 20.1 : Ne pas faire crasher le processus principal
     return res.status(500).json({
       error: true,
       code: 'CONVERSION_ERROR',
@@ -398,6 +426,49 @@ app.post('/convert', async (req, res) => {
     });
   }
 });
+
+// Règle 20.1 : Capture exhaustive des erreurs non gérées (Règle 20.2)
+// Règle 20.1 : Isolation des échecs pour éviter les crashes globaux (Règle 20.1)
+
+// Capture des exceptions non gérées
+process.on('uncaughtException', (error) => {
+  // Règle 20.2 : Transformation en échec contrôlé
+  console.error('[UNCAUGHT_EXCEPTION]', error.message);
+  console.error('[UNCAUGHT_EXCEPTION] Stack:', error.stack);
+  // Ne pas faire crasher le processus, mais logger l'erreur
+  // En production, on pourrait redémarrer le processus proprement
+});
+
+// Capture des promesses rejetées non gérées
+process.on('unhandledRejection', (reason, promise) => {
+  // Règle 20.2 : Transformation en échec contrôlé
+  console.error('[UNHANDLED_REJECTION]', reason);
+  // Ne pas faire crasher le processus
+});
+
+// Vérification d'intégrité des modules au démarrage
+function verifyModuleIntegrity() {
+  const modulesToCheck = [
+    path.join(__dirname, 'services', 'secure-converter.js'),
+    path.join(__dirname, 'services', 'pipeline-security.js'),
+    path.join(__dirname, 'services', 'convert.js')
+  ];
+
+  console.log('[MODULE_INTEGRITY] Verifying module integrity...');
+  for (const modulePath of modulesToCheck) {
+    try {
+      const integrity = ModuleIntegrityChecker.verifyIntegrity(modulePath);
+      if (integrity.valid) {
+        console.log(`[MODULE_INTEGRITY] ✓ ${path.basename(modulePath)}`);
+      } else {
+        console.error(`[MODULE_INTEGRITY] ✗ ${path.basename(modulePath)}: ${integrity.message}`);
+        // En production, on pourrait refuser de démarrer si l'intégrité est compromise
+      }
+    } catch (error) {
+      console.error(`[MODULE_INTEGRITY] Failed to check ${path.basename(modulePath)}:`, error.message);
+    }
+  }
+}
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
@@ -409,5 +480,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`   POST /from-html - Convert HTML → other formats (Pandoc)`);
   console.log(`   POST /text-to-markdown - Convert Plain text → Markdown (text2markdown)`);
   console.log(`   POST /convert - Convert from any format to another (Pandoc/text2markdown)`);
+  
+  // Vérification d'intégrité au démarrage
+  verifyModuleIntegrity();
 });
 

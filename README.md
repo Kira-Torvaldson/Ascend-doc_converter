@@ -7,8 +7,30 @@ Application web moderne pour convertir des documents entre les formats AsciiDoc 
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+## 🎯 À propos du projet
+
+**Ascend** est une application web moderne et sécurisée pour la conversion de documents entre différents formats (AsciiDoc, Markdown, HTML, PDF, YAML, JSON, TXT, etc.). 
+
+### Objectifs du projet
+
+- **Conversion multi-formats** : Support d'une large gamme de formats de documents
+- **Sécurité par conception** : Architecture sécurisée avec isolation stricte des conversions, validation des entrées, et protection contre les abus de ressources
+- **Interface intuitive** : Interface utilisateur moderne avec navigation dans les documents et options de conversion avancées
+- **Pipeline modulaire** : Architecture modulaire permettant l'intégration facile de nouveaux modules de conversion
+- **Fiabilité** : Gestion robuste des erreurs, timeouts, et dégradation contrôlée en cas de surcharge
+
+### Caractéristiques principales
+
+- ✅ **Isolation stricte** : Chaque conversion s'exécute dans un environnement isolé et temporaire
+- ✅ **Validation exhaustive** : Validation des chemins, types MIME, formats, et tailles de fichiers
+- ✅ **Contrôle de ressources** : Limites sur CPU, mémoire, et temps d'exécution par conversion
+- ✅ **Détection d'anomalies** : Surveillance des comportements anormaux et tentatives d'accès non autorisés
+- ✅ **Journalisation sécurisée** : Logs structurés pour audit et traçabilité sans exposer de données utilisateur
+- ✅ **Dégradation contrôlée** : Refus intelligent de nouvelles conversions en cas de surcharge système
+
 ## 📋 Table des matières
 
+- [À propos du projet](#-à-propos-du-projet)
 - [Fonctionnalités](#-fonctionnalités)
 - [Technologies](#-technologies)
 - [Prérequis](#-prérequis)
@@ -17,8 +39,10 @@ Application web moderne pour convertir des documents entre les formats AsciiDoc 
 - [Utilisation](#-utilisation)
 - [Architecture](#-architecture)
 - [API](#-api)
+- [Documentation](#-documentation)
 - [Développement](#-développement)
 - [Structure du projet](#-structure-du-projet)
+- [Sécurité](#-sécurité)
 - [Contribuer](#-contribuer)
 - [License](#-license)
 
@@ -51,9 +75,15 @@ Application web moderne pour convertir des documents entre les formats AsciiDoc 
 - **Effacement** : Bouton pour effacer le contenu
 
 ### Sécurité et fiabilité
-- **Gestion d'erreurs** : Messages d'erreur clairs et informatifs
+- **Isolation stricte** : Chaque conversion s'exécute dans un dossier temporaire unique et isolé
+- **Validation exhaustive** : Validation des chemins, types MIME, formats, et tailles de fichiers
+- **Contrôle de ressources** : Limites strictes sur CPU, mémoire, et temps d'exécution
+- **Détection d'anomalies** : Surveillance des comportements anormaux et tentatives d'accès non autorisés
+- **Gestion d'erreurs robuste** : Capture exhaustive des erreurs sans crash global du backend
 - **Timeouts** : Protection contre les conversions trop longues
-- **Validation** : Validation des options de conversion
+- **Journalisation sécurisée** : Logs structurés pour audit et traçabilité
+- **Dégradation contrôlée** : Refus intelligent de nouvelles conversions en cas de surcharge
+- **Vérification d'intégrité** : Contrôle de l'intégrité des modules au démarrage
 
 ## 🛠 Technologies
 
@@ -424,6 +454,124 @@ Pour modifier ces ports, éditez :
 - Backend : `api/backend/server.js` (variable `PORT`)
 - Frontend : `api/frontend/vite.config.ts` (propriété `server.port`)
 
+## 📚 Documentation
+
+Le projet dispose d'une documentation complète dans le dossier [`doc/`](doc/). Voici l'index complet des fichiers de documentation, organisés par type :
+
+### 📖 Index de la documentation
+
+#### 📋 Spécifications et architecture
+
+- **[PIPELINE.md](doc/specifications/PIPELINE.md)** - **Spécification complète du pipeline de conversion**
+  - Philosophie et principes fondamentaux du pipeline
+  - Règles d'isolation stricte des conversions
+  - Validation stricte des entrées et chemins de fichiers
+  - Contrôle de concurrence et limites de ressources
+  - Détection de comportements anormaux
+  - Dégradation contrôlée et résilience du backend
+  - Cycle de vie d'une conversion
+  - Gestion des erreurs et journalisation sécurisée
+  - **Document de référence principal pour comprendre l'architecture de sécurité**
+
+- **[secure-converter.md](doc/specifications/secure-converter.md)** - **Moteur de conversion sécurisé**
+  - Vue d'ensemble du moteur de conversion sécurisé
+  - Caractéristiques de sécurité (isolation, validation, exécution sécurisée)
+  - Utilisation et exemples d'intégration
+  - Configuration et options de sécurité
+
+#### 🔐 Guides de sécurité
+
+- **[confirmation-security-guide.md](doc/guides/security/confirmation-security-guide.md)** - **Guide de sécurité des tokens de confirmation**
+  - Système de tokens de confirmation sécurisés
+  - Principe de non-confiance du backend envers le frontend
+  - Génération, validation et consommation des tokens
+  - Intégration frontend/backend
+
+#### 🔌 Guides d'intégration
+
+- **[secure-converter-frontend-integration.md](doc/guides/integration/secure-converter-frontend-integration.md)** - **Intégration frontend du moteur sécurisé**
+  - Guide d'intégration du système de tokens côté frontend
+  - Exemples de code React/TypeScript
+  - Gestion des modales de confirmation
+  - Gestion des erreurs côté client
+
+#### ⚙️ Références de configuration
+
+- **[conversion-options.md](doc/references/configuration/conversion-options.md)** - **Options de conversion complètes**
+  - Structure complète des options de conversion
+  - Options par catégorie (analyse, normalisation, rendu, métadonnées)
+  - Options spécifiques par format
+  - Exemples de configuration
+
+- **[encoding-options.md](doc/references/configuration/encoding-options.md)** - **Options d'encodage**
+  - Gestion des encodages de caractères
+  - Normalisation Unicode
+  - Détection et conversion d'encodage
+  - Options de nettoyage des caractères
+
+- **[normalization-advanced-options.md](doc/references/configuration/normalization-advanced-options.md)** - **Options avancées de normalisation**
+  - Normalisation avancée du contenu
+  - Détection et gestion des caractères confusables
+  - Nettoyage et sanitisation
+  - Options de formatage
+
+### 🗺️ Navigation rapide par type
+
+**📋 Spécifications et architecture :**
+- [PIPELINE.md](doc/specifications/PIPELINE.md) - Spécification complète du pipeline (référence principale)
+- [secure-converter.md](doc/specifications/secure-converter.md) - Moteur de conversion sécurisé
+
+**🔐 Guides de sécurité :**
+- [confirmation-security-guide.md](doc/guides/security/confirmation-security-guide.md) - Système de tokens de confirmation
+
+**🔌 Guides d'intégration :**
+- [secure-converter-frontend-integration.md](doc/guides/integration/secure-converter-frontend-integration.md) - Intégration frontend
+
+**⚙️ Références de configuration :**
+- [conversion-options.md](doc/references/configuration/conversion-options.md) - Options de conversion complètes
+- [encoding-options.md](doc/references/configuration/encoding-options.md) - Options d'encodage
+- [normalization-advanced-options.md](doc/references/configuration/normalization-advanced-options.md) - Options de normalisation avancée
+
+### 🎯 Parcours recommandés
+
+**Pour comprendre l'architecture de sécurité :**
+1. Commencez par [PIPELINE.md](doc/specifications/PIPELINE.md) pour comprendre les principes fondamentaux
+2. Lisez [secure-converter.md](doc/specifications/secure-converter.md) pour les détails d'implémentation
+3. Consultez [confirmation-security-guide.md](doc/guides/security/confirmation-security-guide.md) pour le système de tokens
+
+**Pour configurer les conversions :**
+1. [conversion-options.md](doc/references/configuration/conversion-options.md) - Vue d'ensemble des options
+2. [encoding-options.md](doc/references/configuration/encoding-options.md) - Options d'encodage
+3. [normalization-advanced-options.md](doc/references/configuration/normalization-advanced-options.md) - Normalisation avancée
+
+**Pour intégrer le système :**
+1. [secure-converter-frontend-integration.md](doc/guides/integration/secure-converter-frontend-integration.md) - Intégration frontend
+2. [secure-converter.md](doc/specifications/secure-converter.md) - Utilisation backend
+
+### 📂 Structure de la documentation
+
+La documentation est organisée par type dans le dossier [`doc/`](doc/) :
+
+```
+doc/
+├── README.md                                # Index de la documentation
+├── specifications/                          # Spécifications et architecture
+│   ├── PIPELINE.md                         # Spécification du pipeline (référence principale)
+│   └── secure-converter.md                 # Moteur de conversion sécurisé
+├── guides/                                  # Guides pratiques
+│   ├── security/                           # Guides de sécurité
+│   │   └── confirmation-security-guide.md # Guide des tokens de confirmation
+│   └── integration/                        # Guides d'intégration
+│       └── secure-converter-frontend-integration.md # Intégration frontend
+└── references/                              # Références techniques
+    └── configuration/                      # Références de configuration
+        ├── conversion-options.md           # Options de conversion
+        ├── encoding-options.md            # Options d'encodage
+        └── normalization-advanced-options.md # Options de normalisation avancée
+```
+
+Consultez le [README.md](doc/README.md) dans le dossier `doc/` pour un index complet et détaillé.
+
 ## 📁 Structure du projet
 
 ```
@@ -468,6 +616,7 @@ Ascend/
 │   │   ├── services/         # Services de conversion
 │   │   │   ├── convert.js    # Module de conversion principal
 │   │   │   ├── secure-converter.js  # Moteur de conversion sécurisé
+│   │   │   ├── pipeline-security.js # Module de sécurité du pipeline (PIPELINE.md)
 │   │   │   ├── docverter.js  # Module Docverter
 │   │   │   ├── panwriter.js  # Module PanWriter
 │   │   │   └── index.js      # Exports centralisés
@@ -493,13 +642,14 @@ Ascend/
 │       └── utils/            # Utilitaires partagés
 │           └── index.js
 │
-├── doc/                      # Documentation
-│   ├── confirmation-security-guide.md
-│   ├── conversion-options.md
-│   ├── encoding-options.md
-│   ├── normalization-advanced-options.md
-│   ├── secure-converter.md
-│   └── secure-converter-frontend-integration.md
+├── doc/                      # Documentation complète
+│   ├── PIPELINE.md                              # Spécification du pipeline (référence principale)
+│   ├── secure-converter.md                      # Moteur de conversion sécurisé
+│   ├── confirmation-security-guide.md           # Guide des tokens de confirmation
+│   ├── secure-converter-frontend-integration.md # Intégration frontend
+│   ├── conversion-options.md                    # Options de conversion
+│   ├── encoding-options.md                      # Options d'encodage
+│   └── normalization-advanced-options.md        # Options de normalisation avancée
 ├── lib/                      # Bibliothèque downdoc
 ├── bin/                      # Exécutables
 ├── test/                     # Tests
@@ -558,6 +708,58 @@ Les contributions sont les bienvenues ! Pour contribuer :
 3. Committez vos changements (`git commit -m 'Add some AmazingFeature'`)
 4. Push vers la branche (`git push origin feature/AmazingFeature`)
 5. Ouvrez une Pull Request
+
+## 🔐 Sécurité
+
+Ascend implémente une architecture de sécurité robuste basée sur les spécifications définies dans [PIPELINE.md](doc/PIPELINE.md).
+
+### Fonctionnalités de sécurité
+
+- **Isolation stricte** : Chaque conversion s'exécute dans un dossier temporaire unique avec permissions restrictives
+- **Validation exhaustive** : 
+  - Validation des chemins (protection path traversal, symlinks interdits)
+  - Validation du type réel de fichier (MIME type)
+  - Validation des formats et tailles de fichiers
+- **Contrôle de ressources** :
+  - Limite de conversions simultanées
+  - Budget global par conversion (CPU, mémoire, temps)
+  - Surveillance continue et interruption en cas de dépassement
+- **Détection d'anomalies** :
+  - Détection des tentatives d'accès non autorisés
+  - Détection des profils d'exécution anormaux
+  - Journalisation de toutes les anomalies
+- **Robustesse** :
+  - Capture exhaustive des erreurs sans crash global
+  - Dégradation contrôlée en cas de surcharge
+  - Vérification d'intégrité des modules au démarrage
+- **Journalisation sécurisée** :
+  - Logs structurés avec ID de conversion unique
+  - Aucune donnée utilisateur dans les logs
+  - Traçabilité complète pour audit
+
+### Configuration de sécurité
+
+Les limites de sécurité peuvent être configurées via des variables d'environnement :
+
+```bash
+# Limite de conversions simultanées (défaut: 5)
+MAX_CONCURRENT_CONVERSIONS=5
+
+# Budget de ressources par conversion
+MAX_CPU_TIME_MS=30000        # Limite CPU (défaut: 30s)
+MAX_MEMORY_MB=512            # Limite mémoire (défaut: 512MB)
+MAX_WALL_TIME_MS=60000       # Limite temps total (défaut: 60s)
+
+# Seuils de surcharge
+OVERLOAD_CPU_PERCENT=80.0
+OVERLOAD_MEMORY_PERCENT=80.0
+OVERLOAD_FAILURE_RATE=0.2
+
+# Chemin des logs de sécurité
+SECURITY_LOG_PATH=/tmp/ascend-security-logs
+```
+
+Pour plus de détails, consultez [PIPELINE.md](doc/PIPELINE.md).
 
 ## 📝 License
 
