@@ -1606,15 +1606,15 @@ function App() {
   // ==========================================================================
   
   /**
-   * Déclenche le processus de conversion
+   * Triggers the conversion process
    * 
-   * Pour les conversions simples (AsciiDoc → Markdown, Markdown → AsciiDoc, etc.),
-   * convertit directement sans token.
-   * Pour les conversions complexes (via /convert), demande un token de confirmation.
+   * For simple conversions (AsciiDoc → Markdown, Markdown → AsciiDoc, etc.),
+   * converts directly without token.
+   * For complex conversions (via /convert), requests a confirmation token.
    */
   const handleConvert = useCallback(() => {
-    // Vérifier si la conversion nécessite un token
-    // Les conversions simples n'en ont pas besoin
+    // Check if conversion requires a token
+    // Simple conversions don't need one
     const needsToken = !(
       (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
       (sourceFormat === 'markdown' && targetFormat === 'asciidoc') ||

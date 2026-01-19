@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./styles.css";
 
-// Gestion d'erreur globale pour diagnostiquer les problèmes
+// Global error handling for diagnosing issues
 window.addEventListener('error', (event) => {
   console.error('Erreur globale:', event.error);
 });

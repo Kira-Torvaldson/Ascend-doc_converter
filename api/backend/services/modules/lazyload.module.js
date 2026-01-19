@@ -1,15 +1,15 @@
 'use strict'
 
 /**
- * MODULE DE LAZY LOADING POUR CONVERTERS
+ * LAZY LOADING MODULE FOR CONVERTERS
  * 
- * Module centralisé de chargement différé (lazy loading) pour tous les converters
- * du pipeline. Ce module réduit la consommation mémoire en chargeant chaque
- * converter uniquement au moment où il est utilisé.
+ * Centralized lazy loading module for all converters in the pipeline.
+ * This module reduces memory consumption by loading each converter
+ * only when it is used.
  * 
- * Références :
- * - modules.interface.md : Contrat d'interface des modules
- * - lazyload.module.md : Spécification du module de lazy loading
+ * References:
+ * - modules.interface.md: Module interface contract
+ * - lazyload.module.md: Lazy loading module specification
  */
 
 const path = require('path')
@@ -21,10 +21,10 @@ const fs = require('fs')
 
 const MODULES_DIR = __dirname
 const MODULE_CONFIG = {
-  // Chemin vers le répertoire des modules
+  // Path to modules directory
   modulesPath: MODULES_DIR,
   
-  // Extensions de fichiers de modules acceptées
+  // Accepted module file extensions
   moduleExtensions: ['.module.js', '.js']
 }
 
@@ -33,22 +33,22 @@ const MODULE_CONFIG = {
 // ============================================================================
 
 /**
- * Registre des modules disponibles
+ * Registry of available modules
  * Format: { moduleName: { path, loader, loaded, instance, loadError } }
  */
 const moduleRegistry = new Map()
 
 /**
- * Configuration des modules disponibles
- * Chaque entrée définit le nom du module et son chemin de chargement
+ * Configuration of available modules
+ * Each entry defines the module name and its loading path
  */
 const AVAILABLE_MODULES = {
   'downdoc': {
     path: path.join(MODULES_DIR, 'downdoc.module.js'),
     name: 'downdoc'
   }
-  // Les autres modules (pandoc, text2markdown, docverter, panwriter) seront ajoutés
-  // lorsqu'ils seront créés selon l'interface modules.interface.md
+  // Other modules (pandoc, text2markdown, docverter, panwriter) will be added
+  // when they are created according to the modules.interface.md interface
 }
 
 // ============================================================================
@@ -56,20 +56,20 @@ const AVAILABLE_MODULES = {
 // ============================================================================
 
 /**
- * Gestionnaire de lazy loading pour les modules de conversion
- * Implémente le chargement différé et l'interface uniforme
+ * Lazy loading manager for conversion modules
+ * Implements deferred loading and uniform interface
  */
 class LazyLoadManager {
   constructor() {
-    this.loadedModules = new Map() // Cache des modules chargés
-    this.loadErrors = new Map()    // Cache des erreurs de chargement
-    this.loadLogs = []             // Logs de chargement
+    this.loadedModules = new Map() // Cache of loaded modules
+    this.loadErrors = new Map()    // Cache of loading errors
+    this.loadLogs = []             // Loading logs
   }
 
   /**
-   * Enregistre un module disponible pour le lazy loading
-   * @param {string} moduleName - Nom du module
-   * @param {string} modulePath - Chemin vers le fichier du module
+   * Registers a module available for lazy loading
+   * @param {string} moduleName - Module name
+   * @param {string} modulePath - Path to module file
    */
   registerModule(moduleName, modulePath) {
     if (moduleRegistry.has(moduleName)) {
@@ -90,12 +90,12 @@ class LazyLoadManager {
   }
 
   /**
-   * Valide le chemin d'un module avant chargement
-   * @param {string} modulePath - Chemin vers le fichier du module
+   * Validates a module path before loading
+   * @param {string} modulePath - Path to module file
    * @returns {Object} { valid: boolean, error?: string }
    */
   validateModulePath(modulePath) {
-    // Vérifier que le chemin est absolu
+    // Check that path is absolute
     if (!path.isAbsolute(modulePath)) {
       return {
         valid: false,
@@ -103,7 +103,7 @@ class LazyLoadManager {
       }
     }
 
-    // Vérifier que le chemin est dans le répertoire des modules
+    // Check that path is within modules directory
     const normalizedPath = path.normalize(modulePath)
     const normalizedModulesDir = path.normalize(MODULES_DIR)
     
@@ -114,7 +114,7 @@ class LazyLoadManager {
       }
     }
 
-    // Vérifier que le fichier existe
+    // Check that file exists
     if (!fs.existsSync(modulePath)) {
       return {
         valid: false,
@@ -122,7 +122,7 @@ class LazyLoadManager {
       }
     }
 
-    // Vérifier que c'est un fichier (pas un répertoire)
+    // Check that it's a file (not a directory)
     const stats = fs.statSync(modulePath)
     if (!stats.isFile()) {
       return {
@@ -131,7 +131,7 @@ class LazyLoadManager {
       }
     }
 
-    // Vérifier l'extension
+    // Check extension
     const ext = path.extname(modulePath)
     if (!MODULE_CONFIG.moduleExtensions.includes(ext)) {
       return {
@@ -144,26 +144,26 @@ class LazyLoadManager {
   }
 
   /**
-   * Charge un module de manière différée (lazy loading)
-   * @param {string} moduleName - Nom du module à charger
+   * Loads a module lazily (lazy loading)
+   * @param {string} moduleName - Module name to load
    * @returns {Object} { success: boolean, module?: Object, error?: string }
    */
   loadModule(moduleName) {
-    // Vérifier si le module est déjà chargé
+    // Check if module is already loaded
     if (this.loadedModules.has(moduleName)) {
       const module = this.loadedModules.get(moduleName)
       this.log(`Module '${moduleName}' already loaded, using cached instance`)
       return { success: true, module }
     }
 
-    // Vérifier si une erreur de chargement précédente existe
+    // Check if a previous loading error exists
     if (this.loadErrors.has(moduleName)) {
       const error = this.loadErrors.get(moduleName)
       this.log(`Module '${moduleName}' previously failed to load: ${error}`)
       return { success: false, error }
     }
 
-    // Vérifier si le module est enregistré
+    // Check if module is registered
     const moduleInfo = moduleRegistry.get(moduleName)
     if (!moduleInfo) {
       const error = `Module '${moduleName}' is not registered`
@@ -177,7 +177,7 @@ class LazyLoadManager {
     this.log(`Loading module '${moduleName}' from ${moduleInfo.path}...`)
 
     try {
-      // Validation du chemin du module (sécurité)
+      // Module path validation (security)
       const pathValidation = this.validateModulePath(moduleInfo.path)
       if (!pathValidation.valid) {
         const error = pathValidation.error || `Invalid module path: ${moduleInfo.path}`
@@ -187,14 +187,14 @@ class LazyLoadManager {
         return { success: false, error }
       }
 
-      // Charger le module (require avec cache Node.js)
-      // Note: On ne supprime PAS le cache ici pour éviter les rechargements inutiles
-      // Le cache Node.js gère déjà le chargement unique
+      // Load module (require with Node.js cache)
+      // Note: We do NOT delete the cache here to avoid unnecessary reloads
+      // Node.js cache already handles unique loading
       let moduleInstance
       try {
         moduleInstance = require(moduleInfo.path)
       } catch (requireError) {
-        // Gestion spécifique des erreurs de require
+        // Specific require error handling
         const error = `Failed to require module '${moduleName}': ${requireError.message}`
         this.log(`Error: ${error}`)
         this.loadErrors.set(moduleName, error)
@@ -202,7 +202,7 @@ class LazyLoadManager {
         return { success: false, error }
       }
 
-      // Valider que le module respecte l'interface
+      // Validate that module conforms to interface
       const validation = this.validateModuleInterface(moduleInstance, moduleName)
       if (!validation.valid) {
         const error = `Module '${moduleName}' does not conform to interface: ${validation.error}`
@@ -212,13 +212,13 @@ class LazyLoadManager {
         return { success: false, error }
       }
 
-      // Mettre en cache le module chargé
+      // Cache the loaded module
       const loadDuration = (Date.now() - loadStartTime) / 1000
       this.loadedModules.set(moduleName, moduleInstance)
       moduleInfo.loaded = true
       moduleInfo.instance = moduleInstance
       moduleInfo.loadTime = loadDuration
-      moduleInfo.loadError = null // Réinitialiser l'erreur si le chargement réussit
+      moduleInfo.loadError = null // Reset error if loading succeeds
 
       this.log(`Module '${moduleName}' loaded successfully in ${loadDuration.toFixed(3)}s`)
       this.log(`Module '${moduleName}' initialized at ${new Date().toISOString()}`)
@@ -226,8 +226,8 @@ class LazyLoadManager {
       return { success: true, module: moduleInstance }
 
     } catch (error) {
-      // Gestion sécurisée des erreurs de chargement
-      // Ne pas exposer de détails système sensibles
+      // Secure error handling for loading
+      // Do not expose sensitive system details
       const errorMessage = `Failed to load module '${moduleName}': ${error.message}`
       this.log(`Error: ${errorMessage}`)
       this.loadErrors.set(moduleName, errorMessage)
@@ -240,13 +240,13 @@ class LazyLoadManager {
   }
 
   /**
-   * Valide qu'un module respecte l'interface définie dans modules.interface.md
-   * @param {Object} moduleInstance - Instance du module à valider
-   * @param {string} moduleName - Nom du module
+   * Validates that a module conforms to the interface defined in modules.interface.md
+   * @param {Object} moduleInstance - Module instance to validate
+   * @param {string} moduleName - Module name
    * @returns {Object} { valid: boolean, error?: string }
    */
   validateModuleInterface(moduleInstance, moduleName) {
-    // Vérifier la présence de la propriété 'name'
+    // Check for 'name' property
     if (!moduleInstance.name || typeof moduleInstance.name !== 'string') {
       return {
         valid: false,
@@ -254,7 +254,7 @@ class LazyLoadManager {
       }
     }
 
-    // Vérifier que le nom correspond
+    // Check that name matches
     if (moduleInstance.name !== moduleName) {
       return {
         valid: false,
@@ -262,7 +262,7 @@ class LazyLoadManager {
       }
     }
 
-    // Vérifier la présence de la propriété 'supportedFormats'
+    // Check for 'supportedFormats' property
     if (!moduleInstance.supportedFormats || typeof moduleInstance.supportedFormats !== 'object') {
       return {
         valid: false,
@@ -270,7 +270,7 @@ class LazyLoadManager {
       }
     }
 
-    // Vérifier la structure de supportedFormats
+    // Check supportedFormats structure
     if (!Array.isArray(moduleInstance.supportedFormats.from) ||
         !Array.isArray(moduleInstance.supportedFormats.to)) {
       return {
@@ -279,7 +279,7 @@ class LazyLoadManager {
       }
     }
 
-    // Vérifier la présence de la méthode 'run'
+    // Check for 'run' method
     if (typeof moduleInstance.run !== 'function') {
       return {
         valid: false,
@@ -291,13 +291,13 @@ class LazyLoadManager {
   }
 
   /**
-   * Valide les chemins d'entrée et de sortie avant exécution
-   * @param {string} inputPath - Chemin vers le fichier d'entrée
-   * @param {string} outputPath - Chemin vers le fichier de sortie
+   * Validates input and output paths before execution
+   * @param {string} inputPath - Path to input file
+   * @param {string} outputPath - Path to output file
    * @returns {Object} { valid: boolean, error?: string }
    */
   validatePaths(inputPath, outputPath) {
-    // Vérifier que les chemins sont absolus
+    // Check that paths are absolute
     if (!path.isAbsolute(inputPath)) {
       return {
         valid: false,
@@ -312,7 +312,7 @@ class LazyLoadManager {
       }
     }
 
-    // Vérifier que le fichier d'entrée existe
+    // Check that input file exists
     if (!fs.existsSync(inputPath)) {
       return {
         valid: false,
@@ -320,7 +320,7 @@ class LazyLoadManager {
       }
     }
 
-    // Vérifier que le fichier d'entrée est un fichier
+    // Check that input file is a file
     const inputStats = fs.statSync(inputPath)
     if (!inputStats.isFile()) {
       return {
@@ -329,7 +329,7 @@ class LazyLoadManager {
       }
     }
 
-    // Vérifier que le répertoire parent de la sortie existe
+    // Check that output parent directory exists
     const outputDir = path.dirname(outputPath)
     if (!fs.existsSync(outputDir)) {
       return {
@@ -342,12 +342,12 @@ class LazyLoadManager {
   }
 
   /**
-   * Obtient un module et exécute sa méthode run avec lazy loading
-   * @param {string} moduleName - Nom du module
-   * @param {string} inputPath - Chemin vers le fichier d'entrée
-   * @param {string} outputPath - Chemin vers le fichier de sortie
-   * @param {Object} options - Options de conversion
-   * @returns {Promise<ModuleResult>} Résultat de la conversion
+   * Gets a module and executes its run method with lazy loading
+   * @param {string} moduleName - Module name
+   * @param {string} inputPath - Path to input file
+   * @param {string} outputPath - Path to output file
+   * @param {Object} options - Conversion options
+   * @returns {Promise<ModuleResult>} Conversion result
    */
   async runModule(moduleName, inputPath, outputPath, options = {}) {
     const conversionId = options.conversionId || 'unknown'
@@ -355,11 +355,11 @@ class LazyLoadManager {
     const logs = []
 
     try {
-      // Journalisation minimale : tentative de chargement
+      // Minimal logging: loading attempt
       logs.push(`[${conversionId}] Requesting module '${moduleName}'`)
       logs.push(`[${conversionId}] Lazy loading module '${moduleName}'...`)
 
-      // Validation des chemins avant chargement du module
+      // Path validation before module loading
       const pathValidation = this.validatePaths(inputPath, outputPath)
       if (!pathValidation.valid) {
         const duration = (Date.now() - startTime) / 1000
@@ -373,11 +373,11 @@ class LazyLoadManager {
         }
       }
 
-      // Charger le module (lazy loading)
+      // Load module (lazy loading)
       const loadResult = this.loadModule(moduleName)
 
       if (!loadResult.success) {
-        // Gestion sécurisée des erreurs de chargement
+        // Secure error handling for loading
         const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Failed to load module '${moduleName}': ${loadResult.error}`)
         
@@ -389,14 +389,14 @@ class LazyLoadManager {
         }
       }
 
-      // Journalisation minimale : module chargé
+      // Minimal logging: module loaded
       logs.push(`[${conversionId}] Module '${moduleName}' loaded successfully`)
       logs.push(`[${conversionId}] Module '${moduleName}' initialized`)
 
-      // Obtenir l'instance du module
+      // Get module instance
       const moduleInstance = loadResult.module
 
-      // Vérifier que le module supporte le format demandé (si spécifié dans options)
+      // Check that module supports requested format (if specified in options)
       if (options.fromFormat && options.toFormat) {
         const supportedFrom = moduleInstance.supportedFormats.from.map(f => f.toLowerCase())
         const supportedTo = moduleInstance.supportedFormats.to.map(f => f.toLowerCase())
@@ -428,11 +428,11 @@ class LazyLoadManager {
         }
       }
 
-      // Exécuter la méthode run du module
+      // Execute module's run method
       logs.push(`[${conversionId}] Executing module '${moduleName}'...`)
       const moduleResult = await moduleInstance.run(inputPath, outputPath, options)
 
-      // Valider que le résultat est conforme
+      // Validate that result is conformant
       if (!moduleResult || typeof moduleResult !== 'object') {
         const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Module '${moduleName}' returned invalid result`)
@@ -445,7 +445,7 @@ class LazyLoadManager {
         }
       }
 
-      // Fusionner les logs du module avec les logs de chargement
+      // Merge module logs with loading logs
       const allLogs = [...logs]
       if (Array.isArray(moduleResult.logs)) {
         allLogs.push(...moduleResult.logs)
@@ -453,16 +453,16 @@ class LazyLoadManager {
         allLogs.push(moduleResult.logs)
       }
 
-      // Retourner le résultat avec les logs fusionnés
+      // Return result with merged logs
       return {
-        success: moduleResult.success !== false, // S'assurer que success est un booléen
+        success: moduleResult.success !== false, // Ensure success is a boolean
         logs: allLogs,
         error: moduleResult.error || null,
         duration: moduleResult.duration || ((Date.now() - startTime) / 1000)
       }
 
     } catch (error) {
-      // Gestion sécurisée des erreurs : capture exhaustive
+      // Secure error handling: exhaustive capture
       const duration = (Date.now() - startTime) / 1000
       logs.push(`[${conversionId}] Unexpected error in lazy loading: ${error.message}`)
 
@@ -476,17 +476,17 @@ class LazyLoadManager {
   }
 
   /**
-   * Obtient la liste des modules disponibles
-   * @returns {string[]} Liste des noms de modules enregistrés
+   * Gets the list of available modules
+   * @returns {string[]} List of registered module names
    */
   getAvailableModules() {
     return Array.from(moduleRegistry.keys())
   }
 
   /**
-   * Obtient le statut de chargement d'un module
-   * @param {string} moduleName - Nom du module
-   * @returns {Object} Statut du module
+   * Gets the loading status of a module
+   * @param {string} moduleName - Module name
+   * @returns {Object} Module status
    */
   getModuleStatus(moduleName) {
     const moduleInfo = moduleRegistry.get(moduleName)
@@ -504,8 +504,8 @@ class LazyLoadManager {
   }
 
   /**
-   * Journalise un message (journalisation minimale)
-   * @param {string} message - Message à logger
+   * Logs a message (minimal logging)
+   * @param {string} message - Message to log
    */
   log(message) {
     const timestamp = new Date().toISOString()
@@ -515,16 +515,16 @@ class LazyLoadManager {
   }
 
   /**
-   * Obtient les logs de chargement
-   * @returns {string[]} Logs de chargement
+   * Gets loading logs
+   * @returns {string[]} Loading logs
    */
   getLogs() {
     return [...this.loadLogs]
   }
 
   /**
-   * Réinitialise le cache d'un module (pour tests ou rechargement)
-   * @param {string} moduleName - Nom du module
+   * Resets a module's cache (for tests or reloading)
+   * @param {string} moduleName - Module name
    */
   unloadModule(moduleName) {
     if (this.loadedModules.has(moduleName)) {
@@ -534,14 +534,14 @@ class LazyLoadManager {
           const modulePath = require.resolve(moduleInfo.path)
           delete require.cache[modulePath]
         } catch (resolveError) {
-          // Ignorer si le module n'est pas résolvable
+          // Ignore if module is not resolvable
           this.log(`Warning: Could not resolve module path for '${moduleName}': ${resolveError.message}`)
         }
       }
       this.loadedModules.delete(moduleName)
       this.loadErrors.delete(moduleName)
       
-      // Réinitialiser les informations du module dans le registre
+      // Reset module information in registry
       if (moduleInfo) {
         moduleInfo.loaded = false
         moduleInfo.instance = null
@@ -559,7 +559,7 @@ class LazyLoadManager {
 
 const lazyLoadManager = new LazyLoadManager()
 
-// Enregistrer les modules disponibles au démarrage
+// Register available modules at startup
 for (const [moduleName, moduleConfig] of Object.entries(AVAILABLE_MODULES)) {
   lazyLoadManager.registerModule(moduleName, moduleConfig.path)
 }
@@ -569,40 +569,40 @@ for (const [moduleName, moduleConfig] of Object.entries(AVAILABLE_MODULES)) {
 // ============================================================================
 
 /**
- * Interface uniforme pour exécuter n'importe quel converter avec lazy loading
- * Compatible avec l'interface définie dans modules.interface.md
+ * Uniform interface to execute any converter with lazy loading
+ * Compatible with the interface defined in modules.interface.md
  * 
- * @param {string} moduleName - Nom du module à utiliser
- * @param {string} inputPath - Chemin absolu vers le fichier d'entrée
- * @param {string} outputPath - Chemin absolu vers le fichier de sortie
- * @param {Object} options - Options de conversion
- * @returns {Promise<ModuleResult>} Résultat de la conversion
+ * @param {string} moduleName - Module name to use
+ * @param {string} inputPath - Absolute path to input file
+ * @param {string} outputPath - Absolute path to output file
+ * @param {Object} options - Conversion options
+ * @returns {Promise<ModuleResult>} Conversion result
  */
 async function runConverter(moduleName, inputPath, outputPath, options = {}) {
   return await lazyLoadManager.runModule(moduleName, inputPath, outputPath, options)
 }
 
 /**
- * Enregistre un nouveau module pour le lazy loading
- * @param {string} moduleName - Nom du module
- * @param {string} modulePath - Chemin vers le fichier du module
+ * Registers a new module for lazy loading
+ * @param {string} moduleName - Module name
+ * @param {string} modulePath - Path to module file
  */
 function registerConverter(moduleName, modulePath) {
   lazyLoadManager.registerModule(moduleName, modulePath)
 }
 
 /**
- * Obtient la liste des modules disponibles
- * @returns {string[]} Liste des noms de modules
+ * Gets the list of available modules
+ * @returns {string[]} List of module names
  */
 function getAvailableConverters() {
   return lazyLoadManager.getAvailableModules()
 }
 
 /**
- * Obtient le statut d'un module
- * @param {string} moduleName - Nom du module
- * @returns {Object} Statut du module
+ * Gets the status of a module
+ * @param {string} moduleName - Module name
+ * @returns {Object} Module status
  */
 function getConverterStatus(moduleName) {
   return lazyLoadManager.getModuleStatus(moduleName)
@@ -613,12 +613,12 @@ function getConverterStatus(moduleName) {
 // ============================================================================
 
 module.exports = {
-  // Interface principale
+  // Main interface
   runConverter,
   registerConverter,
   getAvailableConverters,
   getConverterStatus,
   
-  // Gestionnaire interne (pour accès avancé si nécessaire)
+  // Internal manager (for advanced access if needed)
   lazyLoadManager
 }

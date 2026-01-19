@@ -1,17 +1,17 @@
 'use strict'
 
 /**
- * MODULE DOWNDOC
+ * DOWNDOC MODULE
  * 
- * Wrapper pour la bibliothèque downdoc conforme à l'interface définie dans
+ * Wrapper for the downdoc library conforming to the interface defined in
  * doc/specifications/modules.interface.md
  * 
- * Ce module convertit des fichiers AsciiDoc en Markdown selon la spécification
- * définie dans doc/specifications/modules/downdoc.module.md
+ * This module converts AsciiDoc files to Markdown according to the specification
+ * defined in doc/specifications/modules/downdoc.module.md
  * 
- * Références :
- * - modules.interface.md : Contrat d'interface des modules
- * - downdoc.module.md : Spécification du module downdoc
+ * References:
+ * - modules.interface.md: Module interface contract
+ * - downdoc.module.md: Downdoc module specification
  */
 
 const { readFileSync, writeFileSync, statSync, existsSync, unlinkSync } = require('fs')
@@ -24,10 +24,10 @@ const { adaptForBookStack } = require('../../../shared/adapters/bookstack-adapte
 // ============================================================================
 
 const MODULE_CONFIG = {
-  // Limite maximale de taille de fichier (50 MB par défaut)
+  // Maximum file size limit (50 MB by default)
   MAX_FILE_SIZE: 50 * 1024 * 1024,
   
-  // Extensions AsciiDoc acceptées
+  // Accepted AsciiDoc extensions
   ALLOWED_EXTENSIONS: ['.adoc', '.asciidoc']
 }
 
@@ -36,11 +36,11 @@ const MODULE_CONFIG = {
 // ============================================================================
 
 /**
- * Nettoyage de base pour corriger les problèmes courants de downdoc
- * Conforme à la spécification downdoc.module.md
+ * Basic cleanup to fix common downdoc issues
+ * Conforms to downdoc.module.md specification
  * 
- * @param {string} markdown - Markdown brut de downdoc
- * @returns {string} Markdown nettoyé
+ * @param {string} markdown - Raw markdown from downdoc
+ * @returns {string} Cleaned markdown
  */
 function basicCleanup(markdown) {
   if (!markdown || typeof markdown !== 'string') {
@@ -49,13 +49,13 @@ function basicCleanup(markdown) {
 
   let result = markdown
 
-  // Correction des règles horizontales mal formatées (- -- -> ---)
+  // Fix malformed horizontal rules (- -- -> ---)
   result = result.replace(/^-\s*--\s*$/gm, '---')
   result = result.replace(/^-\s*--$/gm, '---')
   result = result.replace(/^-\s+--\s*$/gm, '---')
   result = result.replace(/^-\s*--\s+$/gm, '---')
   
-  // Passage ligne par ligne pour les règles horizontales
+  // Line-by-line pass for horizontal rules
   const lines = result.split('\n')
   const fixedLines = lines.map(line => {
     const trimmed = line.trim()
@@ -67,10 +67,10 @@ function basicCleanup(markdown) {
   })
   result = fixedLines.join('\n')
 
-  // Suppression des espaces en fin de ligne
+  // Remove trailing spaces
   result = result.replace(/[ \t]+$/gm, '')
 
-  // Normalisation des fins de fichier (un seul saut de ligne final)
+  // Normalize file endings (single final newline)
   result = result.trimEnd() + '\n'
 
   return result
@@ -81,14 +81,14 @@ function basicCleanup(markdown) {
 // ============================================================================
 
 /**
- * Valide le fichier d'entrée selon les obligations de sécurité minimales V1
- * Conforme à modules.interface.md - Obligation 1 : Validation basique des entrées
+ * Validates input file according to minimal V1 security obligations
+ * Conforms to modules.interface.md - Obligation 1: Basic input validation
  * 
- * @param {string} inputPath - Chemin vers le fichier d'entrée
+ * @param {string} inputPath - Path to input file
  * @returns {Object} { valid: boolean, error?: string }
  */
 function validateInput(inputPath) {
-  // Vérification de l'existence du fichier
+  // Check file existence
   if (!existsSync(inputPath)) {
     return {
       valid: false,
@@ -96,7 +96,7 @@ function validateInput(inputPath) {
     }
   }
 
-  // Vérification de la taille du fichier
+  // Check file size
   try {
     const stats = statSync(inputPath)
     if (stats.size > MODULE_CONFIG.MAX_FILE_SIZE) {
@@ -119,7 +119,7 @@ function validateInput(inputPath) {
     }
   }
 
-  // Vérification basique du type de fichier par extension
+  // Basic file type check by extension
   const ext = path.extname(inputPath).toLowerCase()
   if (!MODULE_CONFIG.ALLOWED_EXTENSIONS.includes(ext)) {
     return {
@@ -136,16 +136,16 @@ function validateInput(inputPath) {
 // ============================================================================
 
 /**
- * Module downdoc conforme à l'interface modules.interface.md
+ * Downdoc module conforming to modules.interface.md interface
  */
 const downdocModule = {
   /**
-   * Nom du module (modules.interface.md - Propriété 1)
+   * Module name (modules.interface.md - Property 1)
    */
   name: 'downdoc',
 
   /**
-   * Formats supportés (modules.interface.md - Propriété 2)
+   * Supported formats (modules.interface.md - Property 2)
    */
   supportedFormats: {
     from: ['asciidoc'],
@@ -153,15 +153,15 @@ const downdocModule = {
   },
 
   /**
-   * Méthode run conforme à modules.interface.md
-   * Implémente le processus décrit dans downdoc.module.md
+   * Run method conforming to modules.interface.md
+   * Implements the process described in downdoc.module.md
    * 
-   * @param {string} inputPath - Chemin absolu vers le fichier AsciiDoc d'entrée
-   * @param {string} outputPath - Chemin absolu vers le fichier Markdown de sortie
-   * @param {Object} options - Options de conversion (optionnel)
-   * @param {string} options.mode - Mode de conversion ('default' ou 'bookstack')
-   * @param {string} options.conversionId - ID de conversion pour les logs (optionnel)
-   * @returns {Promise<ModuleResult>} Résultat de la conversion
+   * @param {string} inputPath - Absolute path to input AsciiDoc file
+   * @param {string} outputPath - Absolute path to output Markdown file
+   * @param {Object} options - Conversion options (optional)
+   * @param {string} options.mode - Conversion mode ('default' or 'bookstack')
+   * @param {string} options.conversionId - Conversion ID for logs (optional)
+   * @returns {Promise<ModuleResult>} Conversion result
    */
   async run(inputPath, outputPath, options = {}) {
     const startTime = Date.now()
@@ -169,12 +169,12 @@ const downdocModule = {
     const conversionId = options.conversionId || 'unknown'
 
     try {
-      // Journalisation minimale - Obligation 4 (modules.interface.md)
+      // Minimal logging - Obligation 4 (modules.interface.md)
       logs.push(`[${conversionId}] Conversion started at ${new Date().toISOString()}`)
       logs.push(`[${conversionId}] Input: ${path.basename(inputPath)}`)
       logs.push(`[${conversionId}] Output: ${path.basename(outputPath)}`)
 
-      // Étape 1 : Validation des entrées (Obligation 1 - modules.interface.md)
+      // Step 1: Input validation (Obligation 1 - modules.interface.md)
       logs.push(`[${conversionId}] Validating input file...`)
       const validation = validateInput(inputPath)
       if (!validation.valid) {
@@ -189,7 +189,7 @@ const downdocModule = {
       }
       logs.push(`[${conversionId}] Input file validated`)
 
-      // Étape 2 : Lecture sécurisée du fichier d'entrée (downdoc.module.md)
+      // Step 2: Secure input file reading (downdoc.module.md)
       logs.push(`[${conversionId}] Reading input file...`)
       let asciidocContent
       try {
@@ -205,7 +205,7 @@ const downdocModule = {
         }
       }
 
-      // Validation que le contenu n'est pas vide
+      // Validate that content is not empty
       if (!asciidocContent || typeof asciidocContent !== 'string' || asciidocContent.trim().length === 0) {
         const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Input file is empty or invalid`)
@@ -218,7 +218,7 @@ const downdocModule = {
       }
       logs.push(`[${conversionId}] Input file read successfully (${asciidocContent.length} characters)`)
 
-      // Étape 3 : Conversion en mémoire via downdoc (downdoc.module.md)
+      // Step 3: In-memory conversion via downdoc (downdoc.module.md)
       logs.push(`[${conversionId}] Converting AsciiDoc to Markdown...`)
       let markdown
       try {
@@ -244,31 +244,31 @@ const downdocModule = {
         }
       }
 
-      // Étape 4 : Post-traitement du résultat (downdoc.module.md)
+      // Step 4: Result post-processing (downdoc.module.md)
       logs.push(`[${conversionId}] Applying post-processing...`)
       markdown = basicCleanup(markdown)
 
-      // Application de l'adaptateur BookStack si nécessaire
+      // Apply BookStack adapter if necessary
       if (options.mode === 'bookstack') {
         logs.push(`[${conversionId}] Applying BookStack adapter...`)
         markdown = adaptForBookStack(markdown)
       }
       logs.push(`[${conversionId}] Post-processing completed`)
 
-      // Étape 5 : Écriture du résultat (downdoc.module.md)
+      // Step 5: Write result (downdoc.module.md)
       logs.push(`[${conversionId}] Writing output file...`)
       try {
         writeFileSync(outputPath, markdown, 'utf8')
         logs.push(`[${conversionId}] Output file written successfully`)
       } catch (error) {
-        // Obligation 3 - Gestion sécurisée des erreurs : ne pas créer de fichier partiel
-        // Si l'écriture échoue, on supprime le fichier s'il a été créé partiellement
+        // Obligation 3 - Secure error handling: do not create partial file
+        // If writing fails, remove file if it was partially created
         if (existsSync(outputPath)) {
           try {
             unlinkSync(outputPath)
             logs.push(`[${conversionId}] Partial output file removed`)
           } catch (unlinkError) {
-            // Log mais ne pas propager l'erreur de suppression
+            // Log but do not propagate deletion error
             logs.push(`[${conversionId}] Warning: Failed to remove partial output file`)
           }
         }
@@ -283,7 +283,7 @@ const downdocModule = {
         }
       }
 
-      // Étape 6 : Retour du résultat (downdoc.module.md)
+      // Step 6: Return result (downdoc.module.md)
       const endTime = Date.now()
       const duration = (endTime - startTime) / 1000
       logs.push(`[${conversionId}] Conversion completed successfully`)
@@ -298,12 +298,12 @@ const downdocModule = {
       }
 
     } catch (error) {
-      // Obligation 3 - Gestion sécurisée des erreurs : capture exhaustive
-      // Toute erreur non prévue doit être capturée et transformée en ModuleResult
+      // Obligation 3 - Secure error handling: exhaustive capture
+      // Any unexpected error must be captured and transformed into ModuleResult
       const duration = (Date.now() - startTime) / 1000
       logs.push(`[${conversionId}] Unexpected error: ${error.message}`)
 
-      // S'assurer qu'aucun fichier de sortie partiel n'est laissé
+      // Ensure no partial output file is left behind
       if (existsSync(outputPath)) {
         try {
           unlinkSync(outputPath)
