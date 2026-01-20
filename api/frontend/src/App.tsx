@@ -3005,7 +3005,7 @@ function App() {
       </div>
 
       <footer className="footer">
-        <span className="footer-version">Version : 0.0.1.2.1 alpha</span>
+        <span className="footer-version">Version : 0.0.1.2.2 alpha</span>
         <span className="footer-author">Make by TBE</span>
       </footer>
 
