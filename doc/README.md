@@ -1,169 +1,139 @@
-# 📚 Documentation Ascend
+# Ascend Documentation
 
-Bienvenue dans la documentation d'Ascend. Cette documentation est organisée par type pour faciliter la navigation.
+## Purpose
 
-## 📁 Structure de la documentation
+This directory contains the canonical documentation for Ascend. Documentation is organized into reference documents (canonical sources of truth) and specifications (descriptive documents).
+
+## Documentation Structure
 
 ```
 doc/
-├── README.md                    # Index de la documentation
-├── specifications/              # Spécifications et architecture
-│   ├── PIPELINE.md            # Spécification complète du pipeline
-│   ├── modules.interface.md   # Contrat d'interface des modules
-│   ├── secure-converter.md    # Moteur de conversion sécurisé
-│   └── modules/               # Spécifications des modules
-│       ├── lazyload.module.md # Module de lazy loading
-│       ├── converter-orchestrator.module.md # Module orchestrateur
-│       ├── orchestrator-comm.module.md # Communication entre orchestrateurs
-│       ├── logs.module.md              # Module de logs structurés
-│       ├── downdoc.module.md  # Module Downdoc
-│       ├── pandoc.module.md   # Module Pandoc
-│       ├── text2markdown.module.md # Module Text2Markdown
-│       ├── panwriter.module.md # Module PanWriter
-│       └── docverter.module.md # Module Docverter
-│
-├── guides/                     # Guides pratiques
-│   ├── security/              # Guides de sécurité
-│   │   └── confirmation-security-guide.md
-│   └── integration/           # Guides d'intégration
-│       └── secure-converter-frontend-integration.md
-│
-└── references/                 # Références techniques
-    └── configuration/         # Références de configuration
-        ├── conversion-options.md
-        ├── encoding-options.md
-        └── normalization-advanced-options.md
+├── README.md                    # This file
+├── glossary.md                  # Terminology definitions
+├── changelog.md                 # Version history
+├── references/                  # Canonical references (source of truth)
+│   ├── core/                   # Core identity and capabilities
+│   │   ├── ascend-identity.md
+│   │   ├── supported-formats.md
+│   │   └── engines.md
+│   ├── configuration/          # Configuration contracts
+│   │   ├── execution-profile.md
+│   │   ├── resource-limits.md
+│   │   ├── logging-policy.md
+│   │   └── paths-and-storage.md
+│   ├── normalization/          # Normalization rules
+│   │   ├── text-normalization.md
+│   │   ├── encoding-rules.md
+│   │   └── typographic-canonicalization.md
+│   ├── security/               # Security rules
+│   │   ├── sandboxing.md
+│   │   ├── file-validation.md
+│   │   ├── confirmation-rules.md
+│   │   └── threat-model.md
+│   ├── conversion/             # Conversion behavior
+│   │   ├── pipeline.md
+│   │   ├── conversion-options.md
+│   │   ├── error-handling.md
+│   │   └── fallback-strategies.md
+│   ├── api/                   # API contracts
+│   │   ├── endpoints.md
+│   │   ├── request-contracts.md
+│   │   └── response-contracts.md
+│   ├── ui/                    # Frontend behavior
+│   │   ├── frontend-behavior.md
+│   │   └── batch-processing.md
+│   └── profiles/              # Product profiles
+│       ├── community.md
+│       ├── pro.md
+│       └── enterprise.md
+└── specs/                     # Specifications (descriptive)
+    ├── roadmap.md
+    ├── architecture.md
+    └── local-first-principles.md
 ```
 
-## 📖 Index par type
+## Documentation Types
 
-### 📋 Spécifications et architecture
+### Canonical References
 
-Documents de référence décrivant l'architecture et les spécifications du système.
+Documents in `references/` are **canonical** - they serve as the authoritative source of truth for:
+- Configuration values
+- Behavioral rules
+- Format definitions
+- Security policies
+- API contracts
 
-- **[PIPELINE.md](specifications/PIPELINE.md)** - Spécification complète du pipeline de conversion
-  - Philosophie et principes fondamentaux
-  - Règles d'isolation stricte
-  - Validation et sécurité
-  - Cycle de vie d'une conversion
-  - **Document de référence principal**
+These documents can be mapped 1:1 to machine-readable configuration (e.g., `ascend.reference.json`).
 
-- **[modules.interface.md](specifications/modules.interface.md)** - Contrat d'interface des modules
-  - Spécification technique du contrat des modules
-  - Propriétés obligatoires (nom, formats supportés)
-  - Méthode standard `run()` avec structure de retour uniforme
-  - Contraintes d'exécution et comportement attendu
-  - **Document de référence pour créer ou intégrer un module**
+### Specifications
 
-- **[lazyload.module.md](specifications/modules/lazyload.module.md)** - Module de lazy loading
-  - Gestionnaire centralisé de chargement différé pour tous les converters
-  - Interface uniforme compatible avec tous les wrappers
-  - Réduction de la consommation mémoire
-  - Journalisation et gestion sécurisée des erreurs
+Documents in `specs/` are **descriptive** - they describe:
+- System architecture
+- Design principles
+- Roadmap and vision
+- Implementation guidelines
 
-- **[downdoc.module.md](specifications/modules/downdoc.module.md)** - Module Downdoc
-  - Spécification du wrapper downdoc
-  - Exemple de module conforme à l'interface
+## Quick Navigation
 
-- **[pandoc.module.md](specifications/modules/pandoc.module.md)** - Module Pandoc
-  - Spécification du wrapper Pandoc
-  - Exécution sécurisée via child_process.spawn
-  - Support multi-formats avec whitelist stricte
+### For Developers
 
-- **[text2markdown.module.md](specifications/modules/text2markdown.module.md)** - Module Text2Markdown
-  - Spécification du wrapper text2markdown
-  - Conversion texte brut → Markdown avec détection automatique
-  - Bibliothèque JavaScript native
+1. **[ascend-identity.md](references/core/ascend-identity.md)** - Project identity and principles
+2. **[supported-formats.md](references/core/supported-formats.md)** - Available formats
+3. **[engines.md](references/core/engines.md)** - Conversion engines
+4. **[pipeline.md](references/conversion/pipeline.md)** - Conversion lifecycle
+5. **[endpoints.md](references/api/endpoints.md)** - API reference
 
-- **[panwriter.module.md](specifications/modules/panwriter.module.md)** - Module PanWriter
-  - Spécification du wrapper PanWriter (en préparation)
-  - Éditeur et convertisseur de documents
-  - Formats Office et documents
+### For System Administrators
 
-- **[docverter.module.md](specifications/modules/docverter.module.md)** - Module Docverter
-  - Spécification du wrapper Docverter (en préparation)
-  - Service de conversion de documents
-  - Support multi-formats (Office, images, PDF)
+1. **[execution-profile.md](references/configuration/execution-profile.md)** - Resource limits
+2. **[resource-limits.md](references/configuration/resource-limits.md)** - Detailed limits
+3. **[logging-policy.md](references/configuration/logging-policy.md)** - Logging configuration
+4. **[paths-and-storage.md](references/configuration/paths-and-storage.md)** - File system layout
 
-- **[converter-orchestrator.module.md](specifications/modules/converter-orchestrator.module.md)** - Module Orchestrateur de Converters
-  - Orchestrateur central pour tous les converters
-  - Identification automatique du converter approprié
-  - Standardisation des retours et intégration du lazy loading
+### For Security Auditors
 
-- **[orchestrator.module.md](specifications/modules/orchestrator.module.md)** - Module Orchestrateur Linéaire (legacy)
-  - Mini-orchestrateur pour flux linéaire de conversion multi-étapes
-  - Chaînage séquentiel de modules de conversion
-  - Gestion automatique des dossiers temporaires et nettoyage
+1. **[threat-model.md](references/security/threat-model.md)** - Security threats and mitigations
+2. **[sandboxing.md](references/security/sandboxing.md)** - Isolation mechanisms
+3. **[file-validation.md](references/security/file-validation.md)** - Input validation rules
+4. **[confirmation-rules.md](references/security/confirmation-rules.md)** - Token system
 
-- **[orchestrator-comm.module.md](specifications/modules/orchestrator-comm.module.md)** - Communication entre Orchestrateurs
-  - Architecture de communication entre orchestrateur principal et orchestrateur d'exécution
-  - Flux de communication et gestion des dossiers temporaires
-  - Format de retour standardisé et sécurité
+### For Users
 
-- **[secure-converter.md](specifications/secure-converter.md)** - Moteur de conversion sécurisé
-  - Vue d'ensemble du moteur
-  - Caractéristiques de sécurité
-  - Utilisation et exemples
+1. **[frontend-behavior.md](references/ui/frontend-behavior.md)** - UI behavior and shortcuts
+2. **[batch-processing.md](references/ui/batch-processing.md)** - Processing multiple files
+3. **[conversion-options.md](references/conversion/conversion-options.md)** - Configuration options
 
-### 🔐 Guides de sécurité
+## Documentation Principles
 
-Guides pratiques pour comprendre et implémenter les fonctionnalités de sécurité.
+### 1. Canonical Status
 
-- **[confirmation-security-guide.md](guides/security/confirmation-security-guide.md)** - Guide des tokens de confirmation
-  - Système de tokens sécurisés
-  - Principe de non-confiance backend/frontend
-  - Génération et validation des tokens
+Documents marked as **canonical** are the source of truth. Changes to canonical documents represent authoritative updates.
 
-### 🔌 Guides d'intégration
+### 2. English Language
 
-Guides pour intégrer Ascend dans vos applications.
+All documentation is written in English for international accessibility and technical precision.
 
-- **[secure-converter-frontend-integration.md](guides/integration/secure-converter-frontend-integration.md)** - Intégration frontend
-  - Intégration du système de tokens
-  - Exemples React/TypeScript
-  - Gestion des modales et erreurs
+### 3. Technical Precision
 
-### ⚙️ Références de configuration
+Documentation uses precise, technical language. Rules are explicit and unambiguous.
 
-Documentation de référence pour toutes les options de configuration disponibles.
+### 4. Non-Duplication
 
-- **[conversion-options.md](references/configuration/conversion-options.md)** - Options de conversion complètes
-  - Structure complète des options
-  - Options par catégorie
-  - Exemples de configuration
+Information appears in one canonical location. Other documents reference, not duplicate.
 
-- **[encoding-options.md](references/configuration/encoding-options.md)** - Options d'encodage
-  - Gestion des encodages
-  - Normalisation Unicode
-  - Détection et conversion
+### 5. Future-Proof
 
-- **[normalization-advanced-options.md](references/configuration/normalization-advanced-options.md)** - Options de normalisation avancée
-  - Normalisation avancée
-  - Caractères confusables
-  - Nettoyage et sanitisation
+Documentation structure supports future machine-readable configuration generation.
 
-## 🎯 Parcours recommandés
+## Legacy Documentation
 
-### Pour comprendre l'architecture
+Previous documentation structure has been reorganized. Old files may still exist but are being migrated to the new structure. Refer to canonical references for authoritative information.
 
-1. Commencez par [PIPELINE.md](specifications/PIPELINE.md) pour les principes fondamentaux
-2. Lisez [secure-converter.md](specifications/secure-converter.md) pour l'implémentation
-3. Consultez [confirmation-security-guide.md](guides/security/confirmation-security-guide.md) pour les tokens
+## Contributing
 
-### Pour configurer les conversions
-
-1. [conversion-options.md](references/configuration/conversion-options.md) - Vue d'ensemble
-2. [encoding-options.md](references/configuration/encoding-options.md) - Encodage
-3. [normalization-advanced-options.md](references/configuration/normalization-advanced-options.md) - Normalisation
-
-### Pour intégrer le système
-
-1. [secure-converter-frontend-integration.md](guides/integration/secure-converter-frontend-integration.md) - Frontend
-2. [secure-converter.md](specifications/secure-converter.md) - Backend
-
-## 🔗 Liens rapides
-
-- [Retour au README principal](../README.md)
-- [Spécifications](specifications/)
-- [Guides](guides/)
-- [Références](references/)
+When adding or modifying documentation:
+1. Determine if it's a reference (canonical) or specification (descriptive)
+2. Place in appropriate directory
+3. Mark canonical documents clearly
+4. Update this README if adding new sections
+5. Ensure English language and technical precision

@@ -2,7 +2,7 @@
 
 Application web moderne et sécurisée pour la conversion de documents. Version alpha supportant actuellement les conversions AsciiDoc ↔ Markdown, avec une architecture modulaire préparée pour l'ajout futur d'autres formats. Pipeline de conversion isolé et système de lazy loading pour optimiser les performances.
 
-![Version](https://img.shields.io/badge/version-0.0.1.2.1-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.2.2-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -1442,5 +1442,5 @@ Pour toute question ou problème, veuillez ouvrir une [issue](https://github.com
 
 ---
 
-**Version :** 0.0.1.2.1 alpha  
+**Version :** 0.0.1.2.2 alpha  
 **Dernière mise à jour :** 2026
