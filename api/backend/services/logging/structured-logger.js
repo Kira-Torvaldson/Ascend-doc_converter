@@ -19,15 +19,24 @@ const os = require('os')
 // CONFIGURATION
 // ============================================================================
 
+// Import EnvMap for secure configuration access
+let envMap = null
+try {
+  envMap = require('../config/envmap.module.js').envMap
+} catch (e) {
+  // Fallback if EnvMap not available (backward compatibility)
+  envMap = null
+}
+
 const LOGGER_CONFIG = {
   // Root directory for logs (relative to api directory)
-  LOGS_DIR: process.env.LOGS_DIR || path.join(__dirname, '../../../logs'),
+  LOGS_DIR: envMap ? envMap.get('LOGS_DIR') : (process.env.LOGS_DIR || path.join(__dirname, '../../../logs')),
   
   // Maximum log file size (in bytes) - 10 MB default
-  MAX_LOG_SIZE: parseInt(process.env.MAX_LOG_SIZE || '10485760', 10),
+  MAX_LOG_SIZE: envMap ? envMap.get('MAX_LOG_SIZE') : parseInt(process.env.MAX_LOG_SIZE || '10485760', 10),
   
   // Log retention period (in days) - 30 days default
-  RETENTION_DAYS: parseInt(process.env.LOG_RETENTION_DAYS || '30', 10)
+  RETENTION_DAYS: envMap ? envMap.get('LOG_RETENTION_DAYS') : parseInt(process.env.LOG_RETENTION_DAYS || '30', 10)
 }
 
 // ============================================================================

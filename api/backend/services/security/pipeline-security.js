@@ -26,32 +26,41 @@ const os = require('os')
 // CONFIGURATION
 // ============================================================================
 
+// Import EnvMap for secure configuration access
+let envMap = null
+try {
+  envMap = require('../config/envmap.module.js').envMap
+} catch (e) {
+  // Fallback if EnvMap not available (backward compatibility)
+  envMap = null
+}
+
 const SECURITY_CONFIG = {
   // Limite maximale de conversions simultanées (Règle 21)
-  MAX_CONCURRENT_CONVERSIONS: parseInt(process.env.MAX_CONCURRENT_CONVERSIONS || '5', 10),
+  MAX_CONCURRENT_CONVERSIONS: envMap ? envMap.get('MAX_CONCURRENT_CONVERSIONS') : parseInt(process.env.MAX_CONCURRENT_CONVERSIONS || '5', 10),
   
   // Budget de ressources par conversion (Règle 22)
   RESOURCE_BUDGET: {
-    MAX_CPU_TIME: parseInt(process.env.MAX_CPU_TIME_MS || '30000', 10), // 30s
-    MAX_MEMORY_MB: parseInt(process.env.MAX_MEMORY_MB || '512', 10), // 512 MB
-    MAX_WALL_TIME: parseInt(process.env.MAX_WALL_TIME_MS || '60000', 10) // 60s
+    MAX_CPU_TIME: envMap ? envMap.get('MAX_CPU_TIME_MS') : parseInt(process.env.MAX_CPU_TIME_MS || '30000', 10), // 30s
+    MAX_MEMORY_MB: envMap ? envMap.get('MAX_MEMORY_MB') : parseInt(process.env.MAX_MEMORY_MB || '512', 10), // 512 MB
+    MAX_WALL_TIME: envMap ? envMap.get('MAX_WALL_TIME_MS') : parseInt(process.env.MAX_WALL_TIME_MS || '60000', 10) // 60s
   },
   
   // Seuils de surcharge pour dégradation contrôlée (Règle 24)
   OVERLOAD_THRESHOLDS: {
-    CPU_PERCENT: parseFloat(process.env.OVERLOAD_CPU_PERCENT || '80.0'),
-    MEMORY_PERCENT: parseFloat(process.env.OVERLOAD_MEMORY_PERCENT || '80.0'),
-    FAILURE_RATE: parseFloat(process.env.OVERLOAD_FAILURE_RATE || '0.2') // 20%
+    CPU_PERCENT: envMap ? envMap.get('OVERLOAD_CPU_PERCENT') : parseFloat(process.env.OVERLOAD_CPU_PERCENT || '80.0'),
+    MEMORY_PERCENT: envMap ? envMap.get('OVERLOAD_MEMORY_PERCENT') : parseFloat(process.env.OVERLOAD_MEMORY_PERCENT || '80.0'),
+    FAILURE_RATE: envMap ? envMap.get('OVERLOAD_FAILURE_RATE') : parseFloat(process.env.OVERLOAD_FAILURE_RATE || '0.2') // 20%
   },
   
   // Profils d'exécution anormaux (Règle 23.3)
   ABNORMAL_PROFILE_MULTIPLIERS: {
-    DURATION: parseFloat(process.env.ABNORMAL_DURATION_MULT || '3.0'),
-    MEMORY: parseFloat(process.env.ABNORMAL_MEMORY_MULT || '2.0')
+    DURATION: envMap ? envMap.get('ABNORMAL_DURATION_MULT') : parseFloat(process.env.ABNORMAL_DURATION_MULT || '3.0'),
+    MEMORY: envMap ? envMap.get('ABNORMAL_MEMORY_MULT') : parseFloat(process.env.ABNORMAL_MEMORY_MULT || '2.0')
   },
   
   // Chemin pour stocker les logs de sécurité (Règle 18)
-  SECURITY_LOG_PATH: process.env.SECURITY_LOG_PATH || path.join(os.tmpdir(), 'ascend-security-logs'),
+  SECURITY_LOG_PATH: envMap ? envMap.get('SECURITY_LOG_PATH') : (process.env.SECURITY_LOG_PATH || path.join(os.tmpdir(), 'ascend-security-logs')),
   
   // Hash attendus des modules (vérification d'intégrité)
   MODULE_INTEGRITY: {

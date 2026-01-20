@@ -239,9 +239,19 @@ const SECURITY_CONFIG = {
   MAX_FILE_SIZE: 50 * 1024 * 1024, // 50 MB
   
   // Absolute paths to binaries (adapt according to installation)
-  BINARY_PATHS: {
-    pandoc: process.env.PANDOC_PATH || '/usr/bin/pandoc' // Can be overridden via env
-  },
+  BINARY_PATHS: (() => {
+    // Use EnvMap if available, fallback to process.env for backward compatibility
+    try {
+      const { envMap } = require('../config/envmap.module.js')
+      return {
+        pandoc: envMap.get('PANDOC_PATH')
+      }
+    } catch (e) {
+      return {
+        pandoc: process.env.PANDOC_PATH || '/usr/bin/pandoc'
+      }
+    }
+  })(),
   
   // Allowed file extensions (strict whitelist)
   ALLOWED_EXTENSIONS: {
