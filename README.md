@@ -880,6 +880,7 @@ doc/
 │   │   ├── resource-limits.md             # Limites de ressources (CPU, mémoire, temps)
 │   │   ├── logging-policy.md              # Politique de logging (format, rétention)
 │   │   ├── paths-and-storage.md          # Chemins et organisation du stockage
+│   │   ├── envmap.md                     # Gestion centralisée des variables d'environnement
 │   │   ├── conversion-options.md         # Options de conversion (legacy, en migration)
 │   │   ├── encoding-options.md          # Options d'encodage (legacy, en migration)
 │   │   └── normalization-advanced-options.md  # Normalisation avancée (legacy, en migration)

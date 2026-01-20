@@ -53,7 +53,15 @@ const CONVERTER_REGISTRY = {
       to: ['markdown', 'asciidoc', 'html', 'pdf', 'txt', 'yaml', 'json']
     },
     executionType: 'command', // Uses child_process.spawn directly
-    binaryPath: process.env.PANDOC_PATH || '/usr/bin/pandoc'
+    binaryPath: (() => {
+      // Use EnvMap if available, fallback to process.env for backward compatibility
+      try {
+        const { envMap } = require('../config/envmap.module.js')
+        return envMap.get('PANDOC_PATH')
+      } catch (e) {
+        return process.env.PANDOC_PATH || '/usr/bin/pandoc'
+      }
+    })()
   },
   'text2markdown': {
     name: 'text2markdown',
