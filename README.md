@@ -859,44 +859,86 @@ Le projet dispose d'une documentation complète dans le dossier [`doc/`](doc/). 
 2. [downdoc.module.md](doc/specifications/modules/downdoc.module.md) - Exemple de module
 3. [lazyload.module.md](doc/specifications/modules/lazyload.module.md) - Intégration avec lazy loading
 
-### 📂 Structure de la documentation
+### 📂 Structure complète de la documentation
 
-La documentation est organisée par type dans le dossier [`doc/`](doc/) :
+La documentation est organisée en **références canoniques** (sources de vérité) et **spécifications** (documents descriptifs) dans le dossier [`doc/`](doc/) :
 
 ```
 doc/
-├── README.md                                # Index de la documentation
-├── specifications/                          # Spécifications et architecture
-│   ├── PIPELINE.md                         # Spécification du pipeline (référence principale)
-│   ├── modules.interface.md                # Contrat d'interface des modules
-│   ├── secure-converter.md                 # Moteur de conversion sécurisé
-│   └── modules/                            # Spécifications des modules
-│       ├── ... (autres modules)
-│       ├── orchestrator-comm.module.md      # Communication entre orchestrateurs
-│       └── logs.module.md                   # Module de logs structurés
-│       ├── lazyload.module.md              # Module de lazy loading
-│       ├── converter-orchestrator.module.md # Module orchestrateur de converters
-│       ├── orchestrator.module.md          # Module orchestrateur linéaire (legacy)
-│       ├── orchestrator-comm.module.md      # Communication entre orchestrateurs
-│       ├── logs.module.md                   # Module de logs structurés
-│       ├── downdoc.module.md               # Module Downdoc
-│       ├── pandoc.module.md                # Module Pandoc
-│       ├── text2markdown.module.md         # Module Text2Markdown
-│       ├── panwriter.module.md             # Module PanWriter
-│       └── docverter.module.md             # Module Docverter
-├── guides/                                  # Guides pratiques
-│   ├── security/                           # Guides de sécurité
-│   │   └── confirmation-security-guide.md # Guide des tokens de confirmation
-│   └── integration/                        # Guides d'intégration
-│       └── secure-converter-frontend-integration.md # Intégration frontend
-└── references/                              # Références techniques
-    └── configuration/                      # Références de configuration
-        ├── conversion-options.md           # Options de conversion
-        ├── encoding-options.md            # Options d'encodage
-        └── normalization-advanced-options.md # Options de normalisation avancée
+├── README.md                    # Index principal de la documentation
+├── glossary.md                  # Glossaire des termes techniques
+├── changelog.md                 # Historique des versions
+│
+├── references/                  # Références canoniques (sources de vérité)
+│   ├── core/                   # Identité et capacités principales
+│   │   ├── ascend-identity.md              # Identité du projet, principes fondamentaux
+│   │   ├── supported-formats.md            # Formats supportés (whitelist)
+│   │   └── engines.md                      # Moteurs de conversion disponibles
+│   │
+│   ├── configuration/          # Contrats de configuration
+│   │   ├── execution-profile.md            # Profils d'exécution (default, strict, performance)
+│   │   ├── resource-limits.md             # Limites de ressources (CPU, mémoire, temps)
+│   │   ├── logging-policy.md              # Politique de logging (format, rétention)
+│   │   ├── paths-and-storage.md          # Chemins et organisation du stockage
+│   │   ├── conversion-options.md         # Options de conversion (legacy, en migration)
+│   │   ├── encoding-options.md          # Options d'encodage (legacy, en migration)
+│   │   └── normalization-advanced-options.md  # Normalisation avancée (legacy, en migration)
+│   │
+│   ├── normalization/          # Règles de normalisation
+│   │   ├── text-normalization.md         # Normalisation du texte (BOM, Smart Quotes, etc.)
+│   │   ├── encoding-rules.md            # Règles d'encodage (UTF-8, détection, etc.)
+│   │   └── typographic-canonicalization.md  # Canonicalisation typographique
+│   │
+│   ├── security/               # Règles de sécurité
+│   │   ├── sandboxing.md                 # Règles de sandboxing et isolation
+│   │   ├── file-validation.md           # Validation des fichiers (whitelist, MIME, taille)
+│   │   ├── confirmation-rules.md        # Règles de confirmation (tokens)
+│   │   └── threat-model.md              # Modèle de menaces et mitigations
+│   │
+│   ├── conversion/             # Comportement de conversion
+│   │   ├── pipeline.md                  # Cycle de vie et comportement du pipeline
+│   │   ├── conversion-options.md        # Options de conversion disponibles
+│   │   ├── error-handling.md           # Gestion des erreurs (codes, messages)
+│   │   └── fallback-strategies.md      # Stratégies de repli (politique no-fallback)
+│   │
+│   ├── api/                    # Contrats API
+│   │   ├── endpoints.md                # Endpoints disponibles (conversion, proxy, logs, tokens)
+│   │   ├── request-contracts.md       # Contrats de requête (champs, validation)
+│   │   └── response-contracts.md      # Contrats de réponse (format, codes d'erreur)
+│   │
+│   ├── ui/                     # Comportement frontend
+│   │   ├── frontend-behavior.md       # Comportement UI (composants, raccourcis, états)
+│   │   └── batch-processing.md       # Traitement en lot (interface, progression)
+│   │
+│   └── profiles/               # Profils produit
+│       ├── community.md              # Profil Community (actuel)
+│       ├── pro.md                    # Profil Pro (futur)
+│       └── enterprise.md             # Profil Enterprise (futur)
+│
+└── specs/                      # Spécifications (descriptives)
+    ├── roadmap.md                    # Feuille de route et versions planifiées
+    ├── architecture.md               # Architecture système (composants, flux)
+    ├── local-first-principles.md    # Principes Local-First
+    └── modules-interface.md         # Interface des modules (contrat standard)
 ```
 
-Consultez le [README.md](doc/README.md) dans le dossier `doc/` pour un index complet et détaillé.
+### 📋 Types de documentation
+
+**Références canoniques** (`references/`) :
+- Sources de vérité pour la configuration et le comportement
+- Peuvent être mappées 1:1 vers une configuration machine-readable (`ascend.reference.json`)
+- Toutes les règles et contrats sont définis ici
+
+**Spécifications** (`specs/`) :
+- Documents descriptifs (architecture, principes, roadmap)
+- Guides d'implémentation et vision du projet
+- Ne sont pas des contrats mais des descriptions
+
+### 📚 Documentation legacy
+
+Les anciens fichiers dans `doc/specifications/` et `doc/guides/` sont conservés pour référence mais sont en cours de migration vers la nouvelle structure. Consultez les références canoniques pour les informations à jour.
+
+**Consultez le [README.md](doc/README.md) dans le dossier `doc/` pour un index complet et détaillé avec navigation rapide.**
 
 ## 📁 Structure du projet
 
