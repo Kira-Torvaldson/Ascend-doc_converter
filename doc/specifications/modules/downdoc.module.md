@@ -1,24 +1,24 @@
-# Module Downdoc
+# Downdoc Module
 
 ## Description
 
-Le module `downdoc` est un wrapper pour la bibliothèque JavaScript downdoc qui convertit des documents AsciiDoc en Markdown. Ce module implémente l'interface définie dans [modules.interface.md](../modules.interface.md) et respecte les obligations de sécurité minimales de la version 1.
+The `downdoc` module is a wrapper for the JavaScript downdoc library that converts AsciiDoc documents to Markdown. This module implements the interface defined in [modules.interface.md](../modules.interface.md) and respects the minimal security obligations of version 1.
 
-## Nom du module
+## Module Name
 
-**Identifiant :** `downdoc`  
-**Type :** Module de conversion AsciiDoc vers Markdown  
-**Bibliothèque sous-jacente :** downdoc (bibliothèque JavaScript native)
+**Identifier:** `downdoc`  
+**Type:** AsciiDoc to Markdown conversion module  
+**Underlying library:** downdoc (native JavaScript library)
 
-## Formats supportés
+## Supported Formats
 
-**Formats d'entrée (`from`) :**
-- `asciidoc` : Format AsciiDoc standard
+**Input formats (`from`):**
+- `asciidoc`: Standard AsciiDoc format
 
-**Formats de sortie (`to`) :**
-- `markdown` : Format Markdown standard
+**Output formats (`to`):**
+- `markdown`: Standard Markdown format
 
-**Structure :**
+**Structure:**
 ```typescript
 supportedFormats: {
   from: ['asciidoc'],
@@ -26,7 +26,7 @@ supportedFormats: {
 }
 ```
 
-## Méthode `run`
+## `run` Method
 
 ### Signature
 
@@ -34,174 +34,174 @@ supportedFormats: {
 run(inputPath: string, outputPath: string, options?: Object): Promise<ModuleResult>
 ```
 
-### Description du fonctionnement
+### Operation Description
 
-La méthode `run` effectue la conversion d'un fichier AsciiDoc vers Markdown selon le processus suivant :
+The `run` method performs the conversion of an AsciiDoc file to Markdown according to the following process:
 
-#### 1. Lecture sécurisée du fichier d'entrée
+#### 1. Secure input file reading
 
-- Le module lit le fichier situé à `inputPath` en utilisant l'encodage UTF-8
-- La lecture doit être effectuée de manière synchrone ou asynchrone selon l'implémentation
-- Toute erreur de lecture (fichier introuvable, permissions insuffisantes, encodage invalide) doit être capturée et transformée en `ModuleResult` avec `success: false`
+- The module reads the file located at `inputPath` using UTF-8 encoding
+- Reading must be performed synchronously or asynchronously depending on the implementation
+- Any read error (file not found, insufficient permissions, invalid encoding) must be captured and transformed into a `ModuleResult` with `success: false`
 
-#### 2. Validation des entrées
+#### 2. Input validation
 
-- Le module valide que le contenu lu est une chaîne de caractères non vide
-- Le module vérifie la taille du fichier (selon les limites configurées)
-- Le module vérifie que le type de fichier correspond à AsciiDoc (validation basique par extension ou contenu)
+- The module validates that the read content is a non-empty string
+- The module checks file size (according to configured limits)
+- The module verifies that the file type corresponds to AsciiDoc (basic validation by extension or content)
 
-#### 3. Conversion en mémoire via la bibliothèque downdoc
+#### 3. In-memory conversion via downdoc library
 
-- Le module utilise la bibliothèque downdoc pour convertir le contenu AsciiDoc en Markdown
-- La conversion s'effectue entièrement en mémoire, sans création de fichiers temporaires intermédiaires
-- Le module peut appliquer des options de conversion si fournies dans le paramètre `options`
-- Les options supportées peuvent inclure :
-  - Mode de conversion (standard ou BookStack/Parsedown compatible)
-  - Extensions spécifiques (parsedown, etc.)
+- The module uses the downdoc library to convert AsciiDoc content to Markdown
+- Conversion occurs entirely in memory, without creating intermediate temporary files
+- The module may apply conversion options if provided in the `options` parameter
+- Supported options may include:
+  - Conversion mode (standard or BookStack/Parsedown compatible)
+  - Specific extensions (parsedown, etc.)
 
-#### 4. Post-traitement du résultat
+#### 4. Result post-processing
 
-- Le module applique un nettoyage de base au Markdown généré pour corriger les problèmes courants de la bibliothèque downdoc
-- Les corrections incluent notamment :
-  - Correction des règles horizontales mal formatées (`- --` → `---`)
-  - Suppression des espaces en fin de ligne
-  - Normalisation des fins de fichier (un seul saut de ligne final)
-- Si le mode BookStack est activé, le module applique un adaptateur supplémentaire pour garantir la compatibilité avec Parsedown
+- The module applies basic cleanup to the generated Markdown to correct common issues with the downdoc library
+- Corrections include notably:
+  - Correction of malformed horizontal rules (`- --` → `---`)
+  - Removal of trailing spaces
+  - Normalization of file endings (single final newline)
+- If BookStack mode is enabled, the module applies an additional adapter to guarantee compatibility with Parsedown
 
-#### 5. Écriture du résultat dans le fichier de sortie
+#### 5. Writing result to output file
 
-- Le module écrit le contenu Markdown converti dans le fichier situé à `outputPath`
-- L'écriture doit être effectuée en UTF-8
-- Le répertoire parent du fichier de sortie doit exister (garanti par le pipeline)
-- Toute erreur d'écriture doit être capturée et transformée en `ModuleResult` avec `success: false`
+- The module writes the converted Markdown content to the file located at `outputPath`
+- Writing must be performed in UTF-8
+- The output file's parent directory must exist (guaranteed by the pipeline)
+- Any write error must be captured and transformed into a `ModuleResult` with `success: false`
 
-#### 6. Retour du résultat
+#### 6. Result return
 
-- Le module retourne un objet `ModuleResult` conforme au contrat défini dans [modules.interface.md](../modules.interface.md)
-- Le champ `success` doit être `true` si la conversion et l'écriture ont réussi, `false` sinon
-- Le champ `logs` doit contenir les logs d'exécution (début, étapes, fin)
-- Le champ `error` doit être `null` en cas de succès, ou contenir un message d'erreur descriptif en cas d'échec
-- Le champ `duration` doit contenir la durée totale d'exécution en secondes (lecture, conversion, post-traitement, écriture)
+- The module returns a `ModuleResult` object conforming to the contract defined in [modules.interface.md](../modules.interface.md)
+- The `success` field must be `true` if conversion and writing succeeded, `false` otherwise
+- The `logs` field must contain execution logs (start, steps, end)
+- The `error` field must be `null` on success, or contain a descriptive error message on failure
+- The `duration` field must contain the total execution duration in seconds (read, conversion, post-processing, write)
 
-### Paramètres
+### Parameters
 
-- **`inputPath`** (requis) : Chemin absolu vers le fichier AsciiDoc d'entrée
-- **`outputPath`** (requis) : Chemin absolu vers le fichier Markdown de sortie
-- **`options`** (optionnel) : Objet contenant les options de conversion
-  - `mode` : Mode de conversion (`'default'` ou `'bookstack'`)
-  - Autres options spécifiques à la bibliothèque downdoc
+- **`inputPath`** (required): Absolute path to input AsciiDoc file
+- **`outputPath`** (required): Absolute path to output Markdown file
+- **`options`** (optional): Object containing conversion options
+  - `mode`: Conversion mode (`'default'` or `'bookstack'`)
+  - Other options specific to the downdoc library
 
-### Valeur de retour
+### Return Value
 
-La méthode retourne une `Promise` qui se résout avec un objet `ModuleResult` :
+The method returns a `Promise` that resolves with a `ModuleResult` object:
 
 ```typescript
 {
-  success: boolean,        // true si conversion réussie, false sinon
-  logs: string | string[], // Logs d'exécution
-  error: string | null,   // Message d'erreur ou null
-  duration: number        // Durée en secondes
+  success: boolean,        // true if conversion succeeded, false otherwise
+  logs: string | string[], // Execution logs
+  error: string | null,   // Error message or null
+  duration: number        // Duration in seconds
 }
 ```
 
-## Sécurité et isolation
+## Security and Isolation
 
-### Obligations de sécurité minimales (V1)
+### Minimal Security Obligations (V1)
 
-Le module respecte les obligations de sécurité minimales définies dans [modules.interface.md](../modules.interface.md) :
+The module respects the minimal security obligations defined in [modules.interface.md](../modules.interface.md):
 
-#### 1. Validation basique des entrées
+#### 1. Basic input validation
 
-- **Vérification de la taille** : Le module valide que le fichier d'entrée ne dépasse pas la limite maximale configurée
-- **Vérification du type** : Le module valide que le fichier correspond à un fichier AsciiDoc (par extension `.adoc` ou `.asciidoc`, ou par validation basique du contenu)
-- **Rejet immédiat** : Si les validations échouent, le module retourne immédiatement un `ModuleResult` avec `success: false` et un message d'erreur approprié
+- **Size check**: The module validates that the input file does not exceed the configured maximum limit
+- **Type check**: The module validates that the file corresponds to an AsciiDoc file (by extension `.adoc` or `.asciidoc`, or by basic content validation)
+- **Immediate rejection**: If validations fail, the module immediately returns a `ModuleResult` with `success: false` and an appropriate error message
 
-**Références normatives :** ISO 27001 (A.9.4.2), ISO 27002 (A.9.4.2), NIST SP 800-53 (SI-7), OWASP Top 10 (A03:2021)
+**Normative references:** ISO 27001 (A.9.4.2), ISO 27002 (A.9.4.2), NIST SP 800-53 (SI-7), OWASP Top 10 (A03:2021)
 
-#### 2. Isolement léger
+#### 2. Light isolation
 
-- **Aucune interaction directe** : Le module n'interagit pas directement avec le reste du système en dehors des chemins `inputPath` et `outputPath` fournis par le pipeline
-- **Exécution dans un contexte isolé** : Le module s'exécute dans un dossier temporaire unique par conversion, fourni par le pipeline
-- **Pas de fichiers temporaires** : Le module n'utilise pas de fichiers temporaires supplémentaires, toute la conversion s'effectue en mémoire
-- **Pas d'accès réseau** : Le module ne doit pas accéder au réseau pendant l'exécution
+- **No direct interaction**: The module does not interact directly with the rest of the system outside the `inputPath` and `outputPath` paths provided by the pipeline
+- **Execution in isolated context**: The module executes in a unique temporary directory per conversion, provided by the pipeline
+- **No temporary files**: The module does not use additional temporary files, all conversion occurs in memory
+- **No network access**: The module must not access the network during execution
 
-**Références normatives :** ISO 27001 (A.9.1.2), ISO 27002 (A.9.1.2), NIST SP 800-53 (SC-7, SC-39), OWASP Top 10 (A01:2021)
+**Normative references:** ISO 27001 (A.9.1.2), ISO 27002 (A.9.1.2), NIST SP 800-53 (SC-7, SC-39), OWASP Top 10 (A01:2021)
 
-#### 3. Gestion sécurisée des erreurs
+#### 3. Secure error handling
 
-- **Capture exhaustive** : Toutes les exceptions et erreurs doivent être capturées et transformées en `ModuleResult` avec `success: false`
-- **Pas de crash global** : Aucune exception non gérée ne doit remonter au pipeline principal
-- **Messages d'erreur sécurisés** : Les messages d'erreur ne doivent pas exposer de détails système sensibles (chemins complets, variables d'environnement, stack traces complètes)
-- **Cohérence** : En cas d'erreur, le module ne doit pas créer de fichier de sortie, ou doit le supprimer s'il a été créé partiellement
+- **Exhaustive capture**: All exceptions and errors must be captured and transformed into a `ModuleResult` with `success: false`
+- **No global crash**: No unhandled exception must propagate to the main pipeline
+- **Secure error messages**: Error messages must not expose sensitive system details (full paths, environment variables, complete stack traces)
+- **Consistency**: In case of error, the module must not create an output file, or must delete it if partially created
 
-**Références normatives :** ISO 27001 (A.12.6.1), ISO 27002 (A.12.6.1), NIST SP 800-53 (SI-11), OWASP Top 10 (A04:2021)
+**Normative references:** ISO 27001 (A.12.6.1), ISO 27002 (A.12.6.1), NIST SP 800-53 (SI-11), OWASP Top 10 (A04:2021)
 
-#### 4. Journalisation minimale
+#### 4. Minimal logging
 
-- **ID de conversion** : Le module doit inclure l'ID de conversion unique dans ses logs (fourni par le pipeline via les options ou le contexte)
-- **Horodatage** : Le module doit enregistrer l'horodatage de début et de fin d'exécution
-- **Logs d'exécution** : Le module doit produire des logs décrivant les étapes principales (lecture, conversion, écriture)
-- **Statut final** : Le module doit inclure le statut final (succès/échec) dans les logs retournés
+- **Conversion ID**: The module must include the unique conversion ID in its logs (provided by the pipeline via options or context)
+- **Timestamp**: The module must record the timestamp of execution start and end
+- **Execution logs**: The module must produce logs describing main steps (read, conversion, write)
+- **Final status**: The module must include the final status (success/failure) in returned logs
 
-**Références normatives :** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
+**Normative references:** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
 
-#### 5. Vérification légère de l'intégrité
+#### 5. Light integrity verification
 
-- **Hash optionnel** : Le module peut exposer un hash ou checksum de son code (optionnel en V1)
-- **Documentation des dépendances** : Le module doit documenter ses dépendances (bibliothèque downdoc et sa version)
-- **Signalement des modifications** : Le module peut signaler toute modification détectée de son intégrité (optionnel en V1)
+- **Optional hash**: The module may expose a hash or checksum of its code (optional in V1)
+- **Dependency documentation**: The module must document its dependencies (downdoc library and its version)
+- **Modification reporting**: The module may report any detected modification of its integrity (optional in V1)
 
-**Références normatives :** ISO 27001 (A.12.2.1), ISO 27002 (A.12.2.1), NIST SP 800-53 (SI-7, SA-12), OWASP Top 10 (A06:2021)
+**Normative references:** ISO 27001 (A.12.2.1), ISO 27002 (A.12.2.1), NIST SP 800-53 (SI-7, SA-12), OWASP Top 10 (A06:2021)
 
-### Contraintes d'exécution
+### Execution Constraints
 
-- **Isolation** : Le module ne doit pas modifier le fichier d'entrée, ne doit accéder qu'aux fichiers fournis, et ne doit pas créer de fichiers en dehors du répertoire autorisé
-- **Performance** : Le module doit respecter les timeouts imposés par le pipeline et libérer les ressources après exécution
-- **Sécurité** : Le module ne doit pas exécuter de commandes système non validées et doit valider les chemins de fichiers avant utilisation
+- **Isolation**: The module must not modify the input file, must only access provided files, and must not create files outside the authorized directory
+- **Performance**: The module must respect timeouts imposed by the pipeline and release resources after execution
+- **Security**: The module must not execute unvalidated system commands and must validate file paths before use
 
-## Comportement attendu
+## Expected Behavior
 
-### En cas de succès
+### On Success
 
-1. Le fichier de sortie est créé à l'emplacement `outputPath` avec le contenu Markdown converti
-2. Le fichier de sortie est valide et conforme au format Markdown
-3. Le module retourne un `ModuleResult` avec `success: true`, `error: null`, des logs détaillés et la durée d'exécution
+1. The output file is created at the `outputPath` location with the converted Markdown content
+2. The output file is valid and conforms to Markdown format
+3. The module returns a `ModuleResult` with `success: true`, `error: null`, detailed logs, and execution duration
 
-### En cas d'échec
+### On Failure
 
-1. Aucun fichier de sortie n'est créé (ou est supprimé s'il a été créé partiellement)
-2. Le module retourne un `ModuleResult` avec `success: false`, un message d'erreur descriptif dans `error`, les logs jusqu'au point d'échec, et la durée jusqu'à l'échec
+1. No output file is created (or is deleted if partially created)
+2. The module returns a `ModuleResult` with `success: false`, a descriptive error message in `error`, logs up to the failure point, and duration until failure
 
-### Types d'erreurs possibles
+### Possible Error Types
 
-- **Erreur de lecture** : Fichier d'entrée introuvable, permissions insuffisantes, encodage invalide
-- **Erreur de validation** : Fichier trop volumineux, type de fichier invalide, contenu vide
-- **Erreur de conversion** : Échec de la bibliothèque downdoc, contenu AsciiDoc invalide
-- **Erreur d'écriture** : Permissions insuffisantes, espace disque insuffisant, répertoire parent inexistant
+- **Read error**: Input file not found, insufficient permissions, invalid encoding
+- **Validation error**: File too large, invalid file type, empty content
+- **Conversion error**: Downdoc library failure, invalid AsciiDoc content
+- **Write error**: Insufficient permissions, insufficient disk space, non-existent parent directory
 
 ## Notes
 
-### Bibliothèque downdoc
+### Downdoc Library
 
-Le module utilise la bibliothèque JavaScript downdoc, qui est une bibliothèque native ne nécessitant pas d'outils externes. Cette caractéristique permet une exécution rapide et légère, sans dépendances système.
+The module uses the JavaScript downdoc library, which is a native library that does not require external tools. This characteristic allows fast and lightweight execution, without system dependencies.
 
-### Post-traitement
+### Post-processing
 
-Le module applique un post-traitement systématique pour corriger les problèmes connus de la bibliothèque downdoc, notamment la conversion incorrecte des règles horizontales. Ce post-traitement garantit une qualité de sortie cohérente.
+The module applies systematic post-processing to correct known issues with the downdoc library, notably incorrect conversion of horizontal rules. This post-processing guarantees consistent output quality.
 
-### Mode BookStack
+### BookStack Mode
 
-Le module supporte un mode de conversion spécial pour BookStack, qui applique des adaptations supplémentaires pour garantir la compatibilité avec le parser Parsedown utilisé par BookStack. Ce mode est activé via l'option `mode: 'bookstack'`.
+The module supports a special conversion mode for BookStack, which applies additional adaptations to guarantee compatibility with the Parsedown parser used by BookStack. This mode is activated via the `mode: 'bookstack'` option.
 
 ### Performance
 
-La conversion s'effectuant entièrement en mémoire, le module est particulièrement performant pour les fichiers de taille moyenne. Pour les très gros fichiers, la consommation mémoire doit être surveillée.
+Since conversion occurs entirely in memory, the module is particularly performant for medium-sized files. For very large files, memory consumption must be monitored.
 
-## Conformité
+## Compliance
 
-Ce module respecte strictement l'interface définie dans [modules.interface.md](../modules.interface.md) et les obligations de sécurité minimales de la version 1. Toute modification du module doit maintenir cette conformité.
+This module strictly respects the interface defined in [modules.interface.md](../modules.interface.md) and the minimal security obligations of version 1. Any modification of the module must maintain this compliance.
 
-## Références
+## References
 
-- [modules.interface.md](../modules.interface.md) - Contrat d'interface des modules
-- [PIPELINE.md](../PIPELINE.md) - Spécification du pipeline de conversion
+- [modules.interface.md](../modules.interface.md) - Module interface contract
+- [PIPELINE.md](../PIPELINE.md) - Conversion pipeline specification

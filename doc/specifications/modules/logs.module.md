@@ -1,27 +1,27 @@
-# Module de Logs Structurés
+# Structured Logging Module
 
 ## Description
 
-Le module de logs structurés génère des fichiers de log JSON pour chaque conversion, permettant un suivi détaillé, un audit et un débogage facile. Les logs sont stockés dans un dossier contrôlé et accessibles via un endpoint API.
+The structured logging module generates JSON log files for each conversion, enabling detailed tracking, audit, and easy debugging. Logs are stored in a controlled directory and accessible via an API endpoint.
 
-## Nom du module
+## Module Name
 
-**Identifiant :** `structured-logger`  
-**Type :** Module de journalisation  
-**Rôle :** Génération et gestion de logs structurés pour les conversions
+**Identifier:** `structured-logger`  
+**Type:** Logging module  
+**Role:** Generation and management of structured logs for conversions
 
-## Objectif
+## Objective
 
-Fournir un système de logs structuré, accessible et lisible pour chaque conversion, permettant :
-- Suivi détaillé de l'exécution des conversions
-- Audit et conformité
-- Débogage facilité
-- Analyse des performances
-- Préparation pour intégration avec dashboards ou systèmes d'analyse
+Provide a structured, accessible, and readable logging system for each conversion, enabling:
+- Detailed tracking of conversion execution
+- Audit and compliance
+- Facilitated debugging
+- Performance analysis
+- Preparation for integration with dashboards or analysis systems
 
-## Structure et Format JSON du Log
+## Log Structure and JSON Format
 
-### Structure Complète
+### Complete Structure
 
 ```json
 {
@@ -77,102 +77,102 @@ Fournir un système de logs structuré, accessible et lisible pour chaque conver
 }
 ```
 
-### Champs Détaillés
+### Detailed Fields
 
 #### `conversionId`
-- **Type :** `string`
-- **Description :** Identifiant unique de la conversion (UUID)
-- **Exemple :** `"550e8400-e29b-41d4-a716-446655440000"`
+- **Type:** `string`
+- **Description:** Unique conversion identifier (UUID)
+- **Example:** `"550e8400-e29b-41d4-a716-446655440000"`
 
 #### `timestamp`
-- **Type :** `object`
-- **Description :** Horodatage de début et de fin de conversion
-- **Champs :**
-  - `start`: Date de début au format ISO 8601
-  - `end`: Date de fin au format ISO 8601 (null si en cours)
+- **Type:** `object`
+- **Description:** Conversion start and end timestamp
+- **Fields:**
+  - `start`: Start date in ISO 8601 format
+  - `end`: End date in ISO 8601 format (null if in progress)
 
 #### `formats`
-- **Type :** `object`
-- **Description :** Formats source et cible de la conversion
-- **Champs :**
-  - `source`: Format source (ex: "asciidoc", "markdown", "html")
-  - `target`: Format cible (ex: "markdown", "asciidoc", "pdf")
+- **Type:** `object`
+- **Description:** Source and target formats of the conversion
+- **Fields:**
+  - `source`: Source format (e.g., "asciidoc", "markdown", "html")
+  - `target`: Target format (e.g., "markdown", "asciidoc", "pdf")
 
 #### `status`
-- **Type :** `string`
-- **Description :** Statut final de la conversion
-- **Valeurs possibles :**
-  - `"running"`: Conversion en cours
-  - `"success"`: Conversion réussie
-  - `"error"`: Conversion échouée
+- **Type:** `string`
+- **Description:** Final conversion status
+- **Possible Values:**
+  - `"running"`: Conversion in progress
+  - `"success"`: Conversion successful
+  - `"error"`: Conversion failed
 
 #### `execution`
-- **Type :** `object`
-- **Description :** Informations sur l'exécution de la conversion
-- **Champs :**
-  - `steps`: Tableau des étapes d'exécution (voir ci-dessous)
-  - `totalDuration`: Durée totale en secondes (nombre décimal)
-  - `modulesExecuted`: Liste des modules exécutés (tableau de strings)
+- **Type:** `object`
+- **Description:** Information about conversion execution
+- **Fields:**
+  - `steps`: Array of execution steps (see below)
+  - `totalDuration`: Total duration in seconds (decimal number)
+  - `modulesExecuted`: List of executed modules (array of strings)
 
 #### `execution.steps[]`
-- **Type :** `array` d'objets
-- **Description :** Détails de chaque étape d'exécution
-- **Champs par étape :**
-  - `stepNumber`: Numéro de l'étape (entier, commence à 1)
-  - `module`: Nom du module exécuté (ex: "downdoc", "pandoc")
-  - `fromFormat`: Format source de l'étape
-  - `toFormat`: Format cible de l'étape
-  - `inputFile`: Nom du fichier d'entrée (basename uniquement)
-  - `outputFile`: Nom du fichier de sortie (basename uniquement)
-  - `duration`: Durée d'exécution en secondes (nombre décimal)
-  - `status`: Statut de l'étape ("success", "error", "skipped")
-  - `logs`: Logs détaillés de l'étape (tableau de strings)
-  - `error`: Message d'erreur (null si succès)
+- **Type:** `array` of objects
+- **Description:** Details of each execution step
+- **Fields per step:**
+  - `stepNumber`: Step number (integer, starts at 1)
+  - `module`: Name of executed module (e.g., "downdoc", "pandoc")
+  - `fromFormat`: Step source format
+  - `toFormat`: Step target format
+  - `inputFile`: Input file name (basename only)
+  - `outputFile`: Output file name (basename only)
+  - `duration`: Execution duration in seconds (decimal number)
+  - `status`: Step status ("success", "error", "skipped")
+  - `logs`: Detailed step logs (array of strings)
+  - `error`: Error message (null if success)
 
 #### `files`
-- **Type :** `object`
-- **Description :** Informations sur les fichiers utilisés
-- **Champs :**
-  - `input`: Nom du fichier d'entrée (basename uniquement)
-  - `output`: Nom du fichier de sortie (basename uniquement)
-  - `intermediate`: Tableau des fichiers intermédiaires
+- **Type:** `object`
+- **Description:** Information about used files
+- **Fields:**
+  - `input`: Input file name (basename only)
+  - `output`: Output file name (basename only)
+  - `intermediate`: Array of intermediate files
 
 #### `files.intermediate[]`
-- **Type :** `array` d'objets
-- **Description :** Liste des fichiers intermédiaires créés
-- **Champs :**
-  - `step`: Numéro de l'étape qui a créé le fichier
-  - `file`: Nom du fichier (basename uniquement)
+- **Type:** `array` of objects
+- **Description:** List of created intermediate files
+- **Fields:**
+  - `step`: Step number that created the file
+  - `file`: File name (basename only)
 
 #### `logs`
-- **Type :** `array` d'objets
-- **Description :** Messages de log détaillés
-- **Structure d'un message :**
-  - `timestamp`: Horodatage au format ISO 8601
-  - `level`: Niveau de log ("info", "warn", "error", "debug")
-  - `message`: Message de log
-  - Autres métadonnées optionnelles
+- **Type:** `array` of objects
+- **Description:** Detailed log messages
+- **Message structure:**
+  - `timestamp`: Timestamp in ISO 8601 format
+  - `level`: Log level ("info", "warn", "error", "debug")
+  - `message`: Log message
+  - Other optional metadata
 
 #### `error`
-- **Type :** `string | null`
-- **Description :** Message d'erreur si la conversion a échoué (null si succès)
+- **Type:** `string | null`
+- **Description:** Error message if conversion failed (null if success)
 
 #### `metadata`
-- **Type :** `object`
-- **Description :** Métadonnées additionnelles (sans données sensibles)
-- **Champs :**
-  - `contentSize`: Taille du contenu en caractères (optionnel)
+- **Type:** `object`
+- **Description:** Additional metadata (without sensitive data)
+- **Fields:**
+  - `contentSize`: Content size in characters (optional)
 
-## Endpoint API : `/api/logs`
+## API Endpoint: `/api/logs`
 
 ### GET `/api/logs/:conversionId`
 
-Récupère le log d'une conversion spécifique.
+Retrieves the log of a specific conversion.
 
-**Paramètres :**
-- `conversionId` (requis) : Identifiant unique de la conversion
+**Parameters:**
+- `conversionId` (required): Unique conversion identifier
 
-**Réponse en cas de succès (200) :**
+**Success Response (200):**
 ```json
 {
   "conversionId": "uuid-unique",
@@ -187,7 +187,7 @@ Récupère le log d'une conversion spécifique.
 }
 ```
 
-**Réponse en cas d'erreur (404) :**
+**Error Response (404):**
 ```json
 {
   "error": true,
@@ -196,31 +196,31 @@ Récupère le log d'une conversion spécifique.
 }
 ```
 
-**Exemple d'utilisation depuis un terminal :**
+**Usage Example from Terminal:**
 ```bash
-# Avec curl
+# With curl
 curl http://localhost:3003/api/logs/550e8400-e29b-41d4-a716-446655440000
 
-# Avec curl et jq pour formater le JSON
+# With curl and jq to format JSON
 curl -s http://localhost:3003/api/logs/550e8400-e29b-41d4-a716-446655440000 | jq
 
-# Sauvegarder dans un fichier
+# Save to file
 curl -s http://localhost:3003/api/logs/550e8400-e29b-41d4-a716-446655440000 > conversion.log
 
-# Avec le script Node.js (depuis api/logs/)
+# With Node.js script (from api/logs/)
 cd api/logs
-node list-logs.js                                    # Liste tous les logs
-node list-logs.js {conversionId}                    # Affiche un log spécifique
+node list-logs.js                                    # List all logs
+node list-logs.js {conversionId}                    # Display specific log
 ```
 
 ### GET `/api/logs`
 
-Liste tous les logs disponibles.
+Lists all available logs.
 
-**Paramètres de requête :**
-- `limit` (optionnel) : Nombre maximum de logs à retourner (défaut: 100)
+**Query Parameters:**
+- `limit` (optional): Maximum number of logs to return (default: 100)
 
-**Réponse en cas de succès (200) :**
+**Success Response (200):**
 ```json
 {
   "success": true,
@@ -244,114 +244,114 @@ Liste tous les logs disponibles.
 }
 ```
 
-**Exemple d'utilisation depuis un terminal :**
+**Usage Example from Terminal:**
 ```bash
-# Lister tous les logs
+# List all logs
 curl http://localhost:3003/api/logs
 
-# Lister avec limite
+# List with limit
 curl "http://localhost:3003/api/logs?limit=50"
 
-# Formater avec jq
+# Format with jq
 curl -s http://localhost:3003/api/logs | jq '.logs[] | {conversionId, status, duration: .execution.totalDuration}'
 ```
 
-## Métriques et Données Collectées
+## Metrics and Collected Data
 
-### Métriques de Performance
+### Performance Metrics
 
-- **Durée totale** : Temps total d'exécution de la conversion
-- **Durée par étape** : Temps d'exécution de chaque module
-- **Ordre d'exécution** : Séquence exacte des modules exécutés
+- **Total Duration:** Total conversion execution time
+- **Duration per Step:** Execution time of each module
+- **Execution Order:** Exact sequence of executed modules
 
-### Métriques de Fichiers
+### File Metrics
 
-- **Fichier d'entrée** : Nom et chemin (sanitisé) du fichier source
-- **Fichier de sortie** : Nom et chemin (sanitisé) du fichier final
-- **Fichiers intermédiaires** : Liste de tous les fichiers créés pendant la conversion
+- **Input File:** Name and path (sanitized) of source file
+- **Output File:** Name and path (sanitized) of final file
+- **Intermediate Files:** List of all files created during conversion
 
-### Métriques d'Exécution
+### Execution Metrics
 
-- **Modules exécutés** : Liste de tous les modules utilisés
-- **Statut de chaque étape** : Succès ou échec de chaque étape
-- **Messages de log** : Tous les messages de log avec horodatage et niveau
+- **Executed Modules:** List of all used modules
+- **Each Step Status:** Success or failure of each step
+- **Log Messages:** All log messages with timestamp and level
 
-### Métriques de Statut
+### Status Metrics
 
-- **Statut final** : Succès ou échec de la conversion complète
-- **Messages d'erreur** : Messages d'erreur détaillés en cas d'échec
-- **Horodatage** : Date et heure de début et de fin
+- **Final Status:** Success or failure of complete conversion
+- **Error Messages:** Detailed error messages in case of failure
+- **Timestamping:** Start and end date and time
 
-## Sécurité et Audit
+## Security and Audit
 
-### Protection des Données Sensibles
+### Sensitive Data Protection
 
-Le module applique automatiquement une sanitisation des logs pour protéger les données sensibles :
+The module automatically applies log sanitization to protect sensitive data:
 
-1. **Chemins de fichiers** : Seuls les noms de fichiers (basename) sont conservés, pas les chemins complets
-2. **Métadonnées** : Les métadonnées sensibles (IP, User-Agent) ne sont pas enregistrées dans les logs
-3. **Contenu** : Aucun contenu des fichiers source n'est enregistré dans les logs
+1. **File Paths:** Only file names (basename) are kept, not full paths
+2. **Metadata:** Sensitive metadata (IP, User-Agent) is not recorded in logs
+3. **Content:** No source file content is recorded in logs
 
-### Contrôle d'Accès
+### Access Control
 
-- **Dossier contrôlé** : Les logs sont stockés dans un dossier contrôlé par le pipeline (`/logs`)
-- **Permissions** : Le dossier de logs est créé avec des permissions restrictives (0o750)
-- **Isolation** : Chaque conversion a son propre fichier de log, isolé des autres
+- **Controlled Directory:** Logs are stored in a directory controlled by the pipeline (`/logs`)
+- **Permissions:** Log directory is created with restrictive permissions (0o750)
+- **Isolation:** Each conversion has its own log file, isolated from others
 
-### Audit et Conformité
+### Audit and Compliance
 
-Les logs structurés permettent :
-- **Traçabilité complète** : Chaque conversion est traçable via son ID unique
-- **Horodatage précis** : Tous les événements sont horodatés
-- **Conformité** : Format JSON standardisé pour intégration avec systèmes d'audit
-- **Rétention** : Politique de rétention configurable (30 jours par défaut)
+Structured logs enable:
+- **Complete Traceability:** Each conversion is traceable via its unique ID
+- **Precise Timestamping:** All events are timestamped
+- **Compliance:** Standardized JSON format for integration with audit systems
+- **Retention:** Configurable retention policy (30 days by default)
 
-**Références normatives :** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
+**Normative References:** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
 
-## Bonnes Pratiques
+## Best Practices
 
-### Pour le Développement
+### For Development
 
-1. **Vérifier les logs régulièrement** : Utiliser l'endpoint `/api/logs` pour vérifier le bon fonctionnement
-2. **Analyser les durées** : Surveiller les durées d'exécution pour détecter les problèmes de performance
-3. **Suivre les erreurs** : Analyser les logs d'erreur pour identifier les problèmes récurrents
+1. **Regularly Check Logs:** Use the `/api/logs` endpoint to verify proper functioning
+2. **Analyze Durations:** Monitor execution durations to detect performance issues
+3. **Track Errors:** Analyze error logs to identify recurring problems
 
-### Pour l'Audit
+### For Audit
 
-1. **Archiver les logs** : Les logs sont automatiquement archivés après la période de rétention
-2. **Exporter les logs** : Utiliser l'endpoint API pour exporter les logs vers des systèmes d'analyse
-3. **Surveiller l'espace disque** : Les logs sont limités en taille (10 MB par défaut)
+1. **Archive Logs:** Logs are automatically archived after the retention period
+2. **Export Logs:** Use the API endpoint to export logs to analysis systems
+3. **Monitor Disk Space:** Logs are limited in size (10 MB by default)
 
-### Pour le Débogage
+### For Debugging
 
-1. **Identifier la conversion** : Utiliser le `conversionId` pour retrouver le log complet
-2. **Analyser les étapes** : Examiner chaque étape pour identifier où l'erreur s'est produite
-3. **Vérifier les fichiers** : Vérifier les noms de fichiers d'entrée et de sortie
+1. **Identify Conversion:** Use the `conversionId` to retrieve the complete log
+2. **Analyze Steps:** Examine each step to identify where the error occurred
+3. **Verify Files:** Check input and output file names
 
-## Intégration avec les Orchestrateurs
+## Integration with Orchestrators
 
 ### Main Orchestrator
 
-Le main orchestrator initialise le log au début de la conversion et le finalise à la fin :
+The main orchestrator initializes the log at the start of conversion and finalizes it at the end:
 
 ```javascript
-// Initialisation
+// Initialization
 initializeLog(conversionId, sourceFormat, targetFormat, options)
 
-// Enregistrement des événements
+// Event Recording
 addLogMessage(conversionId, 'info', 'Message')
 recordInputFile(conversionId, inputFilePath)
 
-// Finalisation
+// Finalization
 finalizeLog(conversionId, 'success', { totalDuration, stepsExecuted })
 ```
 
 ### Execution Orchestrator
 
-L'execution orchestrator enregistre chaque étape d'exécution :
+The execution orchestrator records each execution step:
 
 ```javascript
-// Enregistrement d'une étape
+// Step Recording
 recordStep(conversionId, {
   stepNumber: 1,
   module: 'downdoc',
@@ -365,19 +365,19 @@ recordStep(conversionId, {
   error: null
 })
 
-// Enregistrement du fichier de sortie
+// Output File Recording
 recordOutputFile(conversionId, outputFilePath)
 ```
 
 ## Configuration
 
-### Variables d'Environnement
+### Environment Variables
 
-- `LOGS_DIR` : Dossier de stockage des logs (défaut: `{project_root}/logs`)
-- `MAX_LOG_SIZE` : Taille maximale d'un fichier de log en octets (défaut: 10485760 = 10 MB)
-- `LOG_RETENTION_DAYS` : Période de rétention en jours (défaut: 30)
+- `LOGS_DIR`: Log storage directory (default: `{project_root}/logs`)
+- `MAX_LOG_SIZE`: Maximum log file size in bytes (default: 10485760 = 10 MB)
+- `LOG_RETENTION_DAYS`: Retention period in days (default: 30)
 
-### Structure du Dossier de Logs
+### Log Directory Structure
 
 ```
 logs/
@@ -389,29 +389,29 @@ logs/
     └── {old_conversionId2}.log
 ```
 
-## Préparation pour Dashboards et Systèmes d'Analyse
+## Preparation for Dashboards and Analysis Systems
 
-### Format JSON Standardisé
+### Standardized JSON Format
 
-Le format JSON standardisé permet une intégration facile avec :
-- **Elasticsearch** : Indexation et recherche dans les logs
-- **Grafana** : Visualisation des métriques de performance
-- **Prometheus** : Collecte de métriques pour monitoring
-- **Splunk** : Analyse et corrélation des événements
+The standardized JSON format enables easy integration with:
+- **Elasticsearch:** Log indexing and search
+- **Grafana:** Performance metrics visualization
+- **Prometheus:** Metrics collection for monitoring
+- **Splunk:** Event analysis and correlation
 
-### Métriques Exportables
+### Exportable Metrics
 
-Les métriques suivantes peuvent être facilement extraites :
-- Taux de succès/échec
-- Durées moyennes d'exécution
-- Modules les plus utilisés
-- Formats de conversion les plus fréquents
-- Taille moyenne des conversions
+The following metrics can be easily extracted:
+- Success/failure rate
+- Average execution durations
+- Most used modules
+- Most frequent conversion formats
+- Average conversion size
 
-### Exemple d'Intégration
+### Integration Example
 
 ```javascript
-// Exemple d'extraction de métriques pour dashboard
+// Example of metrics extraction for dashboard
 const log = readLog(conversionId);
 const metrics = {
   success: log.status === 'success',
@@ -421,22 +421,22 @@ const metrics = {
 };
 ```
 
-## Notes Techniques
+## Technical Notes
 
 ### Performance
 
-- **Écriture asynchrone** : Les logs sont écrits de manière synchrone pour garantir la cohérence
-- **Cache en mémoire** : Les logs actifs sont mis en cache pour accès rapide
-- **Nettoyage automatique** : Les anciens logs sont automatiquement nettoyés selon la politique de rétention
+- **Synchronous Writing:** Logs are written synchronously to guarantee consistency
+- **In-Memory Cache:** Active logs are cached for fast access
+- **Automatic Cleanup:** Old logs are automatically cleaned according to retention policy
 
 ### Limitations
 
-- **Taille maximale** : Chaque fichier de log est limité à 10 MB par défaut
-- **Rétention** : Les logs sont supprimés après la période de rétention (30 jours par défaut)
-- **Stockage** : Les logs sont stockés sur le système de fichiers local
+- **Maximum Size:** Each log file is limited to 10 MB by default
+- **Retention:** Logs are deleted after the retention period (30 days by default)
+- **Storage:** Logs are stored on local file system
 
-## Références
+## References
 
-- [modules.interface.md](../modules.interface.md) - Contrat d'interface des modules
-- [orchestrator-comm.module.md](./orchestrator-comm.module.md) - Communication entre orchestrateurs
-- [PIPELINE.md](../../PIPELINE.md) - Spécification du pipeline de conversion
+- [modules.interface.md](../modules.interface.md) - Module interface contract
+- [orchestrator-comm.module.md](./orchestrator-comm.module.md) - Orchestrator communication
+- [PIPELINE.md](../../PIPELINE.md) - Conversion pipeline specification

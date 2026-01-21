@@ -1,32 +1,32 @@
-# Module Converter Orchestrator
+# Converter Orchestrator Module
 
 ## Description
 
-Le module `converter-orchestrator` est un orchestrateur central qui gère l'exécution de tous les converters du pipeline selon leurs capacités et les formats supportés. Ce module identifie automatiquement le converter approprié pour chaque conversion, utilise le lazy loading pour optimiser la consommation mémoire, et standardise les retours pour tous les converters.
+The `converter-orchestrator` module is a central orchestrator that manages the execution of all pipeline converters according to their capabilities and supported formats. This module automatically identifies the appropriate converter for each conversion, uses lazy loading to optimize memory consumption, and standardizes returns for all converters.
 
-## Nom du module
+## Module Name
 
-**Identifiant :** `converter-orchestrator`  
-**Type :** Module orchestrateur central  
-**Rôle :** Gestion et coordination de tous les converters du pipeline
+**Identifier:** `converter-orchestrator`  
+**Type:** Central orchestrator module  
+**Role:** Management and coordination of all pipeline converters
 
-## Objectif
+## Objective
 
-Permettre l'exécution de tous les converters (downdoc, pandoc, text2markdown, panwriter, docverter, etc.) en respectant uniquement les formats/langages prévus dans les options de conversion, tout en maintenant la sécurité, l'isolation et la structure existantes.
+Enable execution of all converters (downdoc, pandoc, text2markdown, panwriter, docverter, etc.) while respecting only the formats/languages provided in conversion options, while maintaining existing security, isolation, and structure.
 
-## Formats supportés
+## Supported Formats
 
-Le module orchestrateur ne supporte pas directement de formats, mais coordonne les conversions selon les formats supportés par chaque converter enregistré :
+The orchestrator module does not directly support formats, but coordinates conversions according to formats supported by each registered converter:
 
-- **downdoc** : `asciidoc` → `markdown`
-- **pandoc** : `markdown`, `asciidoc`, `html`, `txt`, `yaml`, `json` → `markdown`, `asciidoc`, `html`, `pdf`, `txt`, `yaml`, `json`
-- **text2markdown** : `txt` → `markdown`
-- **panwriter** : `markdown`, `asciidoc`, `html`, `docx`, `odt`, `rtf`, `latex`, `tex` → `markdown`, `asciidoc`, `html`, `docx`, `odt`, `rtf`, `latex`, `tex`
-- **docverter** : `rtf`, `pdf`, `html`, `txt`, `markdown`, `docx`, `xlsx`, `pptx`, `odt`, `ods`, `odp`, `png`, `jpg`, `jpeg`, `gif` → `rtf`, `pdf`, `html`, `txt`, `markdown`, `docx`, `xlsx`, `pptx`, `odt`, `ods`, `odp`, `png`, `jpg`, `jpeg`, `gif`
+- **downdoc:** `asciidoc` → `markdown`
+- **pandoc:** `markdown`, `asciidoc`, `html`, `txt`, `yaml`, `json` → `markdown`, `asciidoc`, `html`, `pdf`, `txt`, `yaml`, `json`
+- **text2markdown:** `txt` → `markdown`
+- **panwriter:** `markdown`, `asciidoc`, `html`, `docx`, `odt`, `rtf`, `latex`, `tex` → `markdown`, `asciidoc`, `html`, `docx`, `odt`, `rtf`, `latex`, `tex`
+- **docverter:** `rtf`, `pdf`, `html`, `txt`, `markdown`, `docx`, `xlsx`, `pptx`, `odt`, `ods`, `odp`, `png`, `jpg`, `jpeg`, `gif` → `rtf`, `pdf`, `html`, `txt`, `markdown`, `docx`, `xlsx`, `pptx`, `odt`, `ods`, `odp`, `png`, `jpg`, `jpeg`, `gif`
 
-**Note :** Seules les conversions vers les formats/langages définis dans les options de conversion sont disponibles pour cette version. D'autres formats/langages pourront être ajoutés dans les versions futures.
+**Note:** Only conversions to formats/languages defined in conversion options are available for this version. Other formats/languages may be added in future versions.
 
-## Méthode principale : `executeConversion`
+## Main Method: `executeConversion`
 
 ### Signature
 
@@ -34,221 +34,221 @@ Le module orchestrateur ne supporte pas directement de formats, mais coordonne l
 executeConversion(inputPath: string, outputPath: string, fromFormat: string, toFormat: string, options?: Object): Promise<ModuleResult>
 ```
 
-### Description du fonctionnement
+### Functioning Description
 
-La méthode `executeConversion` orchestre l'exécution d'une conversion selon le processus suivant :
+The `executeConversion` method orchestrates the execution of a conversion according to the following process:
 
-#### 1. Identification du converter approprié
+#### 1. Appropriate Converter Identification
 
-- Le module parcourt tous les converters enregistrés dans le registre
-- Pour chaque converter, il vérifie si les formats `fromFormat` et `toFormat` sont supportés
-- Le premier converter qui supporte la conversion demandée est sélectionné
-- Si aucun converter ne supporte la conversion, le module retourne un `ModuleResult` avec `success: false`
+- The module iterates through all converters registered in the registry
+- For each converter, it checks if `fromFormat` and `toFormat` are supported
+- The first converter that supports the requested conversion is selected
+- If no converter supports the conversion, the module returns a `ModuleResult` with `success: false`
 
-#### 2. Exécution selon le type de converter
+#### 2. Execution According to Converter Type
 
-Le module exécute la conversion selon le type d'exécution du converter :
+The module executes the conversion according to the converter's execution type:
 
-- **Lazy loading** : Pour les modules conformes à l'interface `modules.interface.md`
-  - Utilise le module de lazy loading pour charger et exécuter le converter
-  - Les modules sont chargés uniquement lorsqu'ils sont utilisés
-  - Réduction de la consommation mémoire
+- **Lazy Loading:** For modules conforming to the `modules.interface.md` interface
+  - Uses the lazy loading module to load and execute the converter
+  - Modules are loaded only when used
+  - Memory consumption reduction
 
-- **Commande** : Pour les outils externes (ex: Pandoc)
-  - Utilise l'exécution de commande sécurisée via `child_process.spawn`
-  - Gestion des timeouts et capture des erreurs
-  - Validation des chemins et des arguments
+- **Command:** For external tools (e.g., Pandoc)
+  - Uses secure command execution via `child_process.spawn`
+  - Timeout management and error capture
+  - Path and argument validation
 
-#### 3. Standardisation du résultat
+#### 3. Result Standardization
 
-- Le module fusionne les logs de l'orchestrateur avec les logs du converter
-- Le résultat est standardisé pour respecter l'interface `ModuleResult` :
-  - `success` : Booléen indiquant le succès ou l'échec
-  - `logs` : Tableau ou chaîne de caractères contenant tous les logs
-  - `error` : Message d'erreur ou `null` en cas de succès
-  - `duration` : Durée totale en secondes
+- The module merges orchestrator logs with converter logs
+- The result is standardized to respect the `ModuleResult` interface:
+  - `success`: Boolean indicating success or failure
+  - `logs`: Array or string containing all logs
+  - `error`: Error message or `null` on success
+  - `duration`: Total duration in seconds
 
-#### 4. Gestion des erreurs
+#### 4. Error Handling
 
-- Toutes les erreurs sont capturées et transformées en `ModuleResult` avec `success: false`
-- Les messages d'erreur sont sécurisés (pas de détails système sensibles)
-- Aucune exception non gérée ne remonte au pipeline principal
+- All errors are captured and transformed into `ModuleResult` with `success: false`
+- Error messages are secured (no sensitive system details)
+- No unhandled exception propagates to the main pipeline
 
-### Paramètres
+### Parameters
 
-- **`inputPath`** (requis) : Chemin absolu vers le fichier d'entrée à convertir
-- **`outputPath`** (requis) : Chemin absolu vers le fichier de sortie à créer
-- **`fromFormat`** (requis) : Format source (markdown, asciidoc, html, txt, etc.)
-- **`toFormat`** (requis) : Format de destination (markdown, asciidoc, html, pdf, etc.)
-- **`options`** (optionnel) : Objet contenant les options de conversion
-  - `conversionId` : ID de conversion pour les logs (optionnel)
-  - `timeout` : Timeout en millisecondes (optionnel, défaut selon le converter)
-  - Autres options spécifiques au converter sélectionné
+- **`inputPath`** (required): Absolute path to input file to convert
+- **`outputPath`** (required): Absolute path to output file to create
+- **`fromFormat`** (required): Source format (markdown, asciidoc, html, txt, etc.)
+- **`toFormat`** (required): Destination format (markdown, asciidoc, html, pdf, etc.)
+- **`options`** (optional): Object containing conversion options
+  - `conversionId`: Conversion ID for logs (optional)
+  - `timeout`: Timeout in milliseconds (optional, default according to converter)
+  - Other options specific to selected converter
 
-### Valeur de retour
+### Return Value
 
-La méthode retourne une `Promise` qui se résout avec un objet `ModuleResult` :
+The method returns a `Promise` that resolves with a `ModuleResult` object:
 
 ```typescript
 {
-  success: boolean,        // true si conversion réussie, false sinon
-  logs: string | string[], // Logs d'exécution (orchestrateur + converter)
-  error: string | null,   // Message d'erreur ou null
-  duration: number        // Durée en secondes
+  success: boolean,        // true if conversion successful, false otherwise
+  logs: string | string[], // Execution logs (orchestrator + converter)
+  error: string | null,   // Error message or null
+  duration: number        // Duration in seconds
 }
 ```
 
-## Registre des converters
+## Converter Registry
 
-Le module maintient un registre de tous les converters disponibles avec leurs configurations :
+The module maintains a registry of all available converters with their configurations:
 
-- **Nom du converter** : Identifiant unique
-- **Formats supportés** : Formats d'entrée (`from`) et de sortie (`to`)
-- **Type d'exécution** : `lazy-load` ou `command`
-- **Configuration** : Chemin du module (pour lazy-load) ou chemin du binaire (pour command)
+- **Converter Name:** Unique identifier
+- **Supported Formats:** Input (`from`) and output (`to`) formats
+- **Execution Type:** `lazy-load` or `command`
+- **Configuration:** Module path (for lazy-load) or binary path (for command)
 
-### Ajout d'un nouveau converter
+### Adding a New Converter
 
-Pour ajouter un nouveau converter au registre :
+To add a new converter to the registry:
 
-1. Créer le module du converter conforme à l'interface `modules.interface.md`
-2. Ajouter une entrée dans `CONVERTER_REGISTRY` avec :
-   - `name` : Nom du converter
-   - `supportedFormats` : Formats supportés (from/to)
-   - `executionType` : `lazy-load` ou `command`
-   - `modulePath` ou `binaryPath` selon le type
+1. Create the converter module conforming to the `modules.interface.md` interface
+2. Add an entry in `CONVERTER_REGISTRY` with:
+   - `name`: Converter name
+   - `supportedFormats`: Supported formats (from/to)
+   - `executionType`: `lazy-load` or `command`
+   - `modulePath` or `binaryPath` according to type
 
-Aucune modification du code existant n'est nécessaire, seule l'ajout d'une entrée dans le registre suffit.
+No modification of existing code is necessary, only adding an entry to the registry is sufficient.
 
-## Communication avec le linear orchestrator
+## Communication with Linear Orchestrator
 
-Le module `converter-orchestrator` communique avec le `linear orchestrator` pour éviter la surcharge du système :
+The `converter-orchestrator` module communicates with the `linear orchestrator` to avoid system overload:
 
-### Gestion du contrôle de charge
+### Load Control Management
 
-- **Appels externes** : Pour les appels directs (non depuis le linear orchestrator), le converter-orchestrator gère le contrôle de charge
-- **Appels internes** : Pour les appels depuis le linear orchestrator (marqués avec `_internal: true`), le contrôle de charge est géré par le linear orchestrator
-- **Pas de double comptage** : Les appels internes n'acquièrent pas de slot de concurrence séparé
-- **Suivi unifié** : Les succès et échecs sont enregistrés uniquement pour les appels externes
+- **External Calls:** For direct calls (not from linear orchestrator), converter-orchestrator manages load control
+- **Internal Calls:** For calls from linear orchestrator (marked with `_internal: true`), load control is managed by linear orchestrator
+- **No Double Counting:** Internal calls do not acquire a separate concurrency slot
+- **Unified Tracking:** Successes and failures are recorded only for external calls
 
-### Mécanismes de protection
+### Protection Mechanisms
 
-1. **Détection du type d'appel** : Le module détecte si l'appel est interne ou externe via l'option `_internal`
-2. **Contrôle de charge conditionnel** : Le contrôle de charge n'est appliqué que pour les appels externes
-3. **Libération garantie** : Les slots de concurrence sont toujours libérés dans un bloc `finally`
+1. **Call Type Detection:** The module detects if the call is internal or external via the `_internal` option
+2. **Conditional Load Control:** Load control is applied only for external calls
+3. **Guaranteed Release:** Concurrency slots are always released in a `finally` block
 
-## Sécurité et isolation
+## Security and Isolation
 
-### Obligations de sécurité minimales (V1)
+### Minimal Security Obligations (V1)
 
-Le module respecte les obligations de sécurité minimales définies dans [modules.interface.md](../modules.interface.md) :
+The module respects the minimal security obligations defined in [modules.interface.md](../modules.interface.md):
 
-#### 1. Validation des formats
+#### 1. Format Validation
 
-- **Vérification des formats** : Le module valide que les formats demandés sont supportés par au moins un converter
-- **Rejet immédiat** : Si aucun converter ne supporte la conversion, le module retourne immédiatement un `ModuleResult` avec `success: false`
+- **Format Verification:** The module validates that requested formats are supported by at least one converter
+- **Immediate Rejection:** If no converter supports the conversion, the module immediately returns a `ModuleResult` with `success: false`
 
-**Références normatives :** ISO 27001 (A.9.4.2), ISO 27002 (A.9.4.2), NIST SP 800-53 (SI-7), OWASP Top 10 (A03:2021)
+**Normative References:** ISO 27001 (A.9.4.2), ISO 27002 (A.9.4.2), NIST SP 800-53 (SI-7), OWASP Top 10 (A03:2021)
 
-#### 2. Isolement léger
+#### 2. Light Isolation
 
-- **Aucune interaction directe** : Le module n'interagit pas directement avec le reste du système en dehors des chemins fournis
-- **Délégation aux converters** : L'isolation est assurée par chaque converter individuel selon ses obligations de sécurité
-- **Pas d'accès réseau** : Le module ne doit pas accéder au réseau pendant l'exécution (sauf si un converter le nécessite, auquel cas cela est documenté)
+- **No Direct Interaction:** The module does not directly interact with the rest of the system outside provided paths
+- **Delegation to Converters:** Isolation is ensured by each individual converter according to its security obligations
+- **No Network Access:** The module must not access the network during execution (unless a converter requires it, in which case it is documented)
 
-**Références normatives :** ISO 27001 (A.9.1.2), ISO 27002 (A.9.1.2), NIST SP 800-53 (SC-7, SC-39), OWASP Top 10 (A01:2021)
+**Normative References:** ISO 27001 (A.9.1.2), ISO 27002 (A.9.1.2), NIST SP 800-53 (SC-7, SC-39), OWASP Top 10 (A01:2021)
 
-#### 3. Gestion sécurisée des erreurs
+#### 3. Secure Error Handling
 
-- **Capture exhaustive** : Toutes les exceptions et erreurs sont capturées et transformées en `ModuleResult` avec `success: false`
-- **Pas de crash global** : Aucune exception non gérée ne remonte au pipeline principal
-- **Messages d'erreur sécurisés** : Les messages d'erreur ne contiennent pas de détails système sensibles
+- **Exhaustive Capture:** All exceptions and errors are captured and transformed into `ModuleResult` with `success: false`
+- **No Global Crash:** No unhandled exception propagates to the main pipeline
+- **Secured Error Messages:** Error messages do not contain sensitive system details
 
-**Références normatives :** ISO 27001 (A.12.6.1), ISO 27002 (A.12.6.1), NIST SP 800-53 (SI-11), OWASP Top 10 (A04:2021)
+**Normative References:** ISO 27001 (A.12.6.1), ISO 27002 (A.12.6.1), NIST SP 800-53 (SI-11), OWASP Top 10 (A04:2021)
 
-#### 4. Journalisation minimale
+#### 4. Minimal Logging
 
-- **ID de conversion** : Le module inclut l'ID de conversion unique dans ses logs
-- **Horodatage** : Le module enregistre l'horodatage de début et de fin d'exécution
-- **Logs d'exécution** : Le module produit des logs décrivant les étapes principales (identification, exécution, résultat)
-- **Statut final** : Le module inclut le statut final (succès/échec) dans les logs retournés
+- **Conversion ID:** The module includes the unique conversion ID in its logs
+- **Timestamping:** The module records the start and end execution timestamp
+- **Execution Logs:** The module produces logs describing main steps (identification, execution, result)
+- **Final Status:** The module includes the final status (success/failure) in returned logs
 
-**Références normatives :** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
+**Normative References:** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
 
-#### 5. Vérification légère de l'intégrité
+#### 5. Light Integrity Verification
 
-- **Documentation des converters** : Le module documente tous les converters enregistrés et leurs formats supportés
-- **Signalement des modifications** : Le module peut signaler toute modification détectée de l'intégrité des converters (optionnel en V1)
+- **Converter Documentation:** The module documents all registered converters and their supported formats
+- **Modification Reporting:** The module may report any detected modification of converter integrity (optional in V1)
 
-**Références normatives :** ISO 27001 (A.12.2.1), ISO 27002 (A.12.2.1), NIST SP 800-53 (SI-7, SA-12), OWASP Top 10 (A06:2021)
+**Normative References:** ISO 27001 (A.12.2.1), ISO 27002 (A.12.2.1), NIST SP 800-53 (SI-7, SA-12), OWASP Top 10 (A06:2021)
 
-### Contraintes d'exécution
+### Execution Constraints
 
-- **Isolation** : Le module ne modifie pas les wrappers existants, il les orchestre uniquement
-- **Performance** : Le module utilise le lazy loading pour optimiser la consommation mémoire
-- **Sécurité** : Le module délègue la sécurité aux converters individuels selon leurs obligations
+- **Isolation:** The module does not modify existing wrappers, it only orchestrates them
+- **Performance:** The module uses lazy loading to optimize memory consumption
+- **Security:** The module delegates security to individual converters according to their obligations
 
-## Comportement attendu
+## Expected Behavior
 
-### En cas de succès
+### On Success
 
-1. Le converter approprié est identifié et exécuté
-2. Le fichier de sortie est créé à l'emplacement `outputPath` avec le contenu converti
-3. Le module retourne un `ModuleResult` avec `success: true`, `error: null`, des logs détaillés et la durée d'exécution
+1. The appropriate converter is identified and executed
+2. The output file is created at `outputPath` with converted content
+3. The module returns a `ModuleResult` with `success: true`, `error: null`, detailed logs, and execution duration
 
-### En cas d'échec
+### On Failure
 
-1. Si aucun converter ne supporte la conversion, le module retourne immédiatement un `ModuleResult` avec `success: false`
-2. Si le converter échoue, l'erreur est capturée et transformée en `ModuleResult` avec `success: false`
-3. Le module retourne un `ModuleResult` avec `success: false`, un message d'erreur descriptif dans `error`, les logs jusqu'au point d'échec, et la durée jusqu'à l'échec
+1. If no converter supports the conversion, the module immediately returns a `ModuleResult` with `success: false`
+2. If the converter fails, the error is captured and transformed into a `ModuleResult` with `success: false`
+3. The module returns a `ModuleResult` with `success: false`, a descriptive error message in `error`, logs up to the failure point, and duration up to failure
 
-### Types d'erreurs possibles
+### Possible Error Types
 
-- **Erreur de format non supporté** : Aucun converter ne supporte la conversion demandée
-- **Erreur de converter** : Le converter sélectionné a échoué (erreur capturée et standardisée)
-- **Erreur d'orchestration** : Erreur lors de l'identification ou de l'exécution du converter
+- **Unsupported Format Error:** No converter supports the requested conversion
+- **Converter Error:** The selected converter failed (error captured and standardized)
+- **Orchestration Error:** Error during converter identification or execution
 
 ## Notes
 
-### Préservation de l'existant
+### Existing Preservation
 
-Le module orchestrateur ne modifie aucun wrapper existant :
+The orchestrator module does not modify any existing wrapper:
 
-- **Aucune modification des wrappers** : Les wrappers existants (downdoc, pandoc, etc.) restent inchangés
-- **Interface standardisée** : Le module standardise uniquement les retours, sans modifier la logique interne des converters
-- **Chemins inchangés** : Les chemins et interfaces des converters existants restent inchangés
+- **No Wrapper Modification:** Existing wrappers (downdoc, pandoc, etc.) remain unchanged
+- **Standardized Interface:** The module only standardizes returns, without modifying internal converter logic
+- **Unchanged Paths:** Paths and interfaces of existing converters remain unchanged
 
-### Lazy loading
+### Lazy Loading
 
-Le module utilise le lazy loading pour optimiser la consommation mémoire :
+The module uses lazy loading to optimize memory consumption:
 
-- **Chargement différé** : Les modules sont chargés uniquement lorsqu'ils sont utilisés
-- **Cache** : Les modules chargés sont mis en cache pour éviter les rechargements
-- **Réduction mémoire** : Seuls les converters effectivement utilisés sont chargés en mémoire
+- **Deferred Loading:** Modules are loaded only when used
+- **Cache:** Loaded modules are cached to avoid reloads
+- **Memory Reduction:** Only actually used converters are loaded in memory
 
-### Extensibilité
+### Extensibility
 
-Le module est conçu pour être facilement extensible :
+The module is designed to be easily extensible:
 
-- **Ajout simple** : L'ajout d'un nouveau converter nécessite uniquement l'ajout d'une entrée dans le registre
-- **Pas de modification du code** : Aucune modification du code existant n'est nécessaire pour ajouter un nouveau converter
-- **Documentation** : Chaque converter doit avoir sa documentation dans un fichier `.module.md` associé
+- **Simple Addition:** Adding a new converter requires only adding an entry to the registry
+- **No Code Modification:** No modification of existing code is necessary to add a new converter
+- **Documentation:** Each converter must have its documentation in an associated `.module.md` file
 
-### Limitations de formats
+### Format Limitations
 
-**Important :** Seules les conversions vers les formats/langages définis dans les options de conversion sont disponibles pour cette version. D'autres formats/langages pourront être ajoutés dans les versions futures.
+**Important:** Only conversions to formats/languages defined in conversion options are available for this version. Other formats/languages may be added in future versions.
 
-## Conformité
+## Compliance
 
-Ce module respecte strictement l'interface définie dans [modules.interface.md](../modules.interface.md) et les obligations de sécurité minimales de la version 1. Toute modification du module doit maintenir cette conformité.
+This module strictly respects the interface defined in [modules.interface.md](../modules.interface.md) and the minimal security obligations of version 1. Any modification of the module must maintain this compliance.
 
-## Références
+## References
 
-- [modules.interface.md](../modules.interface.md) - Contrat d'interface des modules
-- [lazyload.module.md](./lazyload.module.md) - Module de lazy loading
-- [PIPELINE.md](../PIPELINE.md) - Spécification du pipeline de conversion
-- [downdoc.module.md](./downdoc.module.md) - Module Downdoc
-- [pandoc.module.md](./pandoc.module.md) - Module Pandoc
-- [text2markdown.module.md](./text2markdown.module.md) - Module Text2Markdown
-- [panwriter.module.md](./panwriter.module.md) - Module PanWriter
-- [docverter.module.md](./docverter.module.md) - Module Docverter
+- [modules.interface.md](../modules.interface.md) - Module interface contract
+- [lazyload.module.md](./lazyload.module.md) - Lazy loading module
+- [PIPELINE.md](../PIPELINE.md) - Conversion pipeline specification
+- [downdoc.module.md](./downdoc.module.md) - Downdoc module
+- [pandoc.module.md](./pandoc.module.md) - Pandoc module
+- [text2markdown.module.md](./text2markdown.module.md) - Text2Markdown module
+- [panwriter.module.md](./panwriter.module.md) - PanWriter module
+- [docverter.module.md](./docverter.module.md) - Docverter module

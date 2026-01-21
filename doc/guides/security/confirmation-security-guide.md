@@ -1,59 +1,59 @@
-# Guide de Sécurité - Système de Confirmation avec Tokens
+# Security Guide - Token-Based Confirmation System
 
-## Vue d'ensemble
+## Overview
 
-Ce système implémente une confirmation utilisateur **sécurisée et vérifiable côté serveur** pour toutes les conversions de fichiers. Le backend ne fait **AUCUNE confiance** à l'UI frontend et exige une preuve explicite de confirmation.
+This system implements a **secure and server-verifiable** user confirmation for all file conversions. The backend **DOES NOT TRUST** the frontend UI and requires explicit proof of confirmation.
 
-## Architecture de sécurité
+## Security Architecture
 
-### Principe fondamental
+### Fundamental Principle
 
 ```
-Frontend (UI)          Backend (Autorité)
+Frontend (UI)          Backend (Authority)
     │                        │
-    │─── 1. Demande token ───>│
-    │<── 2. Token généré ─────│
+    │─── 1. Request token ───>│
+    │<── 2. Token generated ──│
     │                        │
-    │─── 3. Affiche modal ───│
-    │    (utilisateur)       │
+    │─── 3. Display modal ───│
+    │    (user)             │
     │                        │
-    │─── 4. Token + requête ─>│
-    │    (si "Oui" cliqué)   │
+    │─── 4. Token + request ─>│
+    │    (if "Yes" clicked) │
     │                        │
     │<── 5. Validation ─────│
     │    + Conversion        │
 ```
 
-**Point critique** : Le backend valide le token **indépendamment** de l'UI. Même si l'API est appelée manuellement ou si le frontend est contourné, aucune conversion ne peut être exécutée sans token valide.
+**Critical Point**: The backend validates the token **independently** of the UI. Even if the API is called manually or the frontend is bypassed, no conversion can be executed without a valid token.
 
-## Composants
+## Components
 
 ### 1. `confirmation-token-manager.js`
 
-Gestionnaire de tokens de confirmation :
-- Génère des tokens cryptographiquement sécurisés (32 bytes, hex)
-- Stockage en mémoire avec expiration (60 secondes par défaut)
-- Validation et consommation (usage unique)
-- Nettoyage automatique des tokens expirés
+Confirmation token manager:
+- Generates cryptographically secure tokens (32 bytes, hex)
+- In-memory storage with expiration (60 seconds by default)
+- Validation and consumption (single-use)
+- Automatic cleanup of expired tokens
 
-**Fonctions principales** :
-- `generateConfirmationToken(metadata)` : Génère un token unique
-- `validateAndConsumeToken(token, expectedMetadata)` : Valide et consomme un token
+**Main Functions**:
+- `generateConfirmationToken(metadata)`: Generates a unique token
+- `validateAndConsumeToken(token, expectedMetadata)`: Validates and consumes a token
 
 ### 2. `secure-converter-with-tokens.js`
 
-Wrapper autour de `secure-converter.js` qui ajoute la validation de tokens :
-- Exige un token de confirmation valide
-- Valide le token avant d'exécuter la conversion
-- Consomme le token (usage unique)
+Wrapper around `secure-converter.js` that adds token validation:
+- Requires a valid confirmation token
+- Validates token before executing conversion
+- Consumes token (single-use)
 
-### 3. Endpoints backend
+### 3. Backend Endpoints
 
 #### `POST /api/confirmation/request`
 
-Génère un token de confirmation.
+Generates a confirmation token.
 
-**Request** :
+**Request**:
 ```json
 {
   "fromFormat": "markdown",
@@ -62,7 +62,7 @@ Génère un token de confirmation.
 }
 ```
 
-**Response** :
+**Response**:
 ```json
 {
   "success": true,
@@ -72,60 +72,60 @@ Génère un token de confirmation.
 }
 ```
 
-#### `POST /convert` (modifié)
+#### `POST /convert` (modified)
 
-Exécute la conversion avec validation de token.
+Executes conversion with token validation.
 
-**Request** :
+**Request**:
 ```json
 {
   "text": "...",
   "from": "markdown",
   "to": "asciidoc",
   "options": {...},
-  "confirmationToken": "abc123..." // OBLIGATOIRE
+  "confirmationToken": "abc123..." // MANDATORY
 }
 ```
 
-**Sécurité** :
-- Si `confirmationToken` est absent → 403 Forbidden
-- Si token invalide → 403 Forbidden
-- Si token expiré → 410 Gone
-- Si token déjà utilisé → 403 Forbidden
+**Security**:
+- If `confirmationToken` is missing → 403 Forbidden
+- If token invalid → 403 Forbidden
+- If token expired → 410 Gone
+- If token already used → 403 Forbidden
 
-### 4. Intégration frontend React
+### 4. React Frontend Integration
 
-#### Flux complet
+#### Complete Flow
 
-1. **Utilisateur clique sur "Convertir"**
+1. **User clicks "Convert"**
    ```typescript
    handleConvert() → requestConversionConfirmation()
    ```
 
-2. **Frontend demande un token**
+2. **Frontend requests a token**
    ```typescript
    const token = await requestConfirmationToken(fromFormat, toFormat, contentSize)
    ```
 
-3. **Frontend affiche la modal**
+3. **Frontend displays modal**
    ```typescript
    setShowConversionModal(true)
    setConfirmationToken(token)
    ```
 
-4. **Utilisateur clique sur "Oui"**
+4. **User clicks "Yes"**
    ```typescript
    confirmAndConvert() → convertText(..., confirmationToken)
    ```
 
-5. **Frontend envoie la requête avec le token**
+5. **Frontend sends request with token**
    ```typescript
    body: { text, from, to, options, confirmationToken }
    ```
 
-6. **Backend valide le token**
+6. **Backend validates token**
    ```javascript
-   validateAndConsumeToken(confirmationToken) // Usage unique
+   validateAndConsumeToken(confirmationToken) // Single-use
    ```
 
 7. **Backend executes conversion**
@@ -133,27 +133,27 @@ Exécute la conversion avec validation de token.
    secureConvertWithToken(...) // Token already validated
    ```
 
-## Security guarantees
+## Security Guarantees
 
-### ✅ Backend does NOT trust the UI
+### ✅ Backend Does NOT Trust the UI
 
 - No conversion can be executed without valid token
 - Token is generated by server, not by client
 - Token is validated independently of UI
 
-### ✅ Attack protection
+### ✅ Attack Protection
 
-- **Command injection** : Impossible (strict whitelist)
-- **Replay attacks** : Single-use tokens
-- **Token forgery** : Cryptographically secure tokens (32 bytes)
-- **Expiration** : Tokens expire after 60 seconds
-- **UI bypass** : Impossible without valid token
+- **Command injection**: Impossible (strict whitelist)
+- **Replay attacks**: Single-use tokens
+- **Token forgery**: Cryptographically secure tokens (32 bytes)
+- **Expiration**: Tokens expire after 60 seconds
+- **UI bypass**: Impossible without valid token
 
-### ✅ Multi-level validation
+### ✅ Multi-Level Validation
 
-1. **Frontend** : Prevents sending without confirmation
-2. **Backend** : Validates token before conversion
-3. **Secure-converter** : Validates confirmation
+1. **Frontend**: Prevents sending without confirmation
+2. **Backend**: Validates token before conversion
+3. **Secure-converter**: Validates confirmation
 
 ## Usage
 
@@ -180,38 +180,38 @@ if (!validation.valid) {
 ### Frontend
 
 ```typescript
-// 1. Demander un token
+// 1. Request a token
 const token = await requestConfirmationToken('markdown', 'asciidoc', contentSize);
 
-// 2. Afficher la modal avec le token
+// 2. Display modal with token
 setConfirmationToken(token);
 setShowConversionModal(true);
 
-// 3. Si l'utilisateur confirme, envoyer avec le token
+// 3. If user confirms, send with token
 await convertText(text, 'markdown', 'asciidoc', ..., token);
 ```
 
 ## Configuration
 
-### Durée de vie des tokens
+### Token Lifetime
 
-Modifier `TOKEN_CONFIG.TOKEN_TTL` dans `confirmation-token-manager.js` :
+Modify `TOKEN_CONFIG.TOKEN_TTL` in `confirmation-token-manager.js`:
 
 ```javascript
 const TOKEN_CONFIG = {
-  TOKEN_TTL: 60000, // 60 secondes (modifiable)
+  TOKEN_TTL: 60000, // 60 seconds (modifiable)
   TOKEN_LENGTH: 32,
   TOKEN_ENCODING: 'hex'
 }
 ```
 
-### Nettoyage automatique
+### Automatic Cleanup
 
-Les tokens expirés sont nettoyés automatiquement toutes les 30 secondes. Aucune action requise.
+Expired tokens are automatically cleaned every 30 seconds. No action required.
 
 ## Monitoring
 
-### Statistiques des tokens
+### Token Statistics
 
 ```javascript
 GET /api/confirmation/stats
@@ -228,60 +228,60 @@ Response:
 }
 ```
 
-## Erreurs possibles
+## Possible Errors
 
 | Code | Description | HTTP Status |
 |------|-------------|-------------|
-| `CONFIRMATION_TOKEN_MISSING` | Token absent de la requête | 403 |
-| `CONFIRMATION_TOKEN_INVALID` | Token invalide ou inconnu | 403 |
-| `CONFIRMATION_TOKEN_EXPIRED` | Token expiré | 410 |
-| `CONFIRMATION_TOKEN_ALREADY_USED` | Token déjà consommé | 403 |
-| `CONFIRMATION_TOKEN_METADATA_MISMATCH` | Métadonnées ne correspondent pas | 403 |
+| `CONFIRMATION_TOKEN_MISSING` | Token missing from request | 403 |
+| `CONFIRMATION_TOKEN_INVALID` | Invalid or unknown token | 403 |
+| `CONFIRMATION_TOKEN_EXPIRED` | Expired token | 410 |
+| `CONFIRMATION_TOKEN_ALREADY_USED` | Token already consumed | 403 |
+| `CONFIRMATION_TOKEN_METADATA_MISMATCH` | Metadata does not match | 403 |
 
-## Tests de sécurité
+## Security Tests
 
-### Test 1: Requête sans token
+### Test 1: Request Without Token
 ```bash
 curl -X POST http://localhost:3003/convert \
   -H "Content-Type: application/json" \
   -d '{"text":"test","from":"markdown","to":"asciidoc"}'
-# Résultat attendu: 403 Forbidden
+# Expected result: 403 Forbidden
 ```
 
-### Test 2: Token invalide
+### Test 2: Invalid Token
 ```bash
 curl -X POST http://localhost:3003/convert \
   -H "Content-Type: application/json" \
   -d '{"text":"test","from":"markdown","to":"asciidoc","confirmationToken":"invalid"}'
-# Résultat attendu: 403 Forbidden
+# Expected result: 403 Forbidden
 ```
 
-### Test 3: Token expiré
+### Test 3: Expired Token
 ```bash
-# Attendre 60+ secondes après génération du token
-# Résultat attendu: 410 Gone
+# Wait 60+ seconds after token generation
+# Expected result: 410 Gone
 ```
 
-### Test 4: Réutilisation d'un token
+### Test 4: Token Reuse
 ```bash
-# Utiliser le même token deux fois
-# Résultat attendu: 403 Forbidden (déjà utilisé)
+# Use the same token twice
+# Expected result: 403 Forbidden (already used)
 ```
 
-## Migration depuis l'ancien système
+## Migration from Old System
 
-1. **Backend** : Les endpoints existants continuent de fonctionner, mais `/convert` exige maintenant un token
-2. **Frontend** : Modifier `handleConvert()` pour utiliser `requestConversionConfirmation()`
-3. **Tests** : Vérifier que toutes les conversions passent par le flux de confirmation
+1. **Backend**: Existing endpoints continue to work, but `/convert` now requires a token
+2. **Frontend**: Modify `handleConvert()` to use `requestConversionConfirmation()`
+3. **Tests**: Verify that all conversions go through the confirmation flow
 
-## Bonnes pratiques
+## Best Practices
 
-1. **Toujours demander un token avant d'afficher la modal**
-2. **Ne jamais stocker de tokens dans le localStorage** (sécurité)
-3. **Invalider le token si l'utilisateur annule**
-4. **Gérer les erreurs de token expiré** (redemander un token)
-5. **Logger les tentatives de conversion sans token** (monitoring)
+1. **Always request a token before displaying modal**
+2. **Never store tokens in localStorage** (security)
+3. **Invalidate token if user cancels**
+4. **Handle expired token errors** (request new token)
+5. **Log conversion attempts without token** (monitoring)
 
 ## Conclusion
 
-Ce système garantit qu'**aucune conversion ne peut être exécutée sans confirmation explicite et vérifiable côté serveur**. Le backend est l'autorité absolue et ne fait aucune confiance à l'UI frontend.
+This system ensures that **no conversion can be executed without explicit and server-verifiable confirmation**. The backend is the absolute authority and does not trust the frontend UI.

@@ -1,12 +1,12 @@
-# Intégration Frontend - Validation de Confirmation
+# Frontend Integration - Confirmation Validation
 
-## Vue d'ensemble
+## Overview
 
-Le `secure-converter` exige maintenant qu'une confirmation utilisateur soit validée avant d'exécuter une conversion. Cela garantit que l'utilisateur a bien cliqué sur "Oui" dans une fenêtre de confirmation avant que la conversion ne soit lancée.
+The `secure-converter` now requires that user confirmation be validated before executing a conversion. This ensures that the user has clicked "Yes" in a confirmation window before the conversion is launched.
 
-## Modification du secure-converter
+## Secure-Converter Modification
 
-Le module vérifie maintenant le paramètre `confirmed: true` dans les options :
+The module now checks the `confirmed: true` parameter in options:
 
 ```javascript
 // ❌ WITHOUT confirmation - will be rejected
@@ -214,7 +214,7 @@ app.post('/convert', async (req, res) => {
       });
     }
 
-    // Utiliser secure-converter avec confirmation
+    // Use secure-converter with confirmation
     const result = await secureConvert(text, from, to, {
       timeout: 30000,
       confirmed: true
@@ -250,41 +250,41 @@ app.post('/convert', async (req, res) => {
 });
 ```
 
-## Flux complet
+## Complete Flow
 
-1. **Utilisateur clique sur "Convertir"**
-   - `handleConvert()` est appelé
-   - La modal de confirmation s'affiche
-   - La conversion n'est PAS encore lancée
+1. **User clicks "Convert"**
+   - `handleConvert()` is called
+   - Confirmation modal is displayed
+   - Conversion is NOT yet launched
 
-2. **Utilisateur clique sur "Oui" dans la modal**
-   - `confirmConversion()` est appelé
-   - `confirmed: true` est défini
-   - `convertText()` est appelé avec `confirmed: true`
-   - L'API est appelée avec `confirmed: true` dans le body
+2. **User clicks "Yes" in modal**
+   - `confirmConversion()` is called
+   - `confirmed: true` is set
+   - `convertText()` is called with `confirmed: true`
+   - API is called with `confirmed: true` in body
 
-3. **Backend reçoit la requête**
-   - Vérifie que `confirmed === true`
-   - Si non, retourne une erreur `CONFIRMATION_REQUIRED`
-   - Si oui, exécute `secureConvert()` avec `confirmed: true`
+3. **Backend receives request**
+   - Checks that `confirmed === true`
+   - If not, returns `CONFIRMATION_REQUIRED` error
+   - If yes, executes `secureConvert()` with `confirmed: true`
 
-4. **secure-converter valide**
-   - Vérifie que `options.confirmed === true`
-   - Si non, lance une `ConversionError` avec code `CONFIRMATION_REQUIRED`
-   - Si oui, procède à la conversion
+4. **secure-converter validates**
+   - Checks that `options.confirmed === true`
+   - If not, throws `ConversionError` with code `CONFIRMATION_REQUIRED`
+   - If yes, proceeds with conversion
 
-## Sécurité
+## Security
 
-Cette approche garantit que :
-- ✅ Aucune conversion ne peut être exécutée sans confirmation utilisateur
-- ✅ La confirmation est vérifiée à deux niveaux (frontend et backend)
-- ✅ Le backend refuse toute requête sans `confirmed: true`
-- ✅ Le secure-converter refuse toute conversion sans confirmation
+This approach ensures that:
+- ✅ No conversion can be executed without user confirmation
+- ✅ Confirmation is verified at two levels (frontend and backend)
+- ✅ Backend refuses any request without `confirmed: true`
+- ✅ Secure-converter refuses any conversion without confirmation
 
-## Test
+## Testing
 
-Pour tester :
+To test:
 
-1. Essayer de convertir sans confirmation → doit échouer
-2. Cliquer sur "Oui" dans la modal → conversion doit réussir
-3. Cliquer sur "Non" dans la modal → conversion ne doit pas être lancée
+1. Try to convert without confirmation → should fail
+2. Click "Yes" in modal → conversion should succeed
+3. Click "No" in modal → conversion should not be launched

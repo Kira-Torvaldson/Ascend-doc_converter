@@ -1,35 +1,35 @@
-# Module Pandoc
+# Pandoc Module
 
 ## Description
 
-Le module `pandoc` est un wrapper pour l'outil de conversion universel Pandoc qui convertit des documents entre de nombreux formats. Ce module implémente l'interface définie dans [modules.interface.md](../modules.interface.md) et respecte les obligations de sécurité minimales de la version 1.
+The `pandoc` module is a wrapper for the universal conversion tool Pandoc that converts documents between many formats. This module implements the interface defined in [modules.interface.md](../modules.interface.md) and respects the minimal security obligations of version 1.
 
-## Nom du module
+## Module Name
 
-**Identifiant :** `pandoc`  
-**Type :** Module de conversion multi-formats  
-**Outil sous-jacent :** Pandoc (binaire système externe)
+**Identifier:** `pandoc`  
+**Type:** Multi-format conversion module  
+**Underlying tool:** Pandoc (external system binary)
 
-## Formats supportés
+## Supported Formats
 
-**Formats d'entrée (`from`) :**
-- `markdown` : Format Markdown standard
-- `asciidoc` : Format AsciiDoc standard
-- `html` : Format HTML
-- `txt` : Texte brut (interprété comme Markdown par Pandoc)
-- `yaml` : Format YAML
-- `json` : Format JSON
+**Input formats (`from`):**
+- `markdown`: Standard Markdown format
+- `asciidoc`: Standard AsciiDoc format
+- `html`: HTML format
+- `txt`: Plain text (interpreted as Markdown by Pandoc)
+- `yaml`: YAML format
+- `json`: JSON format
 
-**Formats de sortie (`to`) :**
-- `markdown` : Format Markdown standard
-- `asciidoc` : Format AsciiDoc standard
-- `html` : Format HTML
-- `pdf` : Format PDF
-- `txt` : Texte brut (plain text)
-- `yaml` : Format YAML
-- `json` : Format JSON
+**Output formats (`to`):**
+- `markdown`: Standard Markdown format
+- `asciidoc`: Standard AsciiDoc format
+- `html`: HTML format
+- `pdf`: PDF format
+- `txt`: Plain text
+- `yaml`: YAML format
+- `json`: JSON format
 
-**Structure :**
+**Structure:**
 ```typescript
 supportedFormats: {
   from: ['markdown', 'asciidoc', 'html', 'txt', 'yaml', 'json'],
@@ -37,9 +37,9 @@ supportedFormats: {
 }
 ```
 
-**Note :** Les conversions autorisées sont définies par une whitelist stricte. Seules les combinaisons de formats listées dans la whitelist peuvent être exécutées.
+**Note:** Authorized conversions are defined by a strict whitelist. Only format combinations listed in the whitelist can be executed.
 
-## Méthode `run`
+## `run` Method
 
 ### Signature
 
@@ -47,220 +47,220 @@ supportedFormats: {
 run(inputPath: string, outputPath: string, options?: Object): Promise<ModuleResult>
 ```
 
-### Description du fonctionnement
+### Operation Description
 
-La méthode `run` effectue la conversion d'un fichier d'un format vers un autre selon le processus suivant :
+The `run` method performs the conversion of a file from one format to another according to the following process:
 
-#### 1. Validation des entrées
+#### 1. Input validation
 
-- Le module valide que le fichier d'entrée existe et est accessible
-- Le module vérifie la taille du fichier (selon les limites configurées)
-- Le module vérifie que le type de fichier correspond au format déclaré (validation basique par extension)
-- Le module valide que la combinaison de formats (from/to) est autorisée par la whitelist
-- Si les validations échouent, le module retourne immédiatement un `ModuleResult` avec `success: false`
+- The module validates that the input file exists and is accessible
+- The module checks file size (according to configured limits)
+- The module verifies that the file type corresponds to the declared format (basic validation by extension)
+- The module validates that the format combination (from/to) is authorized by the whitelist
+- If validations fail, the module immediately returns a `ModuleResult` with `success: false`
 
-#### 2. Vérification de l'existence du binaire Pandoc
+#### 2. Pandoc binary existence check
 
-- Le module vérifie que le binaire Pandoc est disponible au chemin configuré
-- Le chemin par défaut est `/usr/bin/pandoc` mais peut être surchargé via la variable d'environnement `PANDOC_PATH`
-- Si le binaire n'est pas trouvé, le module retourne un `ModuleResult` avec `success: false` et un message d'erreur approprié
+- The module verifies that the Pandoc binary is available at the configured path
+- The default path is `/usr/bin/pandoc` but can be overridden via the `PANDOC_PATH` environment variable
+- If the binary is not found, the module returns a `ModuleResult` with `success: false` and an appropriate error message
 
-#### 3. Construction sécurisée de la commande Pandoc
+#### 3. Secure Pandoc command construction
 
-- Le module construit les arguments de Pandoc à partir de la whitelist de conversions autorisées
-- Les arguments sont construits de manière sécurisée :
-  - Format source (`-f`) et format de destination (`-t`) proviennent de la whitelist
-  - Chemin de sortie (`-o`) : chemin absolu sécurisé fourni par le pipeline
-  - Chemin d'entrée : chemin absolu sécurisé fourni par le pipeline
-- Aucun argument utilisateur n'est utilisé directement dans la commande
+- The module constructs Pandoc arguments from the whitelist of authorized conversions
+- Arguments are constructed securely:
+  - Source format (`-f`) and destination format (`-t`) come from the whitelist
+  - Output path (`-o`): secure absolute path provided by the pipeline
+  - Input path: secure absolute path provided by the pipeline
+- No user argument is used directly in the command
 
-#### 4. Exécution sécurisée via child_process.spawn
+#### 4. Secure execution via child_process.spawn
 
-- Le module exécute Pandoc en utilisant `child_process.spawn` (jamais `exec` ou `execSync`)
-- Le processus est lancé avec :
-  - Répertoire de travail (`cwd`) : répertoire parent du fichier d'entrée (dossier temporaire isolé)
-  - `stdio` : `['ignore', 'pipe', 'pipe']` pour ignorer stdin et capturer stdout/stderr
-- Le module capture la sortie standard (stdout) et la sortie d'erreur (stderr) séparément
+- The module executes Pandoc using `child_process.spawn` (never `exec` or `execSync`)
+- The process is launched with:
+  - Working directory (`cwd`): parent directory of the input file (isolated temporary directory)
+  - `stdio`: `['ignore', 'pipe', 'pipe']` to ignore stdin and capture stdout/stderr
+- The module captures standard output (stdout) and error output (stderr) separately
 
-#### 5. Gestion du timeout
+#### 5. Timeout management
 
-- Le module applique un timeout configurable (défaut : 30 secondes)
-- Si le timeout est dépassé :
-  - Le processus est interrompu avec `SIGTERM`
-  - Si le processus ne se termine pas dans les 5 secondes, il est tué avec `SIGKILL`
-  - Le module retourne un `ModuleResult` avec `success: false` et un message d'erreur de timeout
+- The module applies a configurable timeout (default: 30 seconds)
+- If the timeout is exceeded:
+  - The process is interrupted with `SIGTERM`
+  - If the process does not terminate within 5 seconds, it is killed with `SIGKILL`
+  - The module returns a `ModuleResult` with `success: false` and a timeout error message
 
-#### 6. Gestion de la sortie
+#### 6. Output handling
 
-- Pandoc écrit directement dans le fichier de sortie (`outputPath`) via l'argument `-o`
-- Le module vérifie que le fichier de sortie a été créé et est valide
-- La sortie standard (stdout) est capturée pour les logs mais n'est généralement pas utilisée pour le contenu (Pandoc écrit dans le fichier)
-- La sortie d'erreur (stderr) est capturée pour les logs et le diagnostic
+- Pandoc writes directly to the output file (`outputPath`) via the `-o` argument
+- The module verifies that the output file was created and is valid
+- Standard output (stdout) is captured for logs but is generally not used for content (Pandoc writes to the file)
+- Error output (stderr) is captured for logs and diagnosis
 
-#### 7. Validation du résultat
+#### 7. Result validation
 
-- Le module vérifie que le fichier de sortie existe et n'est pas vide
-- Le module vérifie le code de sortie du processus Pandoc (0 = succès, autre = échec)
-- Si le code de sortie indique un échec, le module retourne un `ModuleResult` avec `success: false` et les messages d'erreur de stderr
+- The module verifies that the output file exists and is not empty
+- The module verifies the Pandoc process exit code (0 = success, other = failure)
+- If the exit code indicates failure, the module returns a `ModuleResult` with `success: false` and stderr error messages
 
-#### 8. Retour du résultat
+#### 8. Result return
 
-- Le module retourne un objet `ModuleResult` conforme au contrat défini dans [modules.interface.md](../modules.interface.md)
-- Le champ `success` doit être `true` si la conversion a réussi (code de sortie 0 et fichier de sortie valide), `false` sinon
-- Le champ `logs` doit contenir les logs d'exécution (début, arguments utilisés, sortie stderr de Pandoc, fin)
-- Le champ `error` doit être `null` en cas de succès, ou contenir un message d'erreur descriptif en cas d'échec
-- Le champ `duration` doit contenir la durée totale d'exécution en secondes (validation, exécution, vérification)
+- The module returns a `ModuleResult` object conforming to the contract defined in [modules.interface.md](../modules.interface.md)
+- The `success` field must be `true` if conversion succeeded (exit code 0 and valid output file), `false` otherwise
+- The `logs` field must contain execution logs (start, arguments used, Pandoc stderr output, end)
+- The `error` field must be `null` on success, or contain a descriptive error message on failure
+- The `duration` field must contain the total execution duration in seconds (validation, execution, verification)
 
-### Paramètres
+### Parameters
 
-- **`inputPath`** (requis) : Chemin absolu vers le fichier d'entrée à convertir
-- **`outputPath`** (requis) : Chemin absolu vers le fichier de sortie à créer
-- **`options`** (optionnel) : Objet contenant les options de conversion
-  - `fromFormat` : Format source (requis pour déterminer la conversion)
-  - `toFormat` : Format de destination (requis pour déterminer la conversion)
-  - `conversionId` : ID de conversion pour les logs (optionnel)
-  - `timeout` : Timeout en millisecondes (optionnel, défaut : 30000)
+- **`inputPath`** (required): Absolute path to input file to convert
+- **`outputPath`** (required): Absolute path to output file to create
+- **`options`** (optional): Object containing conversion options
+  - `fromFormat`: Source format (required to determine conversion)
+  - `toFormat`: Destination format (required to determine conversion)
+  - `conversionId`: Conversion ID for logs (optional)
+  - `timeout`: Timeout in milliseconds (optional, default: 30000)
 
-### Valeur de retour
+### Return Value
 
-La méthode retourne une `Promise` qui se résout avec un objet `ModuleResult` :
+The method returns a `Promise` that resolves with a `ModuleResult` object:
 
 ```typescript
 {
-  success: boolean,        // true si conversion réussie, false sinon
-  logs: string | string[], // Logs d'exécution (inclut stderr de Pandoc)
-  error: string | null,   // Message d'erreur ou null
-  duration: number        // Durée en secondes
+  success: boolean,        // true if conversion succeeded, false otherwise
+  logs: string | string[], // Execution logs (includes Pandoc stderr)
+  error: string | null,   // Error message or null
+  duration: number        // Duration in seconds
 }
 ```
 
-## Sécurité et isolation
+## Security and Isolation
 
-### Obligations de sécurité minimales (V1)
+### Minimal Security Obligations (V1)
 
-Le module respecte les obligations de sécurité minimales définies dans [modules.interface.md](../modules.interface.md) :
+The module respects the minimal security obligations defined in [modules.interface.md](../modules.interface.md):
 
-#### 1. Validation basique des entrées
+#### 1. Basic input validation
 
-- **Vérification de la taille** : Le module valide que le fichier d'entrée ne dépasse pas la limite maximale configurée
-- **Vérification du type** : Le module valide que le fichier correspond au format déclaré (par extension ou validation basique du contenu)
-- **Validation de la whitelist** : Le module valide que la combinaison de formats (from/to) est autorisée par la whitelist stricte
-- **Rejet immédiat** : Si les validations échouent, le module retourne immédiatement un `ModuleResult` avec `success: false` et un message d'erreur approprié
+- **Size check**: The module validates that the input file does not exceed the configured maximum limit
+- **Type check**: The module validates that the file corresponds to the declared format (by extension or basic content validation)
+- **Whitelist validation**: The module validates that the format combination (from/to) is authorized by the strict whitelist
+- **Immediate rejection**: If validations fail, the module immediately returns a `ModuleResult` with `success: false` and an appropriate error message
 
-**Références normatives :** ISO 27001 (A.9.4.2), ISO 27002 (A.9.4.2), NIST SP 800-53 (SI-7), OWASP Top 10 (A03:2021)
+**Normative references:** ISO 27001 (A.9.4.2), ISO 27002 (A.9.4.2), NIST SP 800-53 (SI-7), OWASP Top 10 (A03:2021)
 
-#### 2. Isolement léger
+#### 2. Light isolation
 
-- **Aucune interaction directe** : Le module n'interagit pas directement avec le reste du système en dehors des chemins `inputPath` et `outputPath` fournis par le pipeline
-- **Exécution dans un contexte isolé** : Le module s'exécute dans un dossier temporaire unique par conversion, fourni par le pipeline
-- **Répertoire de travail isolé** : Le processus Pandoc est lancé avec `cwd` pointant vers le répertoire parent du fichier d'entrée (dossier temporaire isolé)
-- **Pas d'accès réseau** : Le module ne doit pas accéder au réseau pendant l'exécution (garanti par l'environnement d'exécution)
+- **No direct interaction**: The module does not interact directly with the rest of the system outside the `inputPath` and `outputPath` paths provided by the pipeline
+- **Execution in isolated context**: The module executes in a unique temporary directory per conversion, provided by the pipeline
+- **Isolated working directory**: The Pandoc process is launched with `cwd` pointing to the parent directory of the input file (isolated temporary directory)
+- **No network access**: The module must not access the network during execution (guaranteed by the execution environment)
 
-**Références normatives :** ISO 27001 (A.9.1.2), ISO 27002 (A.9.1.2), NIST SP 800-53 (SC-7, SC-39), OWASP Top 10 (A01:2021)
+**Normative references:** ISO 27001 (A.9.1.2), ISO 27002 (A.9.1.2), NIST SP 800-53 (SC-7, SC-39), OWASP Top 10 (A01:2021)
 
-#### 3. Gestion sécurisée des erreurs
+#### 3. Secure error handling
 
-- **Capture exhaustive** : Toutes les exceptions et erreurs doivent être capturées et transformées en `ModuleResult` avec `success: false`
-- **Pas de crash global** : Aucune exception non gérée ne doit remonter au pipeline principal
-- **Messages d'erreur sécurisés** : Les messages d'erreur ne doivent pas exposer de détails système sensibles (chemins complets, variables d'environnement, stack traces complètes)
-- **Cohérence** : En cas d'erreur, le module ne doit pas créer de fichier de sortie, ou doit le supprimer s'il a été créé partiellement
-- **Gestion des timeouts** : Les processus qui dépassent le timeout sont interrompus proprement (SIGTERM puis SIGKILL si nécessaire)
+- **Exhaustive capture**: All exceptions and errors must be captured and transformed into a `ModuleResult` with `success: false`
+- **No global crash**: No unhandled exception must propagate to the main pipeline
+- **Secure error messages**: Error messages must not expose sensitive system details (full paths, environment variables, complete stack traces)
+- **Consistency**: In case of error, the module must not create an output file, or must delete it if partially created
+- **Timeout handling**: Processes that exceed the timeout are properly interrupted (SIGTERM then SIGKILL if necessary)
 
-**Références normatives :** ISO 27001 (A.12.6.1), ISO 27002 (A.12.6.1), NIST SP 800-53 (SI-11), OWASP Top 10 (A04:2021)
+**Normative references:** ISO 27001 (A.12.6.1), ISO 27002 (A.12.6.1), NIST SP 800-53 (SI-11), OWASP Top 10 (A04:2021)
 
-#### 4. Journalisation minimale
+#### 4. Minimal logging
 
-- **ID de conversion** : Le module doit inclure l'ID de conversion unique dans ses logs (fourni par le pipeline via les options)
-- **Horodatage** : Le module doit enregistrer l'horodatage de début et de fin d'exécution
-- **Logs d'exécution** : Le module doit produire des logs décrivant les étapes principales (validation, exécution, vérification)
-- **Capture stderr** : Les messages d'erreur de Pandoc (stderr) sont capturés et inclus dans les logs
-- **Statut final** : Le module doit inclure le statut final (succès/échec) et le code de sortie dans les logs retournés
+- **Conversion ID**: The module must include the unique conversion ID in its logs (provided by the pipeline via options)
+- **Timestamp**: The module must record the timestamp of execution start and end
+- **Execution logs**: The module must produce logs describing main steps (validation, execution, verification)
+- **Stderr capture**: Pandoc error messages (stderr) are captured and included in logs
+- **Final status**: The module must include the final status (success/failure) and exit code in returned logs
 
-**Références normatives :** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
+**Normative references:** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
 
-#### 5. Vérification légère de l'intégrité
+#### 5. Light integrity verification
 
-- **Vérification du binaire** : Le module vérifie que le binaire Pandoc existe au chemin configuré avant exécution
-- **Documentation des dépendances** : Le module doit documenter ses dépendances (Pandoc et sa version requise)
-- **Signalement des modifications** : Le module peut signaler toute modification détectée de l'intégrité du binaire (optionnel en V1)
+- **Binary verification**: The module verifies that the Pandoc binary exists at the configured path before execution
+- **Dependency documentation**: The module must document its dependencies (Pandoc and its required version)
+- **Modification reporting**: The module may report any detected modification of binary integrity (optional in V1)
 
-**Références normatives :** ISO 27001 (A.12.2.1), ISO 27002 (A.12.2.1), NIST SP 800-53 (SI-7, SA-12), OWASP Top 10 (A06:2021)
+**Normative references:** ISO 27001 (A.12.2.1), ISO 27002 (A.12.2.1), NIST SP 800-53 (SI-7, SA-12), OWASP Top 10 (A06:2021)
 
-### Contraintes d'exécution
+### Execution Constraints
 
-- **Isolation** : Le module ne doit pas modifier le fichier d'entrée, ne doit accéder qu'aux fichiers fournis, et ne doit pas créer de fichiers en dehors du répertoire autorisé
-- **Performance** : Le module doit respecter les timeouts imposés par le pipeline et libérer les ressources après exécution
-- **Sécurité** : 
-  - Le module doit utiliser `spawn` uniquement (jamais `exec` ou `execSync`)
-  - Les arguments de commande doivent provenir de la whitelist stricte
-  - Aucun argument utilisateur ne doit être utilisé directement dans la commande
-  - Les chemins de fichiers doivent être validés avant utilisation
+- **Isolation**: The module must not modify the input file, must only access provided files, and must not create files outside the authorized directory
+- **Performance**: The module must respect timeouts imposed by the pipeline and release resources after execution
+- **Security**: 
+  - The module must use `spawn` only (never `exec` or `execSync`)
+  - Command arguments must come from the strict whitelist
+  - No user argument must be used directly in the command
+  - File paths must be validated before use
 
-## Comportement attendu
+## Expected Behavior
 
-### En cas de succès
+### On Success
 
-1. Le fichier de sortie est créé à l'emplacement `outputPath` avec le contenu converti
-2. Le fichier de sortie est valide et conforme au format de destination
-3. Le code de sortie du processus Pandoc est 0
-4. Le module retourne un `ModuleResult` avec `success: true`, `error: null`, des logs détaillés et la durée d'exécution
+1. The output file is created at the `outputPath` location with the converted content
+2. The output file is valid and conforms to the destination format
+3. The Pandoc process exit code is 0
+4. The module returns a `ModuleResult` with `success: true`, `error: null`, detailed logs, and execution duration
 
-### En cas d'échec
+### On Failure
 
-1. Aucun fichier de sortie n'est créé (ou est supprimé s'il a été créé partiellement)
-2. Le module retourne un `ModuleResult` avec `success: false`, un message d'erreur descriptif dans `error`, les logs jusqu'au point d'échec (incluant stderr de Pandoc), et la durée jusqu'à l'échec
+1. No output file is created (or is deleted if partially created)
+2. The module returns a `ModuleResult` with `success: false`, a descriptive error message in `error`, logs up to the failure point (including Pandoc stderr), and duration until failure
 
-### Types d'erreurs possibles
+### Possible Error Types
 
-- **Erreur de validation** : Fichier trop volumineux, type de fichier invalide, combinaison de formats non autorisée
-- **Erreur de binaire** : Binaire Pandoc introuvable au chemin configuré
-- **Erreur d'exécution** : Échec lors du lancement du processus Pandoc
-- **Erreur de timeout** : Le processus Pandoc dépasse le timeout configuré
-- **Erreur de conversion** : Pandoc retourne un code de sortie non nul (contenu invalide, format non supporté, etc.)
-- **Erreur de fichier de sortie** : Le fichier de sortie n'est pas créé ou est invalide après exécution
+- **Validation error**: File too large, invalid file type, unauthorized format combination
+- **Binary error**: Pandoc binary not found at configured path
+- **Execution error**: Failure when launching the Pandoc process
+- **Timeout error**: The Pandoc process exceeds the configured timeout
+- **Conversion error**: Pandoc returns a non-zero exit code (invalid content, unsupported format, etc.)
+- **Output file error**: The output file is not created or is invalid after execution
 
 ## Notes
 
-### Outil Pandoc
+### Pandoc Tool
 
-Le module utilise l'outil de conversion universel Pandoc, qui est un binaire système externe. Cette caractéristique nécessite :
+The module uses the universal conversion tool Pandoc, which is an external system binary. This characteristic requires:
 
-- **Installation système** : Pandoc doit être installé sur le système et accessible via le chemin configuré
-- **Dépendance externe** : Le module dépend de la disponibilité et de la version de Pandoc installée
-- **Performance** : Pandoc est particulièrement performant pour les conversions complexes et les documents volumineux
-- **Support multi-formats** : Pandoc supporte un large éventail de formats de documents
+- **System installation**: Pandoc must be installed on the system and accessible via the configured path
+- **External dependency**: The module depends on the availability and version of installed Pandoc
+- **Performance**: Pandoc is particularly performant for complex conversions and large documents
+- **Multi-format support**: Pandoc supports a wide range of document formats
 
-### Whitelist de conversions
+### Conversion Whitelist
 
-Le module utilise une whitelist stricte pour définir les conversions autorisées. Cette approche garantit :
+The module uses a strict whitelist to define authorized conversions. This approach guarantees:
 
-- **Sécurité** : Seules les combinaisons de formats validées peuvent être exécutées
-- **Contrôle** : Le pipeline contrôle précisément quelles conversions sont permises
-- **Maintenabilité** : L'ajout de nouvelles conversions nécessite une modification explicite de la whitelist
+- **Security**: Only validated format combinations can be executed
+- **Control**: The pipeline precisely controls which conversions are permitted
+- **Maintainability**: Adding new conversions requires explicit modification of the whitelist
 
-### Exécution sécurisée
+### Secure Execution
 
-Le module utilise `child_process.spawn` pour exécuter Pandoc de manière sécurisée :
+The module uses `child_process.spawn` to execute Pandoc securely:
 
-- **Isolation** : Le processus est lancé dans un répertoire de travail isolé
-- **Capture des sorties** : stdout et stderr sont capturés séparément pour les logs
-- **Timeout** : Un timeout est appliqué pour éviter les conversions bloquantes
-- **Interruption propre** : Les processus qui dépassent le timeout sont interrompus proprement
+- **Isolation**: The process is launched in an isolated working directory
+- **Output capture**: stdout and stderr are captured separately for logs
+- **Timeout**: A timeout is applied to avoid blocking conversions
+- **Proper interruption**: Processes that exceed the timeout are properly interrupted
 
 ### Performance
 
-Pandoc étant un outil externe, la conversion implique :
+Since Pandoc is an external tool, conversion involves:
 
-- **Latence de démarrage** : Le lancement du processus Pandoc introduit une latence initiale
-- **Performance** : Pandoc est optimisé pour les conversions complexes et volumineuses
-- **Ressources système** : Pandoc utilise les ressources système (CPU, mémoire) pendant l'exécution
+- **Startup latency**: Launching the Pandoc process introduces initial latency
+- **Performance**: Pandoc is optimized for complex and large conversions
+- **System resources**: Pandoc uses system resources (CPU, memory) during execution
 
-## Conformité
+## Compliance
 
-Ce module respecte strictement l'interface définie dans [modules.interface.md](../modules.interface.md) et les obligations de sécurité minimales de la version 1. Toute modification du module doit maintenir cette conformité.
+This module strictly respects the interface defined in [modules.interface.md](../modules.interface.md) and the minimal security obligations of version 1. Any modification of the module must maintain this compliance.
 
-## Références
+## References
 
-- [modules.interface.md](../modules.interface.md) - Contrat d'interface des modules
-- [PIPELINE.md](../PIPELINE.md) - Spécification du pipeline de conversion
-- [Pandoc Documentation](https://pandoc.org/) - Documentation officielle de Pandoc
+- [modules.interface.md](../modules.interface.md) - Module interface contract
+- [PIPELINE.md](../PIPELINE.md) - Conversion pipeline specification
+- [Pandoc Documentation](https://pandoc.org/) - Official Pandoc documentation
