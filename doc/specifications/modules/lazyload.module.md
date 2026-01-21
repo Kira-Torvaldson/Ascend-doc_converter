@@ -1,274 +1,274 @@
-# Module LazyLoader
+# LazyLoader Module
 
 ## Description
 
-Le module LazyLoader est un gestionnaire centralisé de chargement différé (lazy loading) pour tous les converters du pipeline de conversion documentaire. Ce module réduit la consommation mémoire au démarrage en chargeant chaque converter uniquement au moment de sa première utilisation, tout en maintenant une interface uniforme et les obligations de sécurité minimales.
+The LazyLoader module is a centralized deferred loading (lazy loading) manager for all converters in the document conversion pipeline. This module reduces memory consumption at startup by loading each converter only at the time of its first use, while maintaining a uniform interface and minimal security obligations.
 
-### Rôle du module
+### Module Role
 
-Le module LazyLoader agit comme un intermédiaire entre le pipeline de conversion et les modules de conversion individuels. Il gère le chargement dynamique, la mise en cache, la validation et l'exécution isolée de chaque converter, garantissant une utilisation efficace des ressources système.
+The LazyLoader module acts as an intermediary between the conversion pipeline and individual conversion modules. It manages dynamic loading, caching, validation, and isolated execution of each converter, guaranteeing efficient use of system resources.
 
-### Principe du lazy loading
+### Lazy Loading Principle
 
-Le lazy loading consiste à différer le chargement d'un module jusqu'à ce qu'il soit réellement nécessaire. Au lieu de charger tous les converters au démarrage du pipeline, le module LazyLoader charge chaque converter uniquement lors de sa première utilisation, puis le met en cache pour les utilisations ultérieures.
+Lazy loading consists of deferring the loading of a module until it is actually needed. Instead of loading all converters at pipeline startup, the LazyLoader module loads each converter only during its first use, then caches it for subsequent uses.
 
-### Bénéfices pour la mémoire et les performances
+### Memory and Performance Benefits
 
-- **Réduction de la consommation mémoire** : Les modules non utilisés ne consomment aucune mémoire. Seuls les converters effectivement utilisés sont chargés en mémoire.
-- **Démarrage plus rapide** : Le pipeline démarre sans attendre le chargement de tous les converters, réduisant le temps d'initialisation.
-- **Optimisation des ressources** : Les ressources système (CPU, mémoire) sont allouées uniquement pour les converters nécessaires à une conversion donnée.
-- **Scalabilité** : L'ajout de nouveaux converters n'augmente pas la consommation mémoire au démarrage, permettant une extension du pipeline sans impact sur les performances initiales.
+- **Reduced memory consumption**: Unused modules consume no memory. Only actually used converters are loaded into memory.
+- **Faster startup**: The pipeline starts without waiting for all converters to load, reducing initialization time.
+- **Resource optimization**: System resources (CPU, memory) are allocated only for converters necessary for a given conversion.
+- **Scalability**: Adding new converters does not increase memory consumption at startup, allowing pipeline extension without impact on initial performance.
 
-## Interface exposée
+## Exposed Interface
 
-### Méthode `run`
+### `run` Method
 
-**Signature :**
+**Signature:**
 ```typescript
 run(moduleName: string, inputPath: string, outputPath: string, options?: Object): Promise<ModuleResult>
 ```
 
-**Description :**
-Exécute un converter avec lazy loading automatique. Le module est chargé à la première utilisation, puis mis en cache pour les utilisations ultérieures.
+**Description:**
+Executes a converter with automatic lazy loading. The module is loaded on first use, then cached for subsequent uses.
 
-**Paramètres :**
-- **`moduleName`** (requis) : Nom du module converter à utiliser (ex: `'downdoc'`, `'pandoc'`, `'text2markdown'`)
-- **`inputPath`** (requis) : Chemin absolu vers le fichier d'entrée à convertir
-- **`outputPath`** (requis) : Chemin absolu vers le fichier de sortie à créer
-- **`options`** (optionnel) : Options de conversion spécifiques au module
-  - `conversionId` : Identifiant unique de conversion pour la journalisation
-  - Autres options définies par chaque module individuel
+**Parameters:**
+- **`moduleName`** (required): Name of the converter module to use (e.g., `'downdoc'`, `'pandoc'`, `'text2markdown'`)
+- **`inputPath`** (required): Absolute path to input file to convert
+- **`outputPath`** (required): Absolute path to output file to create
+- **`options`** (optional): Module-specific conversion options
+  - `conversionId`: Unique conversion identifier for logging
+  - Other options defined by each individual module
 
-**Valeur de retour :**
-Retourne une `Promise` qui se résout avec un objet `ModuleResult` conforme au contrat défini dans [modules.interface.md](../modules.interface.md) :
+**Return Value:**
+Returns a `Promise` that resolves with a `ModuleResult` object conforming to the contract defined in [modules.interface.md](../modules.interface.md):
 
 ```typescript
 {
-  success: boolean,        // Statut de la conversion (true si succès, false si échec)
-  logs: string | string[], // Logs d'exécution (inclut les logs de chargement du module)
-  error: string | null,     // Message d'erreur (null si succès)
-  duration: number         // Durée totale en secondes (inclut le temps de chargement si applicable)
+  success: boolean,        // Conversion status (true if success, false if failure)
+  logs: string | string[], // Execution logs (includes module loading logs)
+  error: string | null,     // Error message (null if success)
+  duration: number         // Total duration in seconds (includes loading time if applicable)
 }
 ```
 
-**Comportement :**
-1. Vérifie si le module est déjà chargé et en cache
-2. Charge le module de manière différée si nécessaire
-3. Valide que le module respecte l'interface définie dans [modules.interface.md](../modules.interface.md)
-4. Exécute la méthode `run` du module avec les paramètres fournis
-5. Fusionne les logs de chargement avec les logs retournés par le module
-6. Retourne le résultat uniforme conforme au contrat
+**Behavior:**
+1. Checks if the module is already loaded and cached
+2. Loads the module on demand if necessary
+3. Validates that the module respects the interface defined in [modules.interface.md](../modules.interface.md)
+4. Executes the module's `run` method with provided parameters
+5. Merges loading logs with logs returned by the module
+6. Returns the uniform result conforming to the contract
 
-### Compatibilité avec les wrappers existants
+### Compatibility with Existing Wrappers
 
-Le module LazyLoader est entièrement compatible avec tous les wrappers existants qui respectent l'interface définie dans [modules.interface.md](../modules.interface.md). Aucune modification n'est nécessaire aux wrappers existants. Le module LazyLoader agit comme une couche d'abstraction transparente qui :
+The LazyLoader module is fully compatible with all existing wrappers that respect the interface defined in [modules.interface.md](../modules.interface.md). No modification is necessary to existing wrappers. The LazyLoader module acts as a transparent abstraction layer that:
 
-- Maintient l'interface standard `run(inputPath, outputPath, options)`
-- Retourne le format de résultat standard `{ success, logs, error, duration }`
-- Préserve toutes les fonctionnalités et options des modules individuels
-- Assure la compatibilité ascendante avec le code existant
+- Maintains the standard `run(inputPath, outputPath, options)` interface
+- Returns the standard result format `{ success, logs, error, duration }`
+- Preserves all functionalities and options of individual modules
+- Ensures backward compatibility with existing code
 
-## Fonctionnement interne
+## Internal Functioning
 
-### Chargement dynamique des converters
+### Dynamic Loading of Converters
 
-Le module LazyLoader charge chaque converter uniquement à la première utilisation. Le processus de chargement suit les étapes suivantes :
+The LazyLoader module loads each converter only on first use. The loading process follows these steps:
 
-1. **Vérification du cache** : Le module vérifie si le converter demandé est déjà chargé et disponible en cache
-2. **Vérification de l'enregistrement** : Le module vérifie que le converter est enregistré dans le registre des modules disponibles
-3. **Chargement du module** : Le module utilise le mécanisme de chargement de Node.js (`require()`) pour charger le fichier du converter
-4. **Validation de l'interface** : Le module valide que le converter chargé respecte l'interface définie dans [modules.interface.md](../modules.interface.md)
-5. **Mise en cache** : Le module chargé est mis en cache pour éviter les rechargements lors des utilisations ultérieures
+1. **Cache verification**: The module checks if the requested converter is already loaded and available in cache
+2. **Registration verification**: The module verifies that the converter is registered in the registry of available modules
+3. **Module loading**: The module uses Node.js loading mechanism (`require()`) to load the converter file
+4. **Interface validation**: The module validates that the loaded converter respects the interface defined in [modules.interface.md](../modules.interface.md)
+5. **Caching**: The loaded module is cached to avoid reloads during subsequent uses
 
-### Cache des instances
+### Instance Cache
 
-Le module LazyLoader maintient un cache des instances de converters chargés. Ce cache permet :
+The LazyLoader module maintains a cache of loaded converter instances. This cache allows:
 
-- **Éviter les rechargements répétés** : Une fois chargé, un converter reste en mémoire pour les conversions suivantes
-- **Optimiser les performances** : Le temps de chargement n'est payé qu'une seule fois par converter
-- **Réduire la consommation mémoire** : Les converters non utilisés ne sont jamais chargés, même s'ils sont enregistrés
+- **Avoid repeated reloads**: Once loaded, a converter remains in memory for subsequent conversions
+- **Optimize performance**: Loading time is paid only once per converter
+- **Reduce memory consumption**: Unused converters are never loaded, even if registered
 
-Le cache est maintenu en mémoire pour la durée de vie du processus. Les modules chargés restent disponibles jusqu'à la fin de l'exécution du pipeline.
+The cache is maintained in memory for the process lifetime. Loaded modules remain available until the end of pipeline execution.
 
-### Exécution isolée dans un dossier temporaire dédié
+### Isolated Execution in Dedicated Temporary Directory
 
-Chaque conversion s'exécute dans un contexte isolé. Le module LazyLoader garantit que :
+Each conversion executes in an isolated context. The LazyLoader module guarantees that:
 
-- **Isolation par conversion** : Chaque conversion utilise un dossier temporaire unique fourni par le pipeline
-- **Pas d'interférence** : Les conversions simultanées ne peuvent pas interférer entre elles
-- **Nettoyage automatique** : Les ressources temporaires sont nettoyées après chaque conversion
+- **Isolation per conversion**: Each conversion uses a unique temporary directory provided by the pipeline
+- **No interference**: Simultaneous conversions cannot interfere with each other
+- **Automatic cleanup**: Temporary resources are cleaned up after each conversion
 
-L'isolation est assurée par le pipeline principal, qui fournit les chemins `inputPath` et `outputPath` situés dans des dossiers temporaires dédiés.
+Isolation is ensured by the main pipeline, which provides `inputPath` and `outputPath` paths located in dedicated temporary directories.
 
-### Validation minimale des chemins et fichiers
+### Minimal Path and File Validation
 
-Avant d'exécuter une conversion, le module LazyLoader effectue une validation minimale :
+Before executing a conversion, the LazyLoader module performs minimal validation:
 
-- **Validation des chemins** : Vérification que les chemins `inputPath` et `outputPath` sont des chemins absolus valides
-- **Validation de l'existence** : Vérification que le fichier d'entrée existe et est accessible
-- **Validation de l'enregistrement** : Vérification que le module converter demandé est enregistré et disponible
+- **Path validation**: Verification that `inputPath` and `outputPath` are valid absolute paths
+- **Existence validation**: Verification that the input file exists and is accessible
+- **Registration validation**: Verification that the requested converter module is registered and available
 
-Ces validations minimales sont complétées par les validations plus strictes effectuées par chaque module converter individuel selon l'interface définie dans [modules.interface.md](../modules.interface.md).
+These minimal validations are complemented by stricter validations performed by each individual converter module according to the interface defined in [modules.interface.md](../modules.interface.md).
 
-## Sécurité
+## Security
 
-### Aucun accès au système en dehors des chemins fournis
+### No System Access Outside Provided Paths
 
-Le module LazyLoader garantit l'isolation stricte en s'assurant que :
+The LazyLoader module guarantees strict isolation by ensuring that:
 
-- **Accès limité aux chemins fournis** : Seuls les fichiers `inputPath` et `outputPath` fournis par le pipeline sont accessibles
-- **Pas d'accès réseau** : Le module ne tente aucune connexion réseau pendant le chargement ou l'exécution
-- **Pas de modification du système** : Le module ne modifie aucun fichier en dehors du contexte de conversion
-- **Isolation des modules** : Chaque module converter chargé s'exécute dans son propre contexte, sans accès aux autres modules ou au système
+- **Limited access to provided paths**: Only `inputPath` and `outputPath` files provided by the pipeline are accessible
+- **No network access**: The module attempts no network connection during loading or execution
+- **No system modification**: The module modifies no files outside the conversion context
+- **Module isolation**: Each loaded converter module executes in its own context, without access to other modules or the system
 
-### Gestion des exceptions pour éviter tout crash global
+### Exception Handling to Avoid Global Crash
 
-Le module LazyLoader implémente une gestion exhaustive des exceptions :
+The LazyLoader module implements exhaustive exception handling:
 
-- **Capture de toutes les erreurs** : Toutes les exceptions sont capturées et transformées en `ModuleResult` avec `success: false`
-- **Pas de propagation d'exceptions** : Aucune exception non gérée ne remonte au pipeline principal
-- **Messages d'erreur sécurisés** : Les messages d'erreur ne contiennent pas de détails système sensibles (chemins complets, variables d'environnement, stack traces complètes)
-- **Cache des erreurs** : Les erreurs de chargement sont mises en cache pour éviter les tentatives répétées sur des modules défaillants
+- **Capture of all errors**: All exceptions are captured and transformed into a `ModuleResult` with `success: false`
+- **No exception propagation**: No unhandled exception propagates to the main pipeline
+- **Secure error messages**: Error messages do not contain sensitive system details (full paths, environment variables, complete stack traces)
+- **Error caching**: Loading errors are cached to avoid repeated attempts on failing modules
 
-Cette gestion garantit que le pipeline reste stable même en cas d'erreur de chargement ou d'exécution d'un converter.
+This handling guarantees that the pipeline remains stable even in case of loading or execution error of a converter.
 
-### Journalisation minimale
+### Minimal Logging
 
-Le module LazyLoader produit une journalisation minimale conforme aux obligations de sécurité minimales V1 :
+The LazyLoader module produces minimal logging conforming to minimal V1 security obligations:
 
-- **Module chargé** : Les logs indiquent quel module a été chargé et à quel moment
-- **Horodatage** : Chaque opération est horodatée pour la traçabilité
-- **Succès/échec** : Le statut de chaque opération (chargement, validation, exécution) est enregistré
-- **Durée** : La durée de chargement et d'exécution est enregistrée pour l'analyse de performance
+- **Loaded module**: Logs indicate which module was loaded and when
+- **Timestamp**: Each operation is timestamped for traceability
+- **Success/failure**: The status of each operation (loading, validation, execution) is recorded
+- **Duration**: Loading and execution duration is recorded for performance analysis
 
-Les logs sont fusionnés avec les logs retournés par chaque module converter pour fournir une traçabilité complète de la conversion.
+Logs are merged with logs returned by each converter module to provide complete conversion traceability.
 
-### Préparation pour futures mesures de sécurité plus strictes
+### Preparation for Future Stricter Security Measures
 
-Le module LazyLoader est conçu pour évoluer vers des mesures de sécurité plus strictes conformes aux normes internationales :
+The LazyLoader module is designed to evolve toward stricter security measures conforming to international standards:
 
-- **Architecture extensible** : La structure du module permet l'ajout de validations supplémentaires sans modification de l'interface
-- **Points d'extension** : Des points d'extension sont prévus pour l'intégration de vérifications d'intégrité, de signatures numériques, et de contrôles d'accès renforcés
-- **Journalisation structurée** : La journalisation actuelle peut être étendue pour inclure des formats structurés (JSON, formats standardisés) et une intégrité des logs
+- **Extensible architecture**: The module structure allows adding additional validations without modifying the interface
+- **Extension points**: Extension points are provided for integrating integrity checks, digital signatures, and enhanced access controls
+- **Structured logging**: Current logging can be extended to include structured formats (JSON, standardized formats) and log integrity
 
-**Références normatives pour évolution future :**
-- **ISO 27001** (A.12.4.1) : Enregistrement des événements
-- **ISO 27002** (A.12.4.1) : Journalisation des événements
-- **NIST SP 800-53** (AU-2, AU-3) : Audit des événements et contenu des enregistrements
-- **GDPR/RGPD** (Art. 30, 32) : Registre des activités de traitement et sécurité du traitement
+**Normative references for future evolution:**
+- **ISO 27001** (A.12.4.1): Event logging
+- **ISO 27002** (A.12.4.1): Event logging
+- **NIST SP 800-53** (AU-2, AU-3): Audit events and record content
+- **GDPR/RGPD** (Art. 30, 32): Record of processing activities and security of processing
 
-## Performance et limites
+## Performance and Limits
 
-### Liste des converters supportés
+### List of Supported Converters
 
-Le module LazyLoader supporte tous les converters qui respectent l'interface définie dans [modules.interface.md](../modules.interface.md). Les converters actuellement enregistrés incluent :
+The LazyLoader module supports all converters that respect the interface defined in [modules.interface.md](../modules.interface.md). Currently registered converters include:
 
-- **downdoc** : Conversion AsciiDoc vers Markdown
-- **pandoc** : Conversion multi-formats (à venir)
-- **text2markdown** : Conversion texte vers Markdown (à venir)
-- **docverter** : Conversion via service Docverter (à venir)
-- **panwriter** : Conversion via Panwriter (à venir)
+- **downdoc**: AsciiDoc to Markdown conversion
+- **pandoc**: Multi-format conversion (coming soon)
+- **text2markdown**: Text to Markdown conversion (coming soon)
+- **docverter**: Conversion via Docverter service (coming soon)
+- **panwriter**: Conversion via Panwriter (coming soon)
 
-Les nouveaux converters peuvent être ajoutés dynamiquement via l'enregistrement dans le registre des modules.
+New converters can be added dynamically via registration in the module registry.
 
-### Impact mémoire réduit par rapport au chargement global
+### Reduced Memory Impact Compared to Global Loading
 
-Le chargement différé réduit significativement la consommation mémoire :
+Deferred loading significantly reduces memory consumption:
 
-- **Au démarrage** : Seule la structure du module LazyLoader est chargée en mémoire (quelques kilooctets)
-- **Lors de l'utilisation** : Seuls les converters effectivement utilisés sont chargés (typiquement quelques mégaoctets par converter)
-- **Comparaison** : Un chargement global de tous les converters pourrait consommer plusieurs dizaines de mégaoctets au démarrage, même si aucun converter n'est utilisé
+- **At startup**: Only the LazyLoader module structure is loaded into memory (a few kilobytes)
+- **During use**: Only actually used converters are loaded (typically a few megabytes per converter)
+- **Comparison**: Global loading of all converters could consume several tens of megabytes at startup, even if no converter is used
 
-L'impact mémoire exact dépend des converters individuels et de leurs dépendances, mais le lazy loading garantit qu'aucune mémoire n'est allouée pour les converters non utilisés.
+The exact memory impact depends on individual converters and their dependencies, but lazy loading guarantees that no memory is allocated for unused converters.
 
-### Note sur la latence initiale lors du premier chargement
+### Note on Initial Latency During First Load
 
-Le premier chargement d'un converter introduit une latence supplémentaire :
+The first load of a converter introduces additional latency:
 
-- **Temps de chargement** : Le chargement initial d'un converter peut prendre de quelques millisecondes à quelques centaines de millisecondes, selon la taille du module et ses dépendances
-- **Impact sur la première conversion** : La première conversion utilisant un converter donné sera légèrement plus lente que les conversions suivantes
-- **Cache pour les conversions suivantes** : Une fois chargé, le converter est mis en cache et les conversions suivantes n'ont pas cette latence initiale
+- **Loading time**: Initial loading of a converter can take from a few milliseconds to a few hundred milliseconds, depending on module size and its dependencies
+- **Impact on first conversion**: The first conversion using a given converter will be slightly slower than subsequent conversions
+- **Cache for subsequent conversions**: Once loaded, the converter is cached and subsequent conversions do not have this initial latency
 
-Cette latence est généralement négligeable par rapport au temps de conversion lui-même, et le bénéfice en mémoire justifie cette légère pénalité sur la première utilisation.
+This latency is generally negligible compared to conversion time itself, and the memory benefit justifies this slight penalty on first use.
 
-## Notes pour développeurs
+## Developer Notes
 
-### Comment ajouter un nouveau converter au lazy loader
+### How to Add a New Converter to the Lazy Loader
 
-Pour ajouter un nouveau converter au système de lazy loading :
+To add a new converter to the lazy loading system:
 
-1. **Créer le module converter** : Créer un nouveau module conforme à l'interface définie dans [modules.interface.md](../modules.interface.md)
-2. **Enregistrer le module** : Ajouter une entrée dans le registre `AVAILABLE_MODULES` du fichier `lazyload.module.js` :
+1. **Create the converter module**: Create a new module conforming to the interface defined in [modules.interface.md](../modules.interface.md)
+2. **Register the module**: Add an entry in the `AVAILABLE_MODULES` registry of the `lazyload.module.js` file:
    ```javascript
-   'nouveau-converter': {
-     path: path.join(MODULES_DIR, 'nouveau-converter.module.js'),
-     name: 'nouveau-converter'
+   'new-converter': {
+     path: path.join(MODULES_DIR, 'new-converter.module.js'),
+     name: 'new-converter'
    }
    ```
-3. **Utiliser le converter** : Le converter est automatiquement disponible via la méthode `run()` du module LazyLoader
+3. **Use the converter**: The converter is automatically available via the LazyLoader module's `run()` method
 
-Le module LazyLoader chargera automatiquement le nouveau converter à sa première utilisation, sans modification supplémentaire nécessaire.
+The LazyLoader module will automatically load the new converter on its first use, without additional modification necessary.
 
-### Extension de la journalisation ou sécurité future
+### Extension of Logging or Future Security
 
-Le module LazyLoader est conçu pour être extensible :
+The LazyLoader module is designed to be extensible:
 
-- **Journalisation structurée** : La journalisation actuelle peut être étendue pour inclure des formats structurés (JSON, formats standardisés) et une intégrité des logs
-- **Vérification d'intégrité** : Des points d'extension sont prévus pour l'intégration de vérifications d'intégrité (hash, signatures numériques) des modules chargés
-- **Contrôles d'accès renforcés** : La structure permet l'ajout de contrôles d'accès basés sur des politiques de sécurité
-- **Audit et conformité** : La journalisation peut être étendue pour inclure des informations d'audit conformes aux normes ISO 27001/27002, NIST SP 800-53, et GDPR/RGPD
+- **Structured logging**: Current logging can be extended to include structured formats (JSON, standardized formats) and log integrity
+- **Integrity verification**: Extension points are provided for integrating integrity checks (hash, digital signatures) of loaded modules
+- **Enhanced access controls**: The structure allows adding access controls based on security policies
+- **Audit and compliance**: Logging can be extended to include audit information conforming to ISO 27001/27002, NIST SP 800-53, and GDPR/RGPD standards
 
-Les extensions futures doivent maintenir la compatibilité avec l'interface existante et les obligations de sécurité minimales V1.
+Future extensions must maintain compatibility with the existing interface and minimal V1 security obligations.
 
-### Références aux normes et bonnes pratiques
+### References to Standards and Best Practices
 
-Le module LazyLoader est conçu en tenant compte des normes et bonnes pratiques suivantes :
+The LazyLoader module is designed taking into account the following standards and best practices:
 
-- **ISO 27001** : Systèmes de management de la sécurité de l'information
-  - A.9.1.2 : Restrictions d'accès aux réseaux et services réseau
-  - A.9.4.2 : Contrôle d'accès aux systèmes et applications
-  - A.12.4.1 : Enregistrement des événements
-  - A.12.6.1 : Gestion des vulnérabilités techniques
+- **ISO 27001**: Information security management systems
+  - A.9.1.2: Restrictions on access to networks and network services
+  - A.9.4.2: Access control to systems and applications
+  - A.12.4.1: Event logging
+  - A.12.6.1: Management of technical vulnerabilities
 
-- **ISO 27002** : Mesures de sécurité - Lignes directrices pour les contrôles
-  - A.9.1.2 : Séparation des réseaux
-  - A.9.4.2 : Politiques et procédures de contrôle d'accès
-  - A.12.4.1 : Journalisation des événements
-  - A.12.6.1 : Gestion des vulnérabilités
+- **ISO 27002**: Security controls - Guidelines for controls
+  - A.9.1.2: Network separation
+  - A.9.4.2: Access control policies and procedures
+  - A.12.4.1: Event logging
+  - A.12.6.1: Vulnerability management
 
-- **NIST SP 800-53** : Security and Privacy Controls for Information Systems and Organizations
-  - SC-7 : Protection des limites du système
-  - SC-39 : Isolation des processus
-  - SI-7 : Intégrité des logiciels, des microprogrammes et des informations
-  - SI-11 : Gestion des erreurs
-  - AU-2 : Audit des événements
-  - AU-3 : Contenu des enregistrements d'audit
+- **NIST SP 800-53**: Security and Privacy Controls for Information Systems and Organizations
+  - SC-7: System boundary protection
+  - SC-39: Process isolation
+  - SI-7: Software, firmware, and information integrity
+  - SI-11: Error handling
+  - AU-2: Audit events
+  - AU-3: Content of audit records
 
-- **OWASP Top 10** : Top 10 des risques de sécurité des applications web
-  - A01:2021 - Broken Access Control : Contrôle d'accès approprié
-  - A03:2021 - Injection : Validation et assainissement des entrées
-  - A04:2021 - Insecure Design : Gestion robuste des erreurs
-  - A06:2021 - Vulnerable Components : Gestion des dépendances
+- **OWASP Top 10**: Top 10 Web Application Security Risks
+  - A01:2021 - Broken Access Control: Appropriate access control
+  - A03:2021 - Injection: Input validation and sanitization
+  - A04:2021 - Insecure Design: Robust error handling
+  - A06:2021 - Vulnerable Components: Dependency management
 
-- **GDPR/RGPD** : Règlement général sur la protection des données (UE 2016/679)
-  - Art. 30 : Registre des activités de traitement
-  - Art. 32 : Sécurité du traitement
+- **GDPR/RGPD**: General Data Protection Regulation (EU 2016/679)
+  - Art. 30: Record of processing activities
+  - Art. 32: Security of processing
 
-Ces références servent de guide pour l'évolution future du module vers des mesures de sécurité renforcées, tout en maintenant les obligations minimales V1 compatibles avec le développement en cours.
+These references serve as a guide for future evolution of the module toward enhanced security measures, while maintaining minimal V1 obligations compatible with ongoing development.
 
-## Conformité
+## Compliance
 
-Le module LazyLoader respecte strictement :
+The LazyLoader module strictly respects:
 
-- L'interface définie dans [modules.interface.md](../modules.interface.md)
-- Les obligations de sécurité minimales V1
-- Le contrat de retour uniforme `{ success, logs, error, duration }`
-- La compatibilité avec tous les wrappers existants
+- The interface defined in [modules.interface.md](../modules.interface.md)
+- Minimal V1 security obligations
+- The uniform return contract `{ success, logs, error, duration }`
+- Compatibility with all existing wrappers
 
-Toute modification du module doit maintenir cette conformité et préserver la compatibilité ascendante avec le code existant.
+Any modification of the module must maintain this compliance and preserve backward compatibility with existing code.
 
-## Références
+## References
 
-- [modules.interface.md](../modules.interface.md) - Contrat d'interface des modules
-- [downdoc.module.md](./downdoc.module.md) - Exemple de module utilisant le lazy loading
-- [PIPELINE.md](../PIPELINE.md) - Spécification du pipeline de conversion
+- [modules.interface.md](../modules.interface.md) - Module interface contract
+- [downdoc.module.md](./downdoc.module.md) - Example of module using lazy loading
+- [PIPELINE.md](../PIPELINE.md) - Conversion pipeline specification

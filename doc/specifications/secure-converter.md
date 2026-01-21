@@ -1,52 +1,52 @@
-# Moteur de Conversion Sécurisé
+# Secure Conversion Engine
 
-## Vue d'ensemble
+## Overview
 
-Le module `secure-converter.js` implémente une couche de sécurité complète pour les conversions de fichiers utilisant des outils externes comme Pandoc. Il garantit l'isolation, la validation et l'exécution sécurisée des conversions.
+The `secure-converter.js` module implements a complete security layer for file conversions using external tools like Pandoc. It ensures isolation, validation, and secure execution of conversions.
 
-## Caractéristiques de sécurité
+## Security Features
 
-### 1. Isolation stricte par conversion
+### 1. Strict Isolation Per Conversion
 
-- Chaque conversion crée un dossier temporaire unique (UUID)
-- Aucun fichier n'est partagé entre deux conversions
-- Nettoyage garanti même en cas d'erreur (try/finally)
-- Dossier racine configurable : `/tmp/ascend-conversions/`
+- Each conversion creates a unique temporary directory (UUID)
+- No files are shared between two conversions
+- Guaranteed cleanup even in case of error (try/finally)
+- Configurable root directory: `/tmp/ascend-conversions/`
 
-### 2. Exécution sécurisée des commandes
+### 2. Secure Command Execution
 
-- Utilise uniquement `child_process.spawn` (jamais `exec` ou `execSync`)
-- Chemin absolu vers le binaire Pandoc
-- Arguments construits depuis une whitelist stricte
-- Aucun argument utilisateur utilisé directement
-- Toute conversion non listée dans la whitelist est refusée
+- Uses only `child_process.spawn` (never `exec` or `execSync`)
+- Absolute path to Pandoc binary
+- Arguments constructed from strict whitelist
+- No user arguments used directly
+- Any conversion not listed in the whitelist is refused
 
-### 3. Timeout et arrêt forcé
+### 3. Timeout and Forced Termination
 
-- Timeout configurable (défaut: 30 secondes)
-- Arrêt automatique si timeout dépassé
-- SIGTERM puis SIGKILL si nécessaire
-- Garantit qu'aucun processus ne reste actif
+- Configurable timeout (default: 30 seconds)
+- Automatic termination if timeout exceeded
+- SIGTERM then SIGKILL if necessary
+- Ensures no process remains active
 
-### 4. Validation des fichiers
+### 4. File Validation
 
-- Vérification de la taille maximale (50 Mo par défaut)
-- Détection des fichiers binaires déguisés
-- Validation des formats source et destination
-- Refus des fichiers vides ou invalides
+- Maximum size check (50 MB by default)
+- Detection of disguised binary files
+- Source and destination format validation
+- Rejection of empty or invalid files
 
-### 5. Gestion d'erreurs normalisée
+### 5. Normalized Error Handling
 
-- Erreurs typées avec codes normalisés
-- Aucun détail système exposé à l'utilisateur
-- Journalisation sécurisée (sans données utilisateur)
-- ID unique par conversion pour le suivi
+- Typed errors with standardized codes
+- No system details exposed to user
+- Secure logging (without user data)
+- Unique ID per conversion for tracking
 
-## Utilisation
+## Usage
 
-### Exemple basique
+### Basic Example
 
-**IMPORTANT** : Le paramètre `confirmed: true` est **OBLIGATOIRE** pour toutes les conversions. Cela garantit qu'une fenêtre de confirmation a été validée côté frontend avant l'exécution.
+**IMPORTANT**: The `confirmed: true` parameter is **MANDATORY** for all conversions. This ensures that a confirmation window has been validated on the frontend before execution.
 
 ```javascript
 const { secureConvert } = require('./secure-converter.js')
@@ -69,7 +69,7 @@ try {
 }
 ```
 
-### Confirmation validation
+### Confirmation Validation
 
 The secure-converter checks that `options.confirmed === true` before executing any conversion. If confirmation is not present or is `false`, a `CONFIRMATION_REQUIRED` error is thrown.
 
@@ -82,116 +82,116 @@ await secureConvert(content, 'markdown', 'asciidoc', {})
 await secureConvert(content, 'markdown', 'asciidoc', { confirmed: true })
 ```
 
-### Express integration
+### Express Integration
 
 See `secure-converter-integration-example.js` for a complete integration example in an Express API.
 
 ## Configuration
 
-### Variables d'environnement
+### Environment Variables
 
-- `PANDOC_PATH` : Chemin absolu vers le binaire Pandoc (défaut: `/usr/bin/pandoc`)
+- `PANDOC_PATH`: Absolute path to Pandoc binary (default: `/usr/bin/pandoc`)
 
-### Configuration dans le code
+### Code Configuration
 
-Modifier `SECURITY_CONFIG` dans `secure-converter.js` :
+Modify `SECURITY_CONFIG` in `secure-converter.js`:
 
 ```javascript
 const SECURITY_CONFIG = {
   CONVERSIONS_ROOT: '/custom/path/conversions',
-  DEFAULT_TIMEOUT: 60000, // 60 secondes
-  MAX_FILE_SIZE: 100 * 1024 * 1024, // 100 Mo
+  DEFAULT_TIMEOUT: 60000, // 60 seconds
+  MAX_FILE_SIZE: 100 * 1024 * 1024, // 100 MB
   BINARY_PATHS: {
     pandoc: '/usr/local/bin/pandoc'
   }
 }
 ```
 
-## Formats supportés
+## Supported Formats
 
-Les conversions autorisées sont définies dans `CONVERSION_WHITELIST`. Formats actuellement supportés :
+Authorized conversions are defined in `CONVERSION_WHITELIST`. Currently supported formats:
 
-- **Source** : markdown, asciidoc, html, txt, yaml, json
-- **Destination** : markdown, asciidoc, html, pdf, txt, yaml, json
+- **Source**: markdown, asciidoc, html, txt, yaml, json
+- **Destination**: markdown, asciidoc, html, pdf, txt, yaml, json
 
-Pour ajouter une nouvelle conversion, ajouter une entrée dans `CONVERSION_WHITELIST` :
+To add a new conversion, add an entry in `CONVERSION_WHITELIST`:
 
 ```javascript
-'nouveau_format_autre_format': ['-f', 'nouveau_format', '-t', 'autre_format']
+'new_format_other_format': ['-f', 'new_format', '-t', 'other_format']
 ```
 
 ## Architecture
 
-Le module est structuré en classes séparées :
+The module is structured in separate classes:
 
-- **IsolationManager** : Gestion de l'isolation (dossiers temporaires)
-- **FileValidator** : Validation des fichiers et conversions
-- **SecureCommandExecutor** : Exécution sécurisée des commandes
-- **ConversionError** : Gestion d'erreurs normalisée
+- **IsolationManager**: Isolation management (temporary directories)
+- **FileValidator**: File and conversion validation
+- **SecureCommandExecutor**: Secure command execution
+- **ConversionError**: Normalized error handling
 
-Cette architecture permet :
-- D'ajouter facilement des limites de ressources
-- D'intégrer une sandbox (ex: Docker, chroot)
-- De surveiller les conversions
-- Sans refactorisation majeure
+This architecture allows:
+- Easy addition of resource limits
+- Integration of a sandbox (e.g., Docker, chroot)
+- Conversion monitoring
+- Without major refactoring
 
-## Journalisation
+## Logging
 
-Les événements sont journalisés avec :
-- Timestamp ISO
-- ID unique de conversion
-- Type d'événement (STARTED, SUCCESS, TIMEOUT, etc.)
-- Détails (sans données utilisateur)
+Events are logged with:
+- ISO timestamp
+- Unique conversion ID
+- Event type (STARTED, SUCCESS, TIMEOUT, etc.)
+- Details (without user data)
 
-Exemple de log :
+Example log:
 ```
 [CONVERSION] {"timestamp":"2024-01-15T10:30:00.000Z","conversionId":"abc-123","event":"SUCCESS","details":"Conversion completed successfully"}
 ```
 
-## Sécurité
+## Security
 
-### Mesures implémentées
+### Implemented Measures
 
-✅ Isolation complète par conversion  
-✅ Whitelist stricte des conversions  
-✅ Validation des fichiers d'entrée  
-✅ **Validation de confirmation utilisateur (OBLIGATOIRE)**  
-✅ Timeout et arrêt forcé des processus  
-✅ Aucun argument utilisateur dans les commandes  
-✅ Chemins absolus uniquement  
-✅ Nettoyage garanti des fichiers temporaires  
-✅ Journalisation sans données utilisateur  
-✅ Erreurs normalisées sans détails système
+✅ Complete isolation per conversion  
+✅ Strict conversion whitelist  
+✅ Input file validation  
+✅ **User confirmation validation (MANDATORY)**  
+✅ Timeout and forced process termination  
+✅ No user arguments in commands  
+✅ Absolute paths only  
+✅ Guaranteed temporary file cleanup  
+✅ Logging without user data  
+✅ Normalized errors without system details
 
-### Validation de confirmation
+### Confirmation Validation
 
-Le secure-converter exige qu'une confirmation utilisateur soit validée avant toute conversion. Cela garantit que :
-- L'utilisateur a bien cliqué sur "Oui" dans une fenêtre de confirmation
-- Aucune conversion ne peut être exécutée automatiquement ou par erreur
-- La confirmation est vérifiée à la fois côté frontend et backend
+The secure-converter requires that user confirmation be validated before any conversion. This ensures that:
+- The user has clicked "Yes" in a confirmation window
+- No conversion can be executed automatically or by error
+- Confirmation is verified both on frontend and backend
 
-Voir `secure-converter-frontend-integration.md` pour l'intégration complète dans le frontend.  
+See `secure-converter-frontend-integration.md` for complete frontend integration.
 
-### Recommandations pour la production
+### Production Recommendations
 
-1. **Limites de ressources** : Ajouter des limites CPU/RAM via cgroups ou containers
-2. **Sandboxing** : Exécuter Pandoc dans un container Docker ou chroot
-3. **Monitoring** : Surveiller les conversions (durée, échecs, timeouts)
-4. **Rate limiting** : Limiter le nombre de conversions par utilisateur/IP
-5. **Audit** : Logger toutes les tentatives de conversion (même échouées)
+1. **Resource Limits**: Add CPU/RAM limits via cgroups or containers
+2. **Sandboxing**: Run Pandoc in a Docker container or chroot
+3. **Monitoring**: Monitor conversions (duration, failures, timeouts)
+4. **Rate Limiting**: Limit number of conversions per user/IP
+5. **Audit**: Log all conversion attempts (even failed)
 
-## Migration depuis convert.js
+## Migration from convert.js
 
-Pour migrer progressivement :
+To migrate progressively:
 
-1. Importer le nouveau module :
+1. Import the new module:
 ```javascript
 const { secureConvert } = require('./secure-converter.js')
 ```
 
-2. Remplacer les appels existants :
+2. Replace existing calls:
 ```javascript
-// Avant
+// Before
 const result = await convertWithPandoc(content, 'markdown', 'asciidoc')
 
 // After
@@ -232,10 +232,10 @@ try {
 try {
   await secureConvert('# Very long test...', 'markdown', 'asciidoc', { timeout: 1000 })
 } catch (error) {
-  console.log('Timeout attendu:', error.message)
+  console.log('Expected timeout:', error.message)
 }
 ```
 
 ## Support
 
-Pour toute question ou problème de sécurité, consulter la documentation ou ouvrir une issue.
+For any questions or security issues, consult the documentation or open an issue.

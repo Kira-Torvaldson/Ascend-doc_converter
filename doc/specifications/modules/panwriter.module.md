@@ -1,40 +1,40 @@
-# Module PanWriter
+# PanWriter Module
 
 ## Description
 
-Le module `panwriter` est un wrapper pour l'outil PanWriter, un éditeur et convertisseur de documents. Ce module implémente l'interface définie dans [modules.interface.md](../modules.interface.md) et respecte les obligations de sécurité minimales de la version 1.
+The `panwriter` module is a wrapper for the PanWriter tool, a document editor and converter. This module implements the interface defined in [modules.interface.md](../modules.interface.md) and respects the minimal security obligations of version 1.
 
-**Note :** Ce module est actuellement en préparation pour intégration future. L'implémentation complète sera ajoutée lors de l'intégration de PanWriter dans le pipeline.
+**Note:** This module is currently being prepared for future integration. The complete implementation will be added when PanWriter is integrated into the pipeline.
 
-## Nom du module
+## Module Name
 
-**Identifiant :** `panwriter`  
-**Type :** Module de conversion et d'édition de documents  
-**Outil sous-jacent :** PanWriter (à intégrer)
+**Identifier:** `panwriter`  
+**Type:** Document conversion and editing module  
+**Underlying tool:** PanWriter (to be integrated)
 
-## Formats supportés
+## Supported Formats
 
-**Formats d'entrée (`from`) :**
-- `markdown` : Format Markdown standard
-- `asciidoc` : Format AsciiDoc standard
-- `html` : Format HTML
-- `docx` : Format Microsoft Word
-- `odt` : Format OpenDocument Text
-- `rtf` : Format Rich Text Format
-- `latex` : Format LaTeX
-- `tex` : Format TeX
+**Input formats (`from`):**
+- `markdown`: Standard Markdown format
+- `asciidoc`: Standard AsciiDoc format
+- `html`: HTML format
+- `docx`: Microsoft Word format
+- `odt`: OpenDocument Text format
+- `rtf`: Rich Text Format
+- `latex`: LaTeX format
+- `tex`: TeX format
 
-**Formats de sortie (`to`) :**
-- `markdown` : Format Markdown standard
-- `asciidoc` : Format AsciiDoc standard
-- `html` : Format HTML
-- `docx` : Format Microsoft Word
-- `odt` : Format OpenDocument Text
-- `rtf` : Format Rich Text Format
-- `latex` : Format LaTeX
-- `tex` : Format TeX
+**Output formats (`to`):**
+- `markdown`: Standard Markdown format
+- `asciidoc`: Standard AsciiDoc format
+- `html`: HTML format
+- `docx`: Microsoft Word format
+- `odt`: OpenDocument Text format
+- `rtf`: Rich Text Format
+- `latex`: LaTeX format
+- `tex`: TeX format
 
-**Structure :**
+**Structure:**
 ```typescript
 supportedFormats: {
   from: ['markdown', 'asciidoc', 'html', 'docx', 'odt', 'rtf', 'latex', 'tex'],
@@ -42,9 +42,9 @@ supportedFormats: {
 }
 ```
 
-**Note :** Les formats supportés seront confirmés lors de l'intégration complète de PanWriter.
+**Note:** Supported formats will be confirmed during complete PanWriter integration.
 
-## Méthode `run`
+## `run` Method
 
 ### Signature
 
@@ -52,153 +52,153 @@ supportedFormats: {
 run(inputPath: string, outputPath: string, options?: Object): Promise<ModuleResult>
 ```
 
-### Description du fonctionnement (à implémenter)
+### Operation Description (to be implemented)
 
-La méthode `run` effectuera la conversion d'un fichier d'un format vers un autre selon le processus suivant (à implémenter) :
+The `run` method will perform the conversion of a file from one format to another according to the following process (to be implemented):
 
-#### 1. Lecture sécurisée du fichier d'entrée
+#### 1. Secure input file reading
 
-- Le module lira le fichier situé à `inputPath` en utilisant l'encodage approprié
-- Toute erreur de lecture devra être capturée et transformée en `ModuleResult` avec `success: false`
+- The module will read the file located at `inputPath` using the appropriate encoding
+- Any read error must be captured and transformed into a `ModuleResult` with `success: false`
 
-#### 2. Validation des entrées
+#### 2. Input validation
 
-- Le module validera que le contenu lu est valide
-- Le module vérifiera la taille du fichier (selon les limites configurées)
-- Le module vérifiera que le type de fichier correspond au format déclaré
+- The module will validate that the read content is valid
+- The module will check file size (according to configured limits)
+- The module will verify that the file type corresponds to the declared format
 
 #### 3. Conversion via PanWriter
 
-- Le module utilisera PanWriter pour effectuer la conversion
-- La méthode d'intégration (API, binaire, bibliothèque) sera déterminée lors de l'implémentation
-- Les options de conversion seront passées à PanWriter selon sa configuration
+- The module will use PanWriter to perform the conversion
+- The integration method (API, binary, library) will be determined during implementation
+- Conversion options will be passed to PanWriter according to its configuration
 
-#### 4. Écriture du résultat dans le fichier de sortie
+#### 4. Writing result to output file
 
-- Le module écrira le contenu converti dans le fichier situé à `outputPath`
-- L'encodage sera déterminé selon le format de sortie
-- Toute erreur d'écriture devra être capturée et transformée en `ModuleResult` avec `success: false`
+- The module will write the converted content to the file located at `outputPath`
+- Encoding will be determined according to the output format
+- Any write error must be captured and transformed into a `ModuleResult` with `success: false`
 
-#### 5. Retour du résultat
+#### 5. Result return
 
-- Le module retournera un objet `ModuleResult` conforme au contrat défini dans [modules.interface.md](../modules.interface.md)
-- Le champ `success` sera `true` si la conversion et l'écriture ont réussi, `false` sinon
-- Le champ `logs` contiendra les logs d'exécution
-- Le champ `error` sera `null` en cas de succès, ou contiendra un message d'erreur descriptif en cas d'échec
-- Le champ `duration` contiendra la durée totale d'exécution en secondes
+- The module will return a `ModuleResult` object conforming to the contract defined in [modules.interface.md](../modules.interface.md)
+- The `success` field will be `true` if conversion and writing succeeded, `false` otherwise
+- The `logs` field will contain execution logs
+- The `error` field will be `null` on success, or contain a descriptive error message on failure
+- The `duration` field will contain the total execution duration in seconds
 
-### Paramètres
+### Parameters
 
-- **`inputPath`** (requis) : Chemin absolu vers le fichier d'entrée à convertir
-- **`outputPath`** (requis) : Chemin absolu vers le fichier de sortie à créer
-- **`options`** (optionnel) : Objet contenant les options de conversion
-  - `fromFormat` : Format source (requis pour déterminer la conversion)
-  - `toFormat` : Format de destination (requis pour déterminer la conversion)
-  - `conversionId` : ID de conversion pour les logs (optionnel)
-  - Autres options spécifiques à PanWriter (à définir lors de l'implémentation)
+- **`inputPath`** (required): Absolute path to input file to convert
+- **`outputPath`** (required): Absolute path to output file to create
+- **`options`** (optional): Object containing conversion options
+  - `fromFormat`: Source format (required to determine conversion)
+  - `toFormat`: Destination format (required to determine conversion)
+  - `conversionId`: Conversion ID for logs (optional)
+  - Other PanWriter-specific options (to be defined during implementation)
 
-### Valeur de retour
+### Return Value
 
-La méthode retournera une `Promise` qui se résout avec un objet `ModuleResult` :
+The method will return a `Promise` that resolves with a `ModuleResult` object:
 
 ```typescript
 {
-  success: boolean,        // true si conversion réussie, false sinon
-  logs: string | string[], // Logs d'exécution
-  error: string | null,   // Message d'erreur ou null
-  duration: number        // Durée en secondes
+  success: boolean,        // true if conversion succeeded, false otherwise
+  logs: string | string[], // Execution logs
+  error: string | null,   // Error message or null
+  duration: number        // Duration in seconds
 }
 ```
 
-## Sécurité et isolation
+## Security and Isolation
 
-### Obligations de sécurité minimales (V1)
+### Minimal Security Obligations (V1)
 
-Le module respectera les obligations de sécurité minimales définies dans [modules.interface.md](../modules.interface.md) :
+The module will respect the minimal security obligations defined in [modules.interface.md](../modules.interface.md):
 
-#### 1. Validation basique des entrées
+#### 1. Basic input validation
 
-- **Vérification de la taille** : Le module validera que le fichier d'entrée ne dépasse pas la limite maximale configurée
-- **Vérification du type** : Le module validera que le fichier correspond au format déclaré
-- **Rejet immédiat** : Si les validations échouent, le module retournera immédiatement un `ModuleResult` avec `success: false`
+- **Size check**: The module will validate that the input file does not exceed the configured maximum limit
+- **Type check**: The module will validate that the file corresponds to the declared format
+- **Immediate rejection**: If validations fail, the module will immediately return a `ModuleResult` with `success: false`
 
-**Références normatives :** ISO 27001 (A.9.4.2), ISO 27002 (A.9.4.2), NIST SP 800-53 (SI-7), OWASP Top 10 (A03:2021)
+**Normative references:** ISO 27001 (A.9.4.2), ISO 27002 (A.9.4.2), NIST SP 800-53 (SI-7), OWASP Top 10 (A03:2021)
 
-#### 2. Isolement léger
+#### 2. Light isolation
 
-- **Aucune interaction directe** : Le module n'interagira pas directement avec le reste du système en dehors des chemins `inputPath` et `outputPath` fournis par le pipeline
-- **Exécution dans un contexte isolé** : Le module s'exécutera dans un dossier temporaire unique par conversion, fourni par le pipeline
-- **Pas d'accès réseau** : Le module ne devra pas accéder au réseau pendant l'exécution (sauf si PanWriter nécessite une connexion, auquel cas cela sera documenté)
+- **No direct interaction**: The module will not interact directly with the rest of the system outside the `inputPath` and `outputPath` paths provided by the pipeline
+- **Execution in isolated context**: The module will execute in a unique temporary directory per conversion, provided by the pipeline
+- **No network access**: The module must not access the network during execution (unless PanWriter requires a connection, in which case this will be documented)
 
-**Références normatives :** ISO 27001 (A.9.1.2), ISO 27002 (A.9.1.2), NIST SP 800-53 (SC-7, SC-39), OWASP Top 10 (A01:2021)
+**Normative references:** ISO 27001 (A.9.1.2), ISO 27002 (A.9.1.2), NIST SP 800-53 (SC-7, SC-39), OWASP Top 10 (A01:2021)
 
-#### 3. Gestion sécurisée des erreurs
+#### 3. Secure error handling
 
-- **Capture exhaustive** : Toutes les exceptions et erreurs devront être capturées et transformées en `ModuleResult` avec `success: false`
-- **Pas de crash global** : Aucune exception non gérée ne devra remonter au pipeline principal
-- **Messages d'erreur sécurisés** : Les messages d'erreur ne devront pas exposer de détails système sensibles
+- **Exhaustive capture**: All exceptions and errors must be captured and transformed into a `ModuleResult` with `success: false`
+- **No global crash**: No unhandled exception must propagate to the main pipeline
+- **Secure error messages**: Error messages must not expose sensitive system details
 
-**Références normatives :** ISO 27001 (A.12.6.1), ISO 27002 (A.12.6.1), NIST SP 800-53 (SI-11), OWASP Top 10 (A04:2021)
+**Normative references:** ISO 27001 (A.12.6.1), ISO 27002 (A.12.6.1), NIST SP 800-53 (SI-11), OWASP Top 10 (A04:2021)
 
-#### 4. Journalisation minimale
+#### 4. Minimal logging
 
-- **ID de conversion** : Le module devra inclure l'ID de conversion unique dans ses logs
-- **Horodatage** : Le module devra enregistrer l'horodatage de début et de fin d'exécution
-- **Logs d'exécution** : Le module devra produire des logs décrivant les étapes principales
-- **Statut final** : Le module devra inclure le statut final (succès/échec) dans les logs retournés
+- **Conversion ID**: The module must include the unique conversion ID in its logs
+- **Timestamp**: The module must record the timestamp of execution start and end
+- **Execution logs**: The module must produce logs describing main steps
+- **Final status**: The module must include the final status (success/failure) in returned logs
 
-**Références normatives :** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
+**Normative references:** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
 
-#### 5. Vérification légère de l'intégrité
+#### 5. Light integrity verification
 
-- **Vérification de l'outil** : Le module vérifiera que PanWriter est disponible avant exécution
-- **Documentation des dépendances** : Le module documentera ses dépendances (PanWriter et sa version requise)
-- **Signalement des modifications** : Le module pourra signaler toute modification détectée de l'intégrité (optionnel en V1)
+- **Tool verification**: The module will verify that PanWriter is available before execution
+- **Dependency documentation**: The module will document its dependencies (PanWriter and its required version)
+- **Modification reporting**: The module may report any detected modification of integrity (optional in V1)
 
-**Références normatives :** ISO 27001 (A.12.2.1), ISO 27002 (A.12.2.1), NIST SP 800-53 (SI-7, SA-12), OWASP Top 10 (A06:2021)
+**Normative references:** ISO 27001 (A.12.2.1), ISO 27002 (A.12.2.1), NIST SP 800-53 (SI-7, SA-12), OWASP Top 10 (A06:2021)
 
-### Contraintes d'exécution
+### Execution Constraints
 
-- **Isolation** : Le module ne devra pas modifier le fichier d'entrée, ne devra accéder qu'aux fichiers fournis, et ne devra pas créer de fichiers en dehors du répertoire autorisé
-- **Performance** : Le module devra respecter les timeouts imposés par le pipeline et libérer les ressources après exécution
-- **Sécurité** : Le module devra valider les chemins de fichiers avant utilisation et utiliser des méthodes sécurisées d'exécution
+- **Isolation**: The module must not modify the input file, must only access provided files, and must not create files outside the authorized directory
+- **Performance**: The module must respect timeouts imposed by the pipeline and release resources after execution
+- **Security**: The module must validate file paths before use and use secure execution methods
 
-## Comportement attendu
+## Expected Behavior
 
-### En cas de succès (à implémenter)
+### On Success (to be implemented)
 
-1. Le fichier de sortie sera créé à l'emplacement `outputPath` avec le contenu converti
-2. Le fichier de sortie sera valide et conforme au format de destination
-3. Le module retournera un `ModuleResult` avec `success: true`, `error: null`, des logs détaillés et la durée d'exécution
+1. The output file will be created at the `outputPath` location with the converted content
+2. The output file will be valid and conform to the destination format
+3. The module will return a `ModuleResult` with `success: true`, `error: null`, detailed logs, and execution duration
 
-### En cas d'échec (à implémenter)
+### On Failure (to be implemented)
 
-1. Aucun fichier de sortie ne sera créé (ou sera supprimé s'il a été créé partiellement)
-2. Le module retournera un `ModuleResult` avec `success: false`, un message d'erreur descriptif dans `error`, les logs jusqu'au point d'échec, et la durée jusqu'à l'échec
+1. No output file will be created (or will be deleted if partially created)
+2. The module will return a `ModuleResult` with `success: false`, a descriptive error message in `error`, logs up to the failure point, and duration until failure
 
 ## Notes
 
-### Statut actuel
+### Current Status
 
-Ce module est actuellement en préparation pour intégration future. L'implémentation complète sera ajoutée lors de l'intégration de PanWriter dans le pipeline.
+This module is currently being prepared for future integration. The complete implementation will be added when PanWriter is integrated into the pipeline.
 
 ### PanWriter
 
-PanWriter est un outil d'édition et de conversion de documents. Les détails d'intégration (API, binaire, bibliothèque) seront déterminés lors de l'implémentation.
+PanWriter is a document editing and conversion tool. Integration details (API, binary, library) will be determined during implementation.
 
-### Formats supportés
+### Supported Formats
 
-Les formats supportés par PanWriter incluent les formats de documents courants (Markdown, AsciiDoc, HTML, DOCX, ODT, RTF, LaTeX, TeX). La liste exacte sera confirmée lors de l'intégration.
+Formats supported by PanWriter include common document formats (Markdown, AsciiDoc, HTML, DOCX, ODT, RTF, LaTeX, TeX). The exact list will be confirmed during integration.
 
 ### Performance
 
-Les caractéristiques de performance seront documentées lors de l'implémentation complète.
+Performance characteristics will be documented during complete implementation.
 
-## Conformité
+## Compliance
 
-Ce module respectera strictement l'interface définie dans [modules.interface.md](../modules.interface.md) et les obligations de sécurité minimales de la version 1. Toute modification du module devra maintenir cette conformité.
+This module will strictly respect the interface defined in [modules.interface.md](../modules.interface.md) and the minimal security obligations of version 1. Any modification of the module must maintain this compliance.
 
-## Références
+## References
 
-- [modules.interface.md](../modules.interface.md) - Contrat d'interface des modules
-- [PIPELINE.md](../PIPELINE.md) - Spécification du pipeline de conversion
+- [modules.interface.md](../modules.interface.md) - Module interface contract
+- [PIPELINE.md](../PIPELINE.md) - Conversion pipeline specification

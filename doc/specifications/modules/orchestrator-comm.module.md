@@ -1,126 +1,126 @@
-# Communication entre Orchestrateurs
+# Orchestrator Communication
 
 ## Description
 
-Ce document décrit l'architecture de communication entre deux orchestrateurs distincts qui travaillent ensemble pour exécuter les conversions de documents, en évitant la surcharge et en répartissant la charge de manière efficace.
+This document describes the communication architecture between two distinct orchestrators that work together to execute document conversions, avoiding overload and efficiently distributing the load.
 
-## Architecture des Orchestrateurs
+## Orchestrator Architecture
 
-### Orchestrateur Principal (`main-orchestrator.js`)
+### Main Orchestrator (`main-orchestrator.js`)
 
-**Rôle :** Orchestrateur principal qui reçoit les requêtes utilisateur, choisit le chemin de conversion et délègue les tâches au second orchestrateur.
+**Role:** Main orchestrator that receives user requests, chooses the conversion path, and delegates tasks to the second orchestrator.
 
-**Responsabilités :**
-- Réception des requêtes utilisateur (contenu, formats source et cible)
-- Validation du contenu et des formats
-- Détermination du chemin de conversion (direct ou via format intermédiaire)
-- Gestion du contrôle de charge (vérification de surcharge, acquisition de slot de concurrence)
-- Initialisation du budget de ressources
-- Création du fichier temporaire d'entrée
-- Délégation à l'orchestrateur d'exécution
-- Enregistrement des succès/échecs pour le suivi de charge
-- Nettoyage du fichier temporaire d'entrée
-- Libération du slot de concurrence
+**Responsibilities:**
+- Reception of user requests (content, source and target formats)
+- Content and format validation
+- Conversion path determination (direct or via intermediate format)
+- Load control management (overload check, concurrency slot acquisition)
+- Resource budget initialization
+- Temporary input file creation
+- Delegation to execution orchestrator
+- Success/failure recording for load tracking
+- Temporary input file cleanup
+- Concurrency slot release
 
-**Interface principale :**
+**Main Interface:**
 ```typescript
 executeConversionRequest(content: string, sourceFormat: string, targetFormat: string, options?: Object): Promise<ModuleResult>
 ```
 
-### Orchestrateur d'Exécution (`execution-orchestrator.js`)
+### Execution Orchestrator (`execution-orchestrator.js`)
 
-**Rôle :** Orchestrateur secondaire qui exécute les conversions étape par étape, utilise les modules nécessaires et retourne les résultats.
+**Role:** Secondary orchestrator that executes conversions step by step, uses necessary modules, and returns results.
 
-**Responsabilités :**
-- Réception du chemin de conversion et du fichier d'entrée depuis l'orchestrateur principal
-- Création du dossier temporaire pour l'exécution
-- Exécution séquentielle des étapes de conversion
-- Utilisation du converter-orchestrator pour chaque étape (avec flag `_internal: true`)
-- Gestion des fichiers intermédiaires
-- Lecture du résultat final
-- Nettoyage du dossier temporaire
-- Retour des résultats à l'orchestrateur principal
+**Responsibilities:**
+- Reception of conversion path and input file from main orchestrator
+- Temporary directory creation for execution
+- Sequential execution of conversion steps
+- Use of converter-orchestrator for each step (with `_internal: true` flag)
+- Intermediate file management
+- Final result reading
+- Temporary directory cleanup
+- Result return to main orchestrator
 
-**Interface principale :**
+**Main Interface:**
 ```typescript
 executeConversionSteps(inputFilePath: string, conversionPath: Array, options?: Object): Promise<ModuleResult>
 ```
 
-## Flux de Communication
+## Communication Flow
 
-### 1. Réception de la Requête
-
-```
-Utilisateur → Main Orchestrator
-  - Contenu source
-  - Format source
-  - Format cible
-  - Options de conversion
-```
-
-### 2. Vérification de Charge
+### 1. Request Reception
 
 ```
-Main Orchestrator
-  ↓
-Vérifie la surcharge système (gracefulDegradationManager)
-  ↓
-Acquiert un slot de concurrence (concurrencyController)
-  ↓
-Initialise le budget de ressources (resourceBudgetManager)
+User → Main Orchestrator
+  - Source content
+  - Source format
+  - Target format
+  - Conversion options
 ```
 
-### 3. Détermination du Chemin
+### 2. Load Check
 
 ```
 Main Orchestrator
   ↓
-Détermine le chemin de conversion (findConversionPath)
+Checks system overload (gracefulDegradationManager)
   ↓
-Exemple: AsciiDoc → Markdown → AsciiDoc
+Acquires concurrency slot (concurrencyController)
+  ↓
+Initializes resource budget (resourceBudgetManager)
+```
+
+### 3. Path Determination
+
+```
+Main Orchestrator
+  ↓
+Determines conversion path (findConversionPath)
+  ↓
+Example: AsciiDoc → Markdown → AsciiDoc
   [
     { from: 'asciidoc', to: 'markdown', converter: 'auto' },
     { from: 'markdown', to: 'asciidoc', converter: 'auto' }
   ]
 ```
 
-### 4. Création du Fichier Temporaire
+### 4. Temporary File Creation
 
 ```
 Main Orchestrator
   ↓
-Crée un fichier temporaire d'entrée
-  - Emplacement: {tmpdir}/ascend-main/{conversionId}_input.{ext}
-  - Contenu: Contenu source fourni par l'utilisateur
+Creates temporary input file
+  - Location: {tmpdir}/ascend-main/{conversionId}_input.{ext}
+  - Content: Source content provided by user
 ```
 
-### 5. Délégation à l'Orchestrateur d'Exécution
+### 5. Delegation to Execution Orchestrator
 
 ```
 Main Orchestrator → Execution Orchestrator
-  - inputFilePath: Chemin du fichier temporaire d'entrée
-  - conversionPath: Chemin de conversion déterminé
-  - options: Options de conversion (avec conversionId)
+  - inputFilePath: Temporary input file path
+  - conversionPath: Determined conversion path
+  - options: Conversion options (with conversionId)
 ```
 
-### 6. Exécution des Étapes
+### 6. Step Execution
 
 ```
 Execution Orchestrator
   ↓
-Crée un dossier temporaire d'exécution
-  - Emplacement: {tmpdir}/ascend-execution/{conversionId}
+Creates execution temporary directory
+  - Location: {tmpdir}/ascend-execution/{conversionId}
   ↓
-Copie le fichier d'entrée dans le dossier temporaire
+Copies input file into temporary directory
   ↓
-Pour chaque étape:
-  - Exécute via converter-orchestrator (avec _internal: true)
-  - Utilise la sortie comme entrée pour l'étape suivante
+For each step:
+  - Executes via converter-orchestrator (with _internal: true)
+  - Uses output as input for next step
   ↓
-Lit le résultat final
+Reads final result
 ```
 
-### 7. Retour des Résultats
+### 7. Result Return
 
 ```
 Execution Orchestrator → Main Orchestrator
@@ -134,249 +134,249 @@ Execution Orchestrator → Main Orchestrator
   }
 ```
 
-### 8. Nettoyage et Libération
+### 8. Cleanup and Release
 
 ```
 Main Orchestrator
   ↓
-Enregistre le succès/échec (gracefulDegradationManager)
+Records success/failure (gracefulDegradationManager)
   ↓
-Libère le slot de concurrence (concurrencyController)
+Releases concurrency slot (concurrencyController)
   ↓
-Nettoie le fichier temporaire d'entrée
+Cleans temporary input file
   ↓
-Retourne le résultat à l'utilisateur
+Returns result to user
 ```
 
-## Format de Communication
+## Communication Format
 
-### Requête de l'Orchestrateur Principal vers l'Orchestrateur d'Exécution
+### Request from Main Orchestrator to Execution Orchestrator
 
 ```typescript
 {
-  inputFilePath: string,        // Chemin absolu vers le fichier d'entrée
-  conversionPath: Array<{        // Chemin de conversion
-    from: string,                // Format source de l'étape
-    to: string,                  // Format cible de l'étape
-    converter: string            // 'auto' (déterminé par converter-orchestrator)
+  inputFilePath: string,        // Absolute path to input file
+  conversionPath: Array<{        // Conversion path
+    from: string,                // Step source format
+    to: string,                  // Step target format
+    converter: string            // 'auto' (determined by converter-orchestrator)
   }>,
   options: {
-    conversionId: string,        // ID unique de conversion
-    _internal: true,             // Flag indiquant un appel interne
-    // ... autres options
+    conversionId: string,        // Unique conversion ID
+    _internal: true,             // Flag indicating internal call
+    // ... other options
   }
 }
 ```
 
-### Réponse de l'Orchestrateur d'Exécution vers l'Orchestrateur Principal
+### Response from Execution Orchestrator to Main Orchestrator
 
 ```typescript
 {
-  success: boolean,               // Statut de l'exécution
-  logs: string | string[],       // Logs d'exécution
-  error: string | null,         // Message d'erreur ou null
-  duration: number,              // Durée en secondes
-  outputContent: string,         // Contenu du fichier final (si succès)
-  stepsExecuted: number,         // Nombre d'étapes exécutées
-  outputFile?: string,           // Chemin du fichier final (optionnel)
-  workDirectory?: string         // Dossier temporaire utilisé (optionnel)
+  success: boolean,               // Execution status
+  logs: string | string[],       // Execution logs
+  error: string | null,         // Error message or null
+  duration: number,              // Duration in seconds
+  outputContent: string,         // Final file content (if success)
+  stepsExecuted: number,         // Number of steps executed
+  outputFile?: string,           // Final file path (optional)
+  workDirectory?: string         // Temporary directory used (optional)
 }
 ```
 
-## Gestion des Dossiers Temporaires
+## Temporary Directory Management
 
-### Dossier Temporaire Principal
+### Main Temporary Directory
 
-**Emplacement :** `{tmpdir}/ascend-main/{conversionId}_input.{ext}`
+**Location:** `{tmpdir}/ascend-main/{conversionId}_input.{ext}`
 
-**Gestion :**
-- Créé par le main orchestrator
-- Contient uniquement le fichier d'entrée initial
-- Nettoyé par le main orchestrator dans le bloc `finally`
+**Management:**
+- Created by main orchestrator
+- Contains only the initial input file
+- Cleaned by main orchestrator in `finally` block
 
-**Permissions :** 0o700 (lecture/écriture/exécution pour le propriétaire uniquement)
+**Permissions:** 0o700 (read/write/execute for owner only)
 
-### Dossier Temporaire d'Exécution
+### Execution Temporary Directory
 
-**Emplacement :** `{tmpdir}/ascend-execution/{conversionId}/`
+**Location:** `{tmpdir}/ascend-execution/{conversionId}/`
 
-**Gestion :**
-- Créé par l'execution orchestrator
-- Contient tous les fichiers intermédiaires et le fichier final
-- Structure :
+**Management:**
+- Created by execution orchestrator
+- Contains all intermediate files and final file
+- Structure:
   ```
   {workDir}/
-    ├── step0_input.{ext}      # Copie du fichier source
-    ├── step1_output.{ext}      # Sortie de l'étape 1 (si multi-étapes)
-    ├── step2_output.{ext}      # Sortie de l'étape 2 (si multi-étapes)
-    └── final_output.{ext}     # Fichier final
+    ├── step0_input.{ext}      # Copy of source file
+    ├── step1_output.{ext}      # Step 1 output (if multi-step)
+    ├── step2_output.{ext}      # Step 2 output (if multi-step)
+    └── final_output.{ext}     # Final file
   ```
-- Nettoyé par l'execution orchestrator dans le bloc `finally`
+- Cleaned by execution orchestrator in `finally` block
 
-**Permissions :** 0o700 (lecture/écriture/exécution pour le propriétaire uniquement)
+**Permissions:** 0o700 (read/write/execute for owner only)
 
-### Isolation et Sécurité
+### Isolation and Security
 
-- **Aucun partage d'état** : Chaque conversion a ses propres dossiers temporaires uniques
-- **Nettoyage garanti** : Les dossiers sont toujours nettoyés, même en cas d'erreur
-- **Pas d'accès externe** : Les modules n'ont accès qu'aux chemins fournis par les orchestrateurs
+- **No Shared State:** Each conversion has its own unique temporary directories
+- **Guaranteed Cleanup:** Directories are always cleaned, even in case of error
+- **No External Access:** Modules only have access to paths provided by orchestrators
 
-## Format de Retour Standardisé
+## Standardized Return Format
 
-Les deux orchestrateurs retournent un format standardisé conforme à `modules.interface.md` :
+Both orchestrators return a standardized format conforming to `modules.interface.md`:
 
 ```typescript
 interface ModuleResult {
-  success: boolean;           // Statut de la conversion
-  logs: string | string[];    // Logs de l'exécution
-  error: string | null;       // Message d'erreur (null si succès)
-  duration: number;           // Durée en secondes
+  success: boolean;           // Conversion status
+  logs: string | string[];    // Execution logs
+  error: string | null;       // Error message (null if success)
+  duration: number;           // Duration in seconds
 }
 ```
 
-### Informations Supplémentaires
+### Additional Information
 
-L'orchestrateur d'exécution peut inclure des informations supplémentaires dans le résultat :
+The execution orchestrator may include additional information in the result:
 
 ```typescript
 {
   ...ModuleResult,
-  outputContent?: string,     // Contenu du fichier final
-  stepsExecuted?: number,      // Nombre d'étapes exécutées
-  outputFile?: string,         // Chemin du fichier final
-  workDirectory?: string      // Dossier temporaire utilisé
+  outputContent?: string,     // Final file content
+  stepsExecuted?: number,      // Number of steps executed
+  outputFile?: string,         // Final file path
+  workDirectory?: string      // Temporary directory used
 }
 ```
 
-## Sécurité et Isolation
+## Security and Isolation
 
-### Obligations de Sécurité Minimales (V1)
+### Minimal Security Obligations (V1)
 
-Les deux orchestrateurs respectent les obligations de sécurité minimales définies dans [modules.interface.md](../modules.interface.md) :
+Both orchestrators respect the minimal security obligations defined in [modules.interface.md](../modules.interface.md):
 
-#### 1. Isolation Stricte
+#### 1. Strict Isolation
 
-- **Dossiers temporaires uniques** : Chaque conversion a ses propres dossiers isolés
-- **Aucun état partagé** : Aucune donnée n'est partagée entre deux conversions
-- **Permissions restrictives** : Dossiers créés avec permissions 0o700
+- **Unique Temporary Directories:** Each conversion has its own isolated directories
+- **No Shared State:** No data is shared between two conversions
+- **Restrictive Permissions:** Directories created with permissions 0o700
 
-**Références normatives :** ISO 27001 (A.9.1.2), ISO 27002 (A.9.1.2), NIST SP 800-53 (SC-7, SC-39), OWASP Top 10 (A01:2021)
+**Normative References:** ISO 27001 (A.9.1.2), ISO 27002 (A.9.1.2), NIST SP 800-53 (SC-7, SC-39), OWASP Top 10 (A01:2021)
 
-#### 2. Gestion Sécurisée des Erreurs
+#### 2. Secure Error Handling
 
-- **Capture exhaustive** : Toutes les exceptions sont capturées et transformées en `ModuleResult` avec `success: false`
-- **Pas de crash global** : Aucune exception non gérée ne remonte au pipeline principal
-- **Nettoyage garanti** : Le nettoyage est effectué même en cas d'erreur
+- **Exhaustive Capture:** All exceptions are captured and transformed into `ModuleResult` with `success: false`
+- **No Global Crash:** No unhandled exception propagates to the main pipeline
+- **Guaranteed Cleanup:** Cleanup is performed even in case of error
 
-**Références normatives :** ISO 27001 (A.12.6.1), ISO 27002 (A.12.6.1), NIST SP 800-53 (SI-11), OWASP Top 10 (A04:2021)
+**Normative References:** ISO 27001 (A.12.6.1), ISO 27002 (A.12.6.1), NIST SP 800-53 (SI-11), OWASP Top 10 (A04:2021)
 
-#### 3. Journalisation Minimale
+#### 3. Minimal Logging
 
-- **ID de conversion** : Les orchestrateurs incluent l'ID de conversion unique dans leurs logs
-- **Horodatage** : Les orchestrateurs enregistrent l'horodatage de début et de fin d'exécution
-- **Logs d'exécution** : Les orchestrateurs produisent des logs décrivant chaque étape
-- **Statut final** : Les orchestrateurs incluent le statut final (succès/échec) dans les logs retournés
+- **Conversion ID:** Orchestrators include the unique conversion ID in their logs
+- **Timestamping:** Orchestrators record the start and end execution timestamp
+- **Execution Logs:** Orchestrators produce logs describing each step
+- **Final Status:** Orchestrators include the final status (success/failure) in returned logs
 
-**Références normatives :** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
+**Normative References:** ISO 27001 (A.12.4.1), ISO 27002 (A.12.4.1), NIST SP 800-53 (AU-2, AU-3), GDPR/RGPD (Art. 30, 32)
 
-#### 4. Contrôle de Charge
+#### 4. Load Control
 
-- **Vérification de surcharge** : Le main orchestrator vérifie la surcharge avant d'accepter une conversion
-- **Limite de concurrence** : Un seul slot de concurrence est acquis par conversion (géré par le main orchestrator)
-- **Budget de ressources** : Un budget de ressources est initialisé pour chaque conversion
-- **Dégradation contrôlée** : Les succès et échecs sont enregistrés pour détecter la surcharge
+- **Overload Check:** Main orchestrator checks overload before accepting a conversion
+- **Concurrency Limit:** A single concurrency slot is acquired per conversion (managed by main orchestrator)
+- **Resource Budget:** A resource budget is initialized for each conversion
+- **Controlled Degradation:** Successes and failures are recorded to detect overload
 
-**Références normatives :** ISO 27001 (A.12.2.1), ISO 27002 (A.12.2.1), NIST SP 800-53 (SI-7, SA-12), OWASP Top 10 (A06:2021)
+**Normative References:** ISO 27001 (A.12.2.1), ISO 27002 (A.12.2.1), NIST SP 800-53 (SI-7, SA-12), OWASP Top 10 (A06:2021)
 
-### Communication Sécurisée
+### Secure Communication
 
-- **Flag `_internal`** : Les appels depuis le main orchestrator vers l'execution orchestrator sont marqués avec `_internal: true`
-- **Pas de double comptage** : Les étapes individuelles n'acquièrent pas de slot de concurrence séparé
-- **Suivi unifié** : Tous les succès et échecs sont enregistrés dans le gestionnaire de dégradation contrôlée
+- **`_internal` Flag:** Calls from main orchestrator to execution orchestrator are marked with `_internal: true`
+- **No Double Counting:** Individual steps do not acquire a separate concurrency slot
+- **Unified Tracking:** All successes and failures are recorded in the controlled degradation manager
 
-## Extensibilité Future
+## Future Extensibility
 
-### Ajout de Nouveaux Orchestrateurs
+### Adding New Orchestrators
 
-L'architecture permet d'ajouter facilement de nouveaux orchestrateurs :
+The architecture allows easy addition of new orchestrators:
 
-1. **Créer le nouveau module orchestrateur** : Conforme à l'interface standard
-2. **Définir le rôle** : Spécialisé dans un type de conversion ou une stratégie particulière
-3. **Intégrer la communication** : Utiliser les mêmes mécanismes de communication que les orchestrateurs existants
-4. **Gérer le contrôle de charge** : Utiliser les mêmes mécanismes de contrôle de charge
+1. **Create the new orchestrator module:** Conforming to the standard interface
+2. **Define the role:** Specialized in a type of conversion or particular strategy
+3. **Integrate communication:** Use the same communication mechanisms as existing orchestrators
+4. **Manage load control:** Use the same load control mechanisms
 
-### Stratégies de Conversion Avancées
+### Advanced Conversion Strategies
 
-Le système peut être étendu pour supporter :
+The system can be extended to support:
 
-- **Plusieurs formats intermédiaires** : Au lieu de seulement Markdown, utiliser plusieurs formats intermédiaires
-- **Optimisation de chemin** : Choisir le chemin le plus court ou le plus rapide
-- **Parallélisation** : Exécuter certaines étapes en parallèle si possible
-- **Cache** : Mettre en cache les résultats intermédiaires pour optimiser les performances
+- **Multiple Intermediate Formats:** Instead of only Markdown, use multiple intermediate formats
+- **Path Optimization:** Choose the shortest or fastest path
+- **Parallelization:** Execute certain steps in parallel if possible
+- **Cache:** Cache intermediate results to optimize performance
 
-### Communication Asynchrone
+### Asynchronous Communication
 
-Pour l'instant, la communication est synchrone. L'architecture peut être étendue pour supporter :
+For now, communication is synchronous. The architecture can be extended to support:
 
-- **File d'attente** : Utiliser une file d'attente pour les conversions
-- **Notifications** : Notifier l'utilisateur lorsque la conversion est terminée
-- **Statut en temps réel** : Fournir un statut en temps réel de la progression
+- **Queue:** Use a queue for conversions
+- **Notifications:** Notify the user when conversion is complete
+- **Real-time Status:** Provide real-time status of progress
 
-## Comportement Attendu
+## Expected Behavior
 
-### En Cas de Succès
+### On Success
 
-1. Le main orchestrator reçoit la requête et vérifie la charge
-2. Le chemin de conversion est déterminé
-3. Le fichier temporaire d'entrée est créé
-4. L'execution orchestrator exécute toutes les étapes avec succès
-5. Le résultat final est retourné au main orchestrator
-6. Les ressources sont nettoyées (fichier d'entrée, dossier d'exécution)
-7. Le slot de concurrence est libéré
-8. Le résultat est retourné à l'utilisateur
+1. Main orchestrator receives request and checks load
+2. Conversion path is determined
+3. Temporary input file is created
+4. Execution orchestrator executes all steps successfully
+5. Final result is returned to main orchestrator
+6. Resources are cleaned (input file, execution directory)
+7. Concurrency slot is released
+8. Result is returned to user
 
-### En Cas d'Échec
+### On Failure
 
-1. Si la vérification de charge échoue, le main orchestrator retourne immédiatement une erreur
-2. Si le chemin de conversion ne peut pas être trouvé, le main orchestrator retourne une erreur
-3. Si une étape échoue, l'execution orchestrator retourne une erreur au main orchestrator
-4. Les ressources sont **toujours** nettoyées, même en cas d'erreur
-5. Le slot de concurrence est **toujours** libéré
-6. L'échec est enregistré pour le suivi de charge
+1. If load check fails, main orchestrator immediately returns an error
+2. If conversion path cannot be found, main orchestrator returns an error
+3. If a step fails, execution orchestrator returns an error to main orchestrator
+4. Resources are **always** cleaned, even in case of error
+5. Concurrency slot is **always** released
+6. Failure is recorded for load tracking
 
-## Notes Techniques
+## Technical Notes
 
-### Simplicité du Flux
+### Flow Simplicity
 
-Le flux de communication est simple et linéaire :
+The communication flow is simple and linear:
 
-- **Pas de logique complexe** : Le flux reste prévisible et facile à déboguer
-- **Exécution séquentielle** : Les étapes sont exécutées l'une après l'autre
-- **Pas de retry automatique** : Si une étape échoue, la conversion échoue immédiatement
+- **No Complex Logic:** The flow remains predictable and easy to debug
+- **Sequential Execution:** Steps are executed one after another
+- **No Automatic Retry:** If a step fails, the conversion fails immediately
 
-### Dépendances
+### Dependencies
 
-Les orchestrateurs dépendent de :
+Orchestrators depend on:
 
-- **converter-orchestrator.module.js** : Pour l'exécution des conversions individuelles
-- **lazyload.module.js** : Pour le chargement des modules
-- **pipeline-security.js** : Pour le contrôle de charge et la sécurité
-- **Modules de conversion** : Les modules individuels (downdoc, pandoc, etc.)
+- **converter-orchestrator.module.js:** For individual conversion execution
+- **lazyload.module.js:** For module loading
+- **pipeline-security.js:** For load control and security
+- **Conversion Modules:** Individual modules (downdoc, pandoc, etc.)
 
 ### Limitations
 
-- **Flux linéaire uniquement** : Le système ne supporte pas les flux complexes avec branches ou conditions
-- **Format intermédiaire simple** : La stratégie actuelle utilise uniquement Markdown comme format intermédiaire
-- **Communication synchrone** : La communication est synchrone (pas de file d'attente)
+- **Linear Flow Only:** The system does not support complex flows with branches or conditions
+- **Simple Intermediate Format:** The current strategy uses only Markdown as an intermediate format
+- **Synchronous Communication:** Communication is synchronous (no queue)
 
-## Conformité
+## Compliance
 
-Les deux orchestrateurs respectent strictement l'interface définie dans [modules.interface.md](../modules.interface.md) et les obligations de sécurité minimales de la version 1. Toute modification des orchestrateurs doit maintenir cette conformité.
+Both orchestrators strictly respect the interface defined in [modules.interface.md](../modules.interface.md) and the minimal security obligations of version 1. Any modification of orchestrators must maintain this compliance.
 
-## Références
+## References
 
-- [modules.interface.md](../modules.interface.md) - Contrat d'interface des modules
-- [converter-orchestrator.module.md](./converter-orchestrator.module.md) - Module orchestrateur de converters
-- [orchestrator.module.md](./orchestrator.module.md) - Module orchestrateur linéaire (ancien)
-- [PIPELINE.md](../../PIPELINE.md) - Spécification du pipeline de conversion
-- [lazyload.module.md](./lazyload.module.md) - Module de lazy loading
+- [modules.interface.md](../modules.interface.md) - Module interface contract
+- [converter-orchestrator.module.md](./converter-orchestrator.module.md) - Converter orchestrator module
+- [orchestrator.module.md](./orchestrator.module.md) - Linear orchestrator module (legacy)
+- [PIPELINE.md](../../PIPELINE.md) - Conversion pipeline specification
+- [lazyload.module.md](./lazyload.module.md) - Lazy loading module
