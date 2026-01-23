@@ -559,19 +559,56 @@ function App() {
    * EFFET: OUVERTURE AUTOMATIQUE DE LA FENÊTRE DE NAVIGATION
    * ==========================================================================
    * 
-   * Ouvre automatiquement la fenêtre de navigation si:
-   * 1. La navigation est activée
-   * 2. Le format source est AsciiDoc ou Markdown
-   * 3. Il y a du texte dans le panneau source
-   * 4. Des headings ont été détectés
+   * Cet effet gère l'ouverture/fermeture automatique de la fenêtre de navigation
+   * selon l'état de l'application et le contenu du document.
    * 
-   * IMPORTANT: Ne s'ouvre PAS si:
-   * - Une conversion vient d'avoir lieu (justConverted)
-   * - Une conversion est en cours (loading)
-   * - Le texte source est le résultat d'une conversion (détection via targetFormat)
+   * CONDITIONS D'OUVERTURE:
+   * ------------------------
+   * La fenêtre s'ouvre automatiquement si TOUTES ces conditions sont remplies :
+   * 1. navigationEnabled === true (navigation activée par l'utilisateur)
+   * 2. sourceFormat === 'asciidoc' OU 'markdown' (formats supportés)
+   * 3. Il y a du texte dans le panneau source (text.trim().length > 0)
+   * 4. Des headings ont été détectés (headings.length > 0)
+   * 5. justConverted === false (pas de conversion récente)
+   * 6. loading === false (pas de conversion en cours)
    * 
-   * DÉBOGAGE: Affiche des logs dans la console pour comprendre pourquoi
-   * la fenêtre ne s'ouvre pas (voir console.log dans le code)
+   * CONDITIONS DE FERMETURE:
+   * ------------------------
+   * La fenêtre se ferme automatiquement si :
+   * - navigationEnabled === false
+   * - sourceFormat n'est ni 'asciidoc' ni 'markdown'
+   * - Il n'y a pas de texte dans le panneau source
+   * - Aucun heading n'est détecté
+   * - Une conversion vient de se terminer (justConverted === true)
+   * - Une conversion est en cours (loading === true)
+   * 
+   * DÉTECTION DU TEXTE SOURCE:
+   * ---------------------------
+   * IMPORTANT : Le texte source peut être dans adocInput OU mdOutput selon
+   * le format source. Il faut vérifier que le texte n'est PAS un résultat
+   * de conversion (détecté via targetFormat).
+   * 
+   * EXEMPLE:
+   * - sourceFormat = 'asciidoc', targetFormat = 'markdown'
+   *   → Le texte source est dans adocInput (pas dans mdOutput qui est le résultat)
+   * - sourceFormat = 'markdown', targetFormat = 'asciidoc'
+   *   → Le texte source est dans mdOutput (pas dans adocInput qui est le résultat)
+   * 
+   * POSITIONNEMENT INITIAL:
+   * -----------------------
+   * Si la fenêtre n'a pas encore de position (0, 0), elle est centrée à l'ouverture.
+   * 
+   * DÉBOGAGE:
+   * ---------
+   * Des logs sont affichés dans la console pour comprendre pourquoi la fenêtre
+   * ne s'ouvre pas (voir console.log dans le code).
+   * 
+   * DÉPENDANCES:
+   * ------------
+   * Re-exécute si : navigationEnabled, sourceFormat, targetFormat, adocInput,
+   *                mdOutput, headings, justConverted, loading changent
+   * 
+   * ==========================================================================
    */
   useEffect(() => {
     // Don't open window if conversion just occurred
@@ -1503,16 +1540,71 @@ function App() {
   // ==========================================================================
   
   /**
-   * Saves conversion to history when conversion completes successfully
+   * ==========================================================================
+   * EFFET: SAUVEGARDE AUTOMATIQUE DANS L'HISTORIQUE
+   * ==========================================================================
+   * 
+   * Cet effet sauvegarde automatiquement une conversion dans l'historique
+   * quand elle se termine avec succès.
+   * 
+   * CONDITIONS DE SAUVEGARDE:
+   * -------------------------
+   * La conversion est sauvegardée si :
+   * 1. loading === false (conversion terminée)
+   * 2. justConverted === true (conversion vient de se terminer)
+   * 3. sourceContent.trim() !== "" (contenu source non vide)
+   * 4. resultContent.trim() !== "" (contenu résultat non vide)
+   * 
+   * DÉLAI:
+   * -------
+   * Un délai de 500ms est ajouté pour s'assurer que le résultat est bien
+   * défini dans l'état avant de sauvegarder.
+   * 
+   * STRUCTURE DE L'ENTRÉE:
+   * ----------------------
+   * Chaque entrée contient :
+   * - id : identifiant unique (timestamp)
+   * - timestamp : date/heure de la conversion
+   * - fromFormat : format source
+   * - toFormat : format destination
+   * - sourceContent : contenu source complet
+   * - resultContent : contenu résultat complet
+   * 
+   * LIMITE:
+   * -------
+   * Seules les 50 dernières conversions sont conservées (slice(0, 50)).
+   * Les plus anciennes sont automatiquement supprimées.
+   * 
+   * STOCKAGE:
+   * ---------
+   * L'historique est stocké dans localStorage sous la clé 'ascend_conversion_history'.
+   * En cas d'erreur de stockage, un message est affiché dans la console.
+   * 
+   * DÉTERMINATION DU CONTENU:
+   * --------------------------
+   * Le contenu source et résultat est déterminé selon les formats :
+   * - sourceContent : mdOutput si sourceFormat === 'markdown', sinon adocInput
+   * - resultContent : adocInput si targetFormat === 'asciidoc', sinon mdOutput
+   * 
+   * DÉPENDANCES:
+   * ------------
+   * Re-exécute si : loading, justConverted, sourceFormat, targetFormat,
+   *                adocInput, mdOutput changent
+   * 
+   * ==========================================================================
    */
   useEffect(() => {
     if (!loading && justConverted) {
-      // Wait a bit for the result to be set
+      /* 
+        Délai pour s'assurer que le résultat est bien défini dans l'état
+        avant de sauvegarder dans l'historique
+      */
       const timer = setTimeout(() => {
-        // Get content directly from state
+        // Déterminer le contenu source et résultat selon les formats
         const sourceContent = sourceFormat === 'markdown' ? mdOutput : adocInput;
         const resultContent = targetFormat === 'asciidoc' ? adocInput : mdOutput;
         
+        // Sauvegarder uniquement si les deux contenus sont non vides
         if (sourceContent.trim() && resultContent.trim()) {
           const historyItem: ConversionHistoryItem = {
             id: Date.now().toString(),
@@ -1524,8 +1616,10 @@ function App() {
           };
 
           setConversionHistory(prev => {
-            const newHistory = [historyItem, ...prev].slice(0, 50); // Keep last 50
+            // Garder seulement les 50 dernières conversions
+            const newHistory = [historyItem, ...prev].slice(0, 50);
             try {
+              // Sauvegarder dans localStorage (persistant)
               localStorage.setItem('ascend_conversion_history', JSON.stringify(newHistory));
             } catch (e) {
               console.error('Error saving conversion history:', e);
@@ -1535,6 +1629,7 @@ function App() {
         }
       }, 500);
       
+      // Nettoyer le timer si le composant est démonté ou si les dépendances changent
       return () => clearTimeout(timer);
     }
   }, [loading, justConverted, sourceFormat, targetFormat, adocInput, mdOutput]);
@@ -1544,14 +1639,68 @@ function App() {
   // ==========================================================================
   
   /**
-   * Handles keyboard shortcuts
+   * ==========================================================================
+   * EFFET: GESTION DES RACCOURCIS CLAVIER
+   * ==========================================================================
+   * 
+   * Cet effet gère tous les raccourcis clavier de l'application.
+   * 
+   * LOGIQUE DE DÉTECTION:
+   * ----------------------
+   * Les raccourcis ne sont pas déclenchés si l'utilisateur est en train de
+   * taper dans un input, textarea ou élément éditable (pour éviter les conflits).
+   * 
+   * EXCEPTIONS DANS LES TEXTAREA:
+   * -----------------------------
+   * Certains raccourcis fonctionnent même dans les textarea :
+   * - Ctrl+S : sauvegarde (si en mode édition)
+   * - Ctrl+/ : aide (raccourcis)
+   * 
+   * RACCOURCIS GLOBAUX:
+   * -------------------
+   * Fonctionnent partout sauf dans les inputs/textarea :
+   * 
+   * 1. Ctrl+S (ou Cmd+S sur Mac) :
+   *    - Si isEditingResult === true → ouvre la modale de sauvegarde
+   *    - Sinon → exporte le résultat (handleExport)
+   * 
+   * 2. Ctrl+Enter (ou Cmd+Enter) :
+   *    - Lance la conversion (handleConvert)
+   *    - Ne fonctionne pas si loading === true
+   * 
+   * 3. Ctrl+K (ou Cmd+K) :
+   *    - Efface le contenu source (handleClearSource)
+   *    - Affiche une modale de confirmation
+   * 
+   * 4. Ctrl+/ (ou Cmd+/) :
+   *    - Ouvre la modale d'aide (raccourcis clavier)
+   * 
+   * COMPATIBILITÉ:
+   * --------------
+   * - Ctrl sur Windows/Linux
+   * - Cmd sur macOS (détecté via e.metaKey)
+   * 
+   * NETTOYAGE:
+   * ----------
+   * L'event listener est automatiquement retiré quand le composant est démonté
+   * ou quand les dépendances changent.
+   * 
+   * DÉPENDANCES:
+   * ------------
+   * Re-exécute si : isEditingResult, loading, targetFormat, adocInput,
+   *                mdOutput, requestConversionConfirmation changent
+   * 
+   * ==========================================================================
    */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger shortcuts when user is typing in inputs/textarea
+      /* 
+        Ignorer les raccourcis si l'utilisateur tape dans un input/textarea
+        (sauf exceptions ci-dessous)
+      */
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        // Allow Ctrl+S in textarea (save)
+        // Exception 1 : Ctrl+S dans textarea (sauvegarde si en mode édition)
         if (e.ctrlKey && e.key === 's' && target.tagName === 'TEXTAREA') {
           e.preventDefault();
           if (isEditingResult) {
@@ -1559,7 +1708,7 @@ function App() {
           }
           return;
         }
-        // Allow Ctrl+/ for help
+        // Exception 2 : Ctrl+/ pour l'aide (fonctionne partout)
         if (e.ctrlKey && e.key === '/') {
           e.preventDefault();
           setShowShortcutsModal(true);
@@ -1568,36 +1717,46 @@ function App() {
         return;
       }
 
-      // Global shortcuts
+      /* 
+        Raccourcis globaux (fonctionnent partout sauf dans inputs/textarea)
+        Compatible Windows/Linux (Ctrl) et macOS (Cmd via metaKey)
+      */
       if (e.ctrlKey || e.metaKey) {
         switch (e.key) {
           case 's':
             e.preventDefault();
             if (isEditingResult) {
+              // Mode édition : sauvegarder les modifications
               setShowSaveModal(true);
             } else {
+              // Mode normal : exporter le résultat
               handleExport();
             }
             break;
           case 'Enter':
             e.preventDefault();
             if (!loading) {
+              // Lancer la conversion (si pas déjà en cours)
               handleConvert();
             }
             break;
           case 'k':
             e.preventDefault();
+            // Effacer le contenu source (avec confirmation)
             handleClearSource();
             break;
           case '/':
             e.preventDefault();
+            // Afficher l'aide (raccourcis clavier)
             setShowShortcutsModal(true);
             break;
         }
       }
     };
 
+    // Ajouter l'event listener global
     window.addEventListener('keydown', handleKeyDown);
+    // Nettoyer lors du démontage ou changement de dépendances
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isEditingResult, loading, targetFormat, adocInput, mdOutput, requestConversionConfirmation]);
 
@@ -1819,7 +1978,39 @@ function App() {
     // Note: Source panel always stays on left and result on right
   }, [sourceFormat, targetFormat, adocInput, mdOutput]);
 
-  // Reusable component for source panel
+  /**
+   * ============================================================================
+   * COMPOSANT RÉUTILISABLE: PANEL SOURCE
+   * ============================================================================
+   * 
+   * Ce composant génère l'interface du panneau source (gauche) avec toutes
+   * ses fonctionnalités :
+   * - Zone de texte éditable (textarea)
+   * - Boutons d'action (fichier, dossier, convertir, effacer)
+   * - Indicateur de chargement pendant la conversion
+   * - Statistiques du texte (caractères, mots, lignes)
+   * - Sélecteur de fichiers (si un dossier a été importé)
+   * - Navigation par headings (si activée et disponible)
+   * 
+   * PARAMÈTRES:
+   * -----------
+   * @param title - Titre du panneau (ex: "AsciiDoc", "Markdown")
+   * @param value - Contenu actuel du textarea
+   * @param setValue - Fonction pour mettre à jour le contenu
+   * @param placeholder - Texte d'aide dans le textarea vide
+   * @param textAreaRef - Référence React au textarea (pour focus/scroll)
+   * @param onConvert - Fonction appelée lors du clic sur "Convertir"
+   * @param showHeadings - Afficher la navigation par headings (booléen)
+   * @param canConvert - Permettre la conversion (désactivé si formats identiques)
+   * @param onClear - Fonction optionnelle pour effacer le contenu
+   * 
+   * RENDU:
+   * ------
+   * Retourne un élément <section> avec toute l'interface du panneau source.
+   * Le panneau est responsive et s'adapte au contenu.
+   * 
+   * ============================================================================
+   */
   const renderSourcePanel = (
     title: string,
     value: string,
@@ -2003,7 +2194,26 @@ function App() {
     </section>
   );
 
-  // Fonction pour obtenir le placeholder selon le format
+  /**
+   * ============================================================================
+   * FONCTION UTILITAIRE: PLACEHOLDER PAR FORMAT
+   * ============================================================================
+   * 
+   * Retourne le texte d'aide (placeholder) approprié selon le format de document.
+   * Ce placeholder s'affiche dans le textarea quand il est vide pour guider
+   * l'utilisateur sur le type de contenu attendu.
+   * 
+   * @param format - Format du document (asciidoc, markdown, html, etc.)
+   * @returns Texte du placeholder en français
+   * 
+   * EXEMPLES:
+   * ---------
+   * - 'asciidoc' → "Texte AsciiDoc..."
+   * - 'markdown' → "Texte Markdown..."
+   * - 'html' → "Contenu HTML..."
+   * 
+   * ============================================================================
+   */
   const getFormatPlaceholder = useCallback((format: 'asciidoc' | 'markdown' | 'html' | 'pdf' | 'yaml' | 'json' | 'txt') => {
     const placeholders = {
       'asciidoc': 'Texte AsciiDoc...',
@@ -2017,7 +2227,40 @@ function App() {
     return placeholders[format];
   }, []);
 
-  // Source panel: displays selected source format
+  /**
+   * ============================================================================
+   * MÉMOISATION: PANEL SOURCE (useMemo)
+   * ============================================================================
+   * 
+   * Ce useMemo génère dynamiquement le composant du panneau source selon
+   * le format sélectionné (sourceFormat).
+   * 
+   * LOGIQUE DE SÉLECTION DU CONTENU:
+   * ---------------------------------
+   * Le contenu affiché dépend du format source :
+   * - sourceFormat === 'asciidoc' → utilise adocInput
+   * - sourceFormat === 'markdown' → utilise mdOutput
+   * - sourceFormat === 'html'|'pdf'|'yaml'|'json'|'txt' → utilise adocInput (temporaire)
+   * 
+   * IMPORTANT:
+   * -----------
+   * Le panneau source peut afficher n'importe quel format, mais le contenu
+   * est stocké dans adocInput OU mdOutput selon le format. Cette logique
+   * permet de gérer plusieurs formats avec seulement deux états de contenu.
+   * 
+   * VALIDATION DE CONVERSION:
+   * -------------------------
+   * La conversion n'est autorisée que si :
+   * 1. Les formats source et destination sont différents
+   * 2. La conversion est supportée (actuellement uniquement AsciiDoc ↔ Markdown)
+   * 
+   * DÉPENDANCES:
+   * ------------
+   * Recalcule si : sourceFormat, adocInput, mdOutput, currentFileName, status,
+   *                headings, loading, folderFiles, selectedFileIndex changent
+   * 
+   * ============================================================================
+   */
   const sourceCard = useMemo(() => {
     let sourceValue = "";
     let setSourceValue = (v: string) => {};
@@ -2055,7 +2298,55 @@ function App() {
     );
   }, [sourceFormat, adocInput, mdOutput, currentFileName, status, headings, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, adocTextAreaRef, navigationEnabled, getTextStats]);
 
-  // Result panel: displays selected destination format
+  /**
+   * ============================================================================
+   * MÉMOISATION: PANEL RÉSULTAT (useMemo)
+   * ============================================================================
+   * 
+   * Ce useMemo génère dynamiquement le composant du panneau résultat selon
+   * le format de destination sélectionné (targetFormat).
+   * 
+   * LOGIQUE DE SÉLECTION DU CONTENU:
+   * ---------------------------------
+   * Le contenu affiché dépend du format destination :
+   * - targetFormat === 'asciidoc' → utilise adocInput
+   * - targetFormat === 'markdown'|'html'|'pdf'|'yaml'|'json'|'txt' → utilise mdOutput
+   * 
+   * FONCTIONNALITÉS DU PANEL RÉSULTAT:
+   * -----------------------------------
+   * 1. Mode édition : permet de modifier le résultat après conversion
+   *    - Bouton "✏️" pour activer l'édition
+   *    - Bouton "✕ Annuler" pour annuler les modifications
+   *    - Bouton "💾 Sauvegarder" pour sauvegarder les modifications
+   * 
+   * 2. Actions disponibles :
+   *    - 📋 Copier : copie le résultat dans le presse-papiers
+   *    - ⬇️ Télécharger : exporte le résultat en fichier
+   *    - 🗑️ Effacer : supprime le contenu du résultat
+   * 
+   * 3. Indicateur de chargement :
+   *    - Affiche une barre de progression animée pendant la conversion
+   *    - Affiche le statut actuel de la conversion
+   * 
+   * 4. Statistiques :
+   *    - Nombre de caractères, mots, lignes
+   *    - Affichées dans la toolbar du panneau
+   * 
+   * MODE ÉDITION:
+   * ------------
+   * Quand isEditingResult === true :
+   * - Le textarea devient éditable (readOnly = false)
+   * - Les boutons de copie/export/effacement sont désactivés
+   * - Le curseur change pour indiquer l'édition
+   * - Un backup du contenu original est créé avant édition
+   * 
+   * DÉPENDANCES:
+   * ------------
+   * Recalcule si : targetFormat, adocInput, mdOutput, status, loading,
+   *                copied, isEditingResult changent
+   * 
+   * ============================================================================
+   */
   const resultCard = useMemo(() => {
     let resultValue = "";
     let setResultValue = (v: string) => {};
@@ -2241,19 +2532,51 @@ function App() {
 
   return (
     <div className="page">
+      {/* 
+        ========================================================================
+        NOTIFICATION TOAST (SUCCESS/ERROR)
+        ========================================================================
+        Système de notification non-intrusif qui s'affiche en haut de l'écran.
+        
+        TYPES:
+        - success : notification de succès (icône ✓, fond vert)
+        - error : notification d'erreur (icône ✕, fond rouge)
+        
+        COMPORTEMENT:
+        - S'affiche automatiquement quand notification.visible === true
+        - Se ferme automatiquement après 5 secondes (voir useEffect)
+        - Peut être fermée manuellement avec le bouton ✕
+        - Animation de fade in/out lors de l'apparition/disparition
+        
+        UTILISATION:
+        - Appelée lors des conversions (succès/erreur)
+        - Appelée lors des actions utilisateur (copie, export, etc.)
+        - Appelée lors des erreurs réseau ou de validation
+      */}
       {notification && notification.visible && (
         <div className={`notification notification-${notification.type}`}>
           <div className="notification-content">
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: 1 }}>
-              {/* Icon based on type */}
+              {/* 
+                Icône selon le type de notification
+                - Success : ✓ (coche verte)
+                - Error : ✕ (croix rouge)
+              */}
               {notification.type === 'success' && (
                 <span style={{ fontSize: "1.25rem" }}>✓</span>
               )}
               {notification.type === 'error' && (
                 <span style={{ fontSize: "1.25rem" }}>✕</span>
               )}
-            <span className="notification-message">{notification.message}</span>
+              {/* Message de la notification */}
+              <span className="notification-message">{notification.message}</span>
             </div>
+            {/* 
+              Bouton de fermeture manuelle
+              - Opacité réduite par défaut (0.8)
+              - Opacité maximale au survol (1.0)
+              - Transition fluide pour l'effet hover
+            */}
             <button
               onClick={() => setNotification(null)}
               style={{
@@ -2338,10 +2661,34 @@ function App() {
         </div>
       </header>
 
-      {/* Settings panel */}
+      {/* 
+        ========================================================================
+        MODALE : PANEL DES PARAMÈTRES
+        ========================================================================
+        Panneau latéral qui s'ouvre depuis le bouton ⚙️ dans l'en-tête.
+        
+        STRUCTURE:
+        - Overlay : fond semi-transparent qui ferme la modale au clic
+        - Panel : conteneur principal avec le contenu
+        - Header : en-tête avec titre et bouton de fermeture
+        - Content : contenu scrollable des paramètres
+        
+        COMPORTEMENT:
+        - S'ouvre/ferme via le bouton ⚙️ dans l'en-tête
+        - Se ferme en cliquant sur l'overlay ou le bouton ×
+        - stopPropagation() empêche la fermeture en cliquant dans le panel
+      */}
       {settingsOpen && (
         <>
+          {/* 
+            Overlay : fond semi-transparent
+            Ferme la modale au clic (mais pas si on clique dans le panel)
+          */}
           <div className="settings-overlay" onClick={() => setSettingsOpen(false)} />
+          {/* 
+            Panel principal : contient tous les paramètres
+            stopPropagation() empêche la fermeture quand on clique dedans
+          */}
           <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
             <div className="settings-panel-header">
               <h3>Paramètres</h3>
@@ -2357,6 +2704,11 @@ function App() {
             <div className="settings-panel-content">
               <div className="settings-section">
                 <h4>Paramètres de l'application</h4>
+                {/* 
+                  NOTE: Les paramètres avancés sont actuellement dans la sidebar.
+                  Cette section est réservée pour de futurs paramètres globaux
+                  de l'application (thème, langue, etc.)
+                */}
                 <p style={{ fontSize: "0.875rem", color: "#6b7280", marginTop: "0.5rem" }}>
                   Les paramètres seront disponibles prochainement.
                 </p>
@@ -2366,7 +2718,30 @@ function App() {
         </>
       )}
 
-      {/* History panel */}
+      {/* 
+        ========================================================================
+        MODALE : PANEL D'HISTORIQUE DES CONVERSIONS
+        ========================================================================
+        Panneau qui affiche l'historique des conversions précédentes.
+        
+        FONCTIONNALITÉS:
+        - Affiche les 50 dernières conversions (limite)
+        - Stockage dans localStorage (persistant)
+        - Restauration d'une conversion précédente au clic
+        - Effacement de tout l'historique
+        
+        STRUCTURE D'UNE ENTRÉE:
+        - ID unique (timestamp)
+        - Timestamp de la conversion
+        - Formats source et destination
+        - Aperçu du contenu source (100 premiers caractères)
+        - Contenu complet (source + résultat) pour restauration
+        
+        INTERACTION:
+        - Clic sur une entrée → restaure la conversion (formats + contenus)
+        - Bouton "Effacer l'historique" → confirmation puis suppression
+        - Hover sur une entrée → changement de couleur pour feedback visuel
+      */}
       {showHistoryPanel && (
         <>
           <div className="settings-overlay" onClick={() => setShowHistoryPanel(false)} />
@@ -2383,16 +2758,25 @@ function App() {
               </button>
             </div>
             <div className="settings-panel-content">
+              {/* 
+                État vide : message informatif si aucun historique
+              */}
               {conversionHistory.length === 0 ? (
                 <p style={{ fontSize: "0.875rem", color: "#6b7280", textAlign: "center", padding: "2rem" }}>
                   Aucune conversion dans l'historique
                 </p>
               ) : (
                 <>
+                  {/* 
+                    En-tête : compteur et bouton d'effacement
+                  */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
                     <span style={{ fontSize: "0.875rem", color: "#6b7280" }}>
                       {conversionHistory.length} conversion{conversionHistory.length > 1 ? 's' : ''}
                     </span>
+                    {/* 
+                      Bouton d'effacement : demande confirmation avant suppression
+                    */}
                     <button
                       onClick={clearHistory}
                       style={{
@@ -2408,6 +2792,9 @@ function App() {
                       Effacer l'historique
                     </button>
                   </div>
+                  {/* 
+                    Liste scrollable des conversions (max 60vh de hauteur)
+                  */}
                   <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
                     {conversionHistory.map((item) => (
                       <div
@@ -2421,6 +2808,10 @@ function App() {
                           cursor: "pointer"
                         }}
                         onClick={() => restoreFromHistory(item)}
+                        /* 
+                          Effet hover : changement de couleur au survol
+                          pour indiquer que l'élément est cliquable
+                        */
                         onMouseEnter={(e) => {
                           e.currentTarget.style.background = "rgba(255, 255, 255, 0.1)";
                         }}
@@ -2428,14 +2819,24 @@ function App() {
                           e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)";
                         }}
                       >
+                        {/* 
+                          En-tête de l'entrée : formats et date
+                        */}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
                           <span style={{ fontWeight: "600", color: "#e5e7eb" }}>
                             {getFormatTitle(item.fromFormat)} → {getFormatTitle(item.toFormat)}
                           </span>
+                          {/* 
+                            Date formatée en français (ex: "15/01/2024, 14:30:00")
+                          */}
                           <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
                             {new Date(item.timestamp).toLocaleString('fr-FR')}
                           </span>
                         </div>
+                        {/* 
+                          Aperçu du contenu source (100 premiers caractères)
+                          avec ellipsis si le texte est trop long
+                        */}
                         <div style={{ fontSize: "0.75rem", color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {item.sourceContent.substring(0, 100)}...
                         </div>
@@ -2497,11 +2898,40 @@ function App() {
         </>
       )}
 
+      {/* 
+        ========================================================================
+        LAYOUT PRINCIPAL : SIDEBAR + CONTENU
+        ========================================================================
+        Le layout principal contient :
+        1. Sidebar (gauche) : options de conversion et paramètres
+        2. Main content (droite) : panneaux source et résultat
+      */}
       <div className="main-layout">
+        {/* 
+          ====================================================================
+          SIDEBAR : OPTIONS ET PARAMÈTRES
+          ====================================================================
+          La sidebar contient toutes les options de configuration :
+          - Sélection des formats source/destination
+          - Options de conversion (normalisation, analyse, etc.)
+          - Paramètres de navigation
+          - Métadonnées du document
+        */}
         <aside className="sidebar">
           <div className="sidebar-section">
             <h3 className="sidebar-title">Options de conversion</h3>
             <div className="sidebar-content">
+              {/* 
+                ============================================================
+                SÉLECTEUR DE FORMAT SOURCE
+                ============================================================
+                Permet de choisir le format du document source.
+                La logique de validation garantit que :
+                - Source et destination ne peuvent pas être identiques
+                - Seules les conversions AsciiDoc ↔ Markdown sont supportées
+                - Si le format source change et entre en conflit avec la destination,
+                  la destination est automatiquement ajustée
+              */}
               <div className="format-selector-group">
                 <label className="format-label">Format source</label>
                 <select
@@ -2509,22 +2939,37 @@ function App() {
                   onChange={(e) => {
                     const newFormat = e.target.value as FormatType;
                     setSourceFormat(newFormat);
-                    // Adjust destination format if necessary
+                    
+                    /* 
+                      LOGIQUE D'AJUSTEMENT AUTOMATIQUE DU FORMAT DESTINATION:
+                      -----------------------------------------------------------------
+                      Si le nouveau format source est identique à la destination,
+                      on ajuste automatiquement la destination pour éviter un conflit.
+                      
+                      RÈGLES:
+                      1. Si source === destination → changer destination
+                      2. Si source n'est pas adoc/md → destination = markdown
+                      3. Si destination n'est pas adoc/md → destination = opposé de source
+                      
+                      EXEMPLE:
+                      - Source: asciidoc, Destination: asciidoc → Destination devient markdown
+                      - Source: html, Destination: markdown → Destination reste markdown
+                    */
                     if (newFormat === targetFormat) {
-                      // Only allow AsciiDoc ↔ Markdown conversions
+                      // Formats identiques : ajuster la destination
                       if (newFormat === 'asciidoc') {
                         setTargetFormat('markdown');
                       } else if (newFormat === 'markdown') {
                         setTargetFormat('asciidoc');
                       } else {
-                        // For other formats, default to markdown if source is not asciidoc/markdown
+                        // Pour les autres formats, par défaut markdown
                         setTargetFormat('markdown');
                       }
                     } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
-                      // If source is not adoc/md, set target to markdown
+                      // Source n'est pas adoc/md → destination = markdown
                       setTargetFormat('markdown');
                     } else if (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') {
-                      // If target is not adoc/md, set it to the opposite of source
+                      // Destination n'est pas adoc/md → destination = opposé de source
                       setTargetFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
                     }
                   }}
@@ -2539,6 +2984,14 @@ function App() {
                   <option value="txt" disabled>txt (coming soon)</option>
                 </select>
               </div>
+              {/* 
+                ============================================================
+                SÉLECTEUR DE FORMAT DESTINATION
+                ============================================================
+                Permet de choisir le format de sortie après conversion.
+                Même logique d'ajustement automatique que pour le format source,
+                mais appliquée en sens inverse (ajustement de la source).
+              */}
               <div className="format-selector-group">
                 <label className="format-label">Format destination</label>
                 <select
@@ -2546,22 +2999,33 @@ function App() {
                   onChange={(e) => {
                     const newFormat = e.target.value as FormatType;
                     setTargetFormat(newFormat);
-                    // Adjust source format if necessary
+                    
+                    /* 
+                      LOGIQUE D'AJUSTEMENT AUTOMATIQUE DU FORMAT SOURCE:
+                      -----------------------------------------------------------------
+                      Si le nouveau format destination est identique à la source,
+                      on ajuste automatiquement la source pour éviter un conflit.
+                      
+                      RÈGLES (inversées par rapport au sélecteur source):
+                      1. Si destination === source → changer source
+                      2. Si destination n'est pas adoc/md → source = asciidoc
+                      3. Si source n'est pas adoc/md → source = opposé de destination
+                    */
                     if (newFormat === sourceFormat) {
-                      // Only allow AsciiDoc ↔ Markdown conversions
+                      // Formats identiques : ajuster la source
                       if (newFormat === 'asciidoc') {
                         setSourceFormat('markdown');
                       } else if (newFormat === 'markdown') {
                         setSourceFormat('asciidoc');
                       } else {
-                        // For other formats, default to asciidoc if target is not asciidoc/markdown
+                        // Pour les autres formats, par défaut asciidoc
                         setSourceFormat('asciidoc');
                       }
                     } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
-                      // If target is not adoc/md, set source to asciidoc
+                      // Destination n'est pas adoc/md → source = asciidoc
                       setSourceFormat('asciidoc');
                     } else if (sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') {
-                      // If source is not adoc/md, set it to the opposite of target
+                      // Source n'est pas adoc/md → source = opposé de destination
                       setSourceFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
                     }
                   }}
@@ -2595,7 +3059,23 @@ function App() {
           <div className="sidebar-section">
             <h3 className="sidebar-title">Autres options</h3>
             <div className="sidebar-content">
-              {/* Navigation dans le fichier */}
+              {/* 
+                ============================================================
+                SECTION : NAVIGATION DANS LE FICHIER
+                ============================================================
+                Cette section n'est visible que si le format source est
+                AsciiDoc ou Markdown (formats qui supportent les headings).
+                
+                FONCTIONNALITÉS:
+                - Activation/désactivation de la navigation
+                - Compteur de sections détectées
+                - Message d'aide si aucune section n'est disponible
+                
+                LOGIQUE D'ACTIVATION:
+                - Quand la navigation est activée ET qu'il y a du texte ET
+                  qu'il y a des headings → ouvre automatiquement la fenêtre
+                - Quand la navigation est désactivée → ferme la fenêtre
+              */}
               {(sourceFormat === 'asciidoc' || sourceFormat === 'markdown') && (
                 <div className="option-section">
                   <button
@@ -2618,25 +3098,47 @@ function App() {
                             onChange={(e) => {
                               const enabled = e.target.checked;
                               setNavigationEnabled(enabled);
-                              // Open window if enabled and there is text
+                              
+                              /* 
+                                OUVERTURE AUTOMATIQUE DE LA FENÊTRE:
+                                Si la navigation est activée ET que les conditions
+                                sont remplies (texte + headings), on ouvre la fenêtre.
+                                Sinon, on la ferme.
+                              */
                               if (enabled) {
-                                const text = sourceFormat === 'asciidoc' ? adocInput : (sourceFormat === 'markdown' ? mdOutput : adocInput);
+                                // Déterminer le texte source selon le format
+                                const text = sourceFormat === 'asciidoc' 
+                                  ? adocInput 
+                                  : (sourceFormat === 'markdown' ? mdOutput : adocInput);
                                 const hasText = text.trim().length > 0;
+                                
+                                // Ouvrir la fenêtre si conditions remplies
                                 if (hasText && headings.length > 0) {
                                   setNavigationWindowOpen(true);
                                 }
                               } else {
+                                // Désactivation : fermer la fenêtre
                                 setNavigationWindowOpen(false);
                               }
                             }}
                             className="option-checkbox"
                           />
                           <span>Activer la navigation</span>
+                          {/* 
+                            Compteur de sections : affiche le nombre de headings
+                            détectés avec gestion du singulier/pluriel
+                          */}
                           {headings.length > 0 && (
-                            <span className="navigation-count">{headings.length} {headings.length > 1 ? 'sections' : 'section'}</span>
+                            <span className="navigation-count">
+                              {headings.length} {headings.length > 1 ? 'sections' : 'section'}
+                            </span>
                           )}
                         </label>
                       </div>
+                      {/* 
+                        Message d'aide : affiché si aucun heading n'est détecté
+                        Guide l'utilisateur pour ajouter des titres dans son document
+                      */}
                       {headings.length === 0 && (
                         <div style={{
                           fontSize: "0.75rem",
@@ -2985,22 +3487,59 @@ function App() {
             </div>
           </div>
         </aside>
+        {/* 
+          ====================================================================
+          CONTENU PRINCIPAL : GRID DE CONVERSION
+          ====================================================================
+          Le contenu principal contient la grille de conversion avec :
+          1. Panneau source (gauche) : contenu à convertir
+          2. Bouton d'échange (milieu) : échange source ↔ destination
+          3. Panneau résultat (droite) : résultat de la conversion
+          
+          LAYOUT:
+          - Grid CSS avec 3 colonnes
+          - Panneaux source et résultat prennent l'espace disponible
+          - Colonne centrale pour le bouton d'échange
+        */}
         <div className="main-content">
-      <main className="grid">
-        {sourceCard}
+          <main className="grid">
+            {/* 
+              Panneau source : affiche le contenu selon sourceFormat
+              Généré dynamiquement par sourceCard (useMemo)
+            */}
+            {sourceCard}
 
-        <div className="swap-column">
-          <button
-            type="button"
-            className="swap-button"
-            onClick={handleSwap}
-          >
-            <span className="swap-icon">⇄</span>
-          </button>
-        </div>
+            {/* 
+              ================================================================
+              COLONNE D'ÉCHANGE : BOUTON DE SWAP
+              ================================================================
+              Bouton central qui permet d'échanger les formats source et destination.
+              
+              FONCTIONNALITÉ:
+              - Échange sourceFormat ↔ targetFormat
+              - Échange le contenu : ancien résultat → nouvelle source, etc.
+              - Les panneaux restent en place (source à gauche, résultat à droite)
+              
+              ICÔNE:
+              - ⇄ (double flèche) pour indiquer l'échange bidirectionnel
+            */}
+            <div className="swap-column">
+              <button
+                type="button"
+                className="swap-button"
+                onClick={handleSwap}
+                title="Échanger les formats source et destination"
+              >
+                <span className="swap-icon">⇄</span>
+              </button>
+            </div>
 
-        {resultCard}
-      </main>
+            {/* 
+              Panneau résultat : affiche le résultat selon targetFormat
+              Généré dynamiquement par resultCard (useMemo)
+            */}
+            {resultCard}
+          </main>
         </div>
       </div>
 
@@ -3009,12 +3548,33 @@ function App() {
         <span className="footer-author">Make by TBE</span>
       </footer>
 
-      {/* Taskbar for minimized windows */}
+      {/* 
+        ========================================================================
+        BARRE DES TÂCHES : FENÊTRES MINIMISÉES
+        ========================================================================
+        Barre des tâches qui s'affiche en bas de l'écran quand une fenêtre
+        est minimisée. Permet de restaurer rapidement les fenêtres minimisées.
+        
+        FONCTIONNALITÉ:
+        - Affiche les fenêtres minimisées sous forme d'icônes
+        - Clic sur une icône → restaure la fenêtre (maximized = false, open = true)
+        - Position : fixe en bas de l'écran
+        
+        ACTUELLEMENT:
+        - Seule la fenêtre de navigation peut être minimisée
+        - D'autres fenêtres pourront être ajoutées à l'avenir
+      */}
       {navigationWindowMinimized && (
         <div className="taskbar">
           <div 
             className="taskbar-item"
             onClick={() => {
+              /* 
+                Restauration de la fenêtre :
+                - Quitte le mode minimisé
+                - Rouvre la fenêtre
+                - La fenêtre réapparaît à sa position précédente
+              */
               setNavigationWindowMinimized(false);
               setNavigationWindowOpen(true);
             }}
@@ -3022,13 +3582,67 @@ function App() {
           >
             <span className="taskbar-icon">📋</span>
             <span className="taskbar-label">Navigation</span>
-    </div>
+          </div>
         </div>
       )}
 
       {/* Navigation window */}
       {navigationWindowOpen && !navigationWindowMinimized && headings.length > 0 && (() => {
-        // Structure headings by hierarchy
+        /**
+         * ========================================================================
+         * ALGORITHME: CONSTRUCTION DE LA HIÉRARCHIE DES HEADINGS
+         * ========================================================================
+         * 
+         * Cette fonction transforme une liste plate de headings en structure
+         * hiérarchique arborescente (arbre) pour l'affichage dans la fenêtre
+         * de navigation.
+         * 
+         * ALGORITHME:
+         * -----------
+         * Utilise une pile (stack) pour construire la hiérarchie :
+         * 1. Pour chaque heading, on retire de la pile tous les headings
+         *    de niveau supérieur ou égal (ceux qui ne peuvent pas être parents)
+         * 2. Si la pile est vide → heading de niveau racine
+         * 3. Sinon → heading enfant du dernier élément de la pile
+         * 4. On ajoute le heading à la pile pour qu'il puisse être parent
+         *    des headings suivants
+         * 
+         * EXEMPLE:
+         * --------
+         * Input: [
+         *   { level: 1, title: "Chapitre 1" },
+         *   { level: 2, title: "Section 1.1" },
+         *   { level: 2, title: "Section 1.2" },
+         *   { level: 3, title: "Sous-section 1.2.1" },
+         *   { level: 1, title: "Chapitre 2" }
+         * ]
+         * 
+         * Output: [
+         *   {
+         *     heading: { level: 1, title: "Chapitre 1" },
+         *     children: [
+         *       { heading: { level: 2, title: "Section 1.1" }, children: [] },
+         *       {
+         *         heading: { level: 2, title: "Section 1.2" },
+         *         children: [
+         *           { heading: { level: 3, title: "Sous-section 1.2.1" }, children: [] }
+         *         ]
+         *       }
+         *     ]
+         *   },
+         *   { heading: { level: 1, title: "Chapitre 2" }, children: [] }
+         * ]
+         * 
+         * COMPLEXITÉ:
+         * -----------
+         * - Temps : O(n) où n = nombre de headings
+         * - Espace : O(n) pour la pile et la structure résultante
+         * 
+         * @param headings - Liste plate de headings avec leur niveau
+         * @returns Structure hiérarchique avec enfants imbriqués
+         * 
+         * ========================================================================
+         */
         const buildHierarchy = (headings: Array<{ lineIndex: number; level: number; title: string }>) => {
           const result: Array<{
             heading: { lineIndex: number; level: number; title: string };
@@ -3060,6 +3674,41 @@ function App() {
 
         const hierarchy = buildHierarchy(headings);
 
+        /**
+         * ========================================================================
+         * FONCTION RÉCURSIVE: RENDU D'UN HEADING ET DE SES ENFANTS
+         * ========================================================================
+         * 
+         * Cette fonction récursive rend un heading et tous ses enfants de manière
+         * hiérarchique pour l'affichage dans la navigation.
+         * 
+         * LOGIQUE:
+         * --------
+         * 1. Rend le heading actuel avec son titre et numéro de ligne
+         * 2. Si le heading a des enfants, les rend récursivement dans une <ul>
+         * 3. La profondeur (depth) est utilisée pour l'indentation visuelle
+         * 
+         * STYLES:
+         * -------
+         * Les classes CSS sont générées dynamiquement selon le niveau :
+         * - file-nav-item : élément de navigation de base
+         * - file-nav-level-{level} : style spécifique au niveau (1, 2, 3, etc.)
+         * - file-nav-link : lien cliquable vers le heading
+         * - file-nav-children : conteneur des enfants (imbriqué)
+         * 
+         * INTERACTION:
+         * ------------
+         * Au clic sur un heading, scrollToHeading() est appelé pour :
+         * - Faire défiler le textarea source jusqu'à la ligne du heading
+         * - Mettre en surbrillance la ligne
+         * - Donner le focus au textarea
+         * 
+         * @param item - Objet contenant le heading et ses enfants
+         * @param depth - Profondeur actuelle dans l'arbre (0 = racine)
+         * @returns Élément <li> avec le heading et ses enfants imbriqués
+         * 
+         * ========================================================================
+         */
         const renderHeading = (item: {
           heading: { lineIndex: number; level: number; title: string };
           children: Array<any>;
@@ -3091,8 +3740,46 @@ function App() {
           );
         };
 
-        // Render floating navigation window
-        // This window allows navigating the document's hierarchical structure
+        /**
+         * ========================================================================
+         * RENDU: FENÊTRE DE NAVIGATION FLOTTANTE
+         * ========================================================================
+         * 
+         * Cette fenêtre flottante permet de naviguer dans la structure hiérarchique
+         * du document (headings, sections). Elle est :
+         * - DRAGGABLE : déplaçable par glisser-déposer sur l'en-tête
+         * - RESIZABLE : redimensionnable par la poignée en bas à droite
+         * - MINIMIZABLE : peut être réduite et affichée dans la barre des tâches
+         * - MAXIMIZABLE : peut occuper 95% de l'écran
+         * 
+         * POSITIONNEMENT:
+         * ---------------
+         * - Maximisée : centrée (50% left/top avec translate -50%)
+         * - Normale : position personnalisée (navigationWindowPosition)
+         * - Minimisée : position automatique (auto)
+         * 
+         * TRANSFORMATIONS CSS:
+         * --------------------
+         * - Maximisée : translate(-50%, -50%) pour centrer
+         * - Pendant drag : translate3d(offsetX, offsetY, 0) pour mouvement fluide
+         * - Normale : translate3d(0, 0, 0) (pas de transformation)
+         * 
+         * ÉTATS VISUELS:
+         * --------------
+         * Classes CSS appliquées selon l'état :
+         * - .minimized : fenêtre réduite
+         * - .maximized : fenêtre agrandie
+         * - .dragging : pendant le déplacement (améliore les performances)
+         * - .resizing : pendant le redimensionnement (optimise le rendu)
+         * 
+         * CONTENU:
+         * --------
+         * - En-tête : titre, compteur de sections, boutons de contrôle
+         * - Corps : liste hiérarchique des headings (rendue récursivement)
+         * - Poignée de redimensionnement : visible uniquement si non minimisée/maximisée
+         * 
+         * ========================================================================
+         */
         return (
           <div 
             ref={navigationWindowRef}
@@ -3117,20 +3804,46 @@ function App() {
                   : 'translate3d(0, 0, 0)'
             }}
           >
-            {/* Window header: drag zone and controls */}
+            {/* 
+              ====================================================================
+              EN-TÊTE DE LA FENÊTRE : ZONE DE DÉPLACEMENT ET CONTRÔLES
+              ====================================================================
+              L'en-tête sert de zone de déplacement (drag zone) : on peut cliquer
+              et glisser n'importe où sur l'en-tête pour déplacer la fenêtre.
+              Contient également les boutons de contrôle (minimize, maximize, close).
+            */}
             <div 
               className="navigation-window-header"
               onMouseDown={handleDragStart}
             >
-              {/* Title and section counter */}
+              {/* 
+                Titre et compteur de sections
+                Le compteur affiche le nombre total de headings détectés avec
+                gestion du singulier/pluriel en français.
+              */}
               <div className="navigation-window-title">
                 <span>Navigation</span>
-                {/* Display number of sections with singular/plural handling */}
-                <span className="navigation-window-count">{headings.length} {headings.length > 1 ? 'sections' : 'section'}</span>
+                <span className="navigation-window-count">
+                  {headings.length} {headings.length > 1 ? 'sections' : 'section'}
+                </span>
               </div>
-              {/* Window controls: minimize, maximize, close */}
+              
+              {/* 
+                ================================================================
+                BOUTONS DE CONTRÔLE DE LA FENÊTRE
+                ================================================================
+                Trois boutons permettent de gérer l'état de la fenêtre :
+                1. Minimize (−) : réduit la fenêtre et l'affiche dans la barre des tâches
+                2. Maximize/Restore (□/⧉) : bascule entre plein écran et taille normale
+                3. Close (×) : ferme la fenêtre et désactive la navigation
+              */}
               <div className="navigation-window-controls">
-                {/* Minimize button: reduces window and hides it */}
+                {/* 
+                  Bouton Minimize : réduit la fenêtre
+                  - Met navigationWindowMinimized à true
+                  - Cache la fenêtre (navigationWindowOpen = false)
+                  - La fenêtre apparaît dans la barre des tâches en bas
+                */}
                 <button
                   type="button"
                   className="navigation-window-btn minimize-btn"
@@ -3142,7 +3855,13 @@ function App() {
                 >
                   −
                 </button>
-                {/* Maximize/restore button: toggles between full screen and normal size */}
+                
+                {/* 
+                  Bouton Maximize/Restore : bascule plein écran ↔ normale
+                  - Si maximized : restaure la taille normale
+                  - Si normale : agrandit à 95vw x 95vh (centré)
+                  - L'icône change selon l'état (□ = maximize, ⧉ = restore)
+                */}
                 <button
                   type="button"
                   className="navigation-window-btn maximize-btn"
@@ -3151,7 +3870,13 @@ function App() {
                 >
                   {navigationWindowMaximized ? '⧉' : '□'}
                 </button>
-                {/* Close button: closes window and disables navigation */}
+                
+                {/* 
+                  Bouton Close : ferme la fenêtre et désactive la navigation
+                  - Met navigationWindowOpen à false
+                  - Désactive la navigation (navigationEnabled = false)
+                  - La fenêtre disparaît complètement
+                */}
                 <button
                   type="button"
                   className="navigation-window-btn close-btn"
@@ -3165,18 +3890,38 @@ function App() {
                 </button>
               </div>
             </div>
-            {/* Window content: displayed only if window is not minimized */}
+            
+            {/* 
+              ====================================================================
+              CONTENU DE LA FENÊTRE : LISTE HIÉRARCHIQUE DES HEADINGS
+              ====================================================================
+              Le contenu n'est affiché que si la fenêtre n'est pas minimisée.
+              Contient la structure hiérarchique des headings du document,
+              rendue récursivement par renderHeading().
+            */}
             {!navigationWindowMinimized && (
               <div className="navigation-window-content">
                 <div className="file-navigation-container">
-                  {/* Hierarchical list of document headings */}
+                  {/* 
+                    Liste hiérarchique : chaque item peut avoir des enfants
+                    La structure est construite par buildHierarchy() et rendue
+                    récursivement par renderHeading().
+                  */}
                   <ul className="file-navigation-list">
                     {hierarchy.map((item) => renderHeading(item))}
                   </ul>
                 </div>
               </div>
             )}
-            {/* Resize handle: visible only if window is neither minimized nor maximized */}
+            
+            {/* 
+              ====================================================================
+              POIGNÉE DE REDIMENSIONNEMENT
+              ====================================================================
+              Visible uniquement si la fenêtre n'est ni minimisée ni maximisée.
+              Permet de redimensionner la fenêtre en glissant depuis le coin
+              inférieur droit. Déclenche handleResizeStart() au mousedown.
+            */}
             {!navigationWindowMinimized && !navigationWindowMaximized && (
               <div 
                 className="navigation-window-resize-handle"
@@ -3380,16 +4125,54 @@ function App() {
         </div>
       )}
 
-      {/* Confirmation modal for conversion (SECURED) */}
+      {/* 
+        ========================================================================
+        MODALE DE CONFIRMATION : CONVERSION SÉCURISÉE (AVEC TOKEN)
+        ========================================================================
+        Cette modale s'affiche pour les conversions qui nécessitent une
+        confirmation explicite de l'utilisateur (sécurité).
+        
+        SYSTÈME DE SÉCURITÉ:
+        --------------------
+        1. Un token de confirmation est demandé au backend avant d'afficher la modale
+        2. Le token est unique, à usage unique et limité dans le temps
+        3. Le token DOIT être inclus dans la requête de conversion finale
+        4. Si l'utilisateur annule, le token est invalidé
+        
+        CONDITIONS D'AFFICHAGE:
+        -----------------------
+        La modale s'affiche uniquement si :
+        - showConversionModal === true
+        - confirmationToken existe (token valide)
+        - pendingConversion existe (paramètres de conversion en attente)
+        
+        ACTIONS:
+        --------
+        - "Yes" : lance la conversion avec le token (confirmAndConvert)
+        - "No" : annule et invalide le token
+        - Clic sur overlay : annule et invalide le token
+        
+        IMPORTANT:
+        ----------
+        Cette modale est utilisée pour les conversions sensibles qui nécessitent
+        une confirmation explicite pour éviter les conversions accidentelles.
+      */}
       {showConversionModal && confirmationToken && pendingConversion && (
         <div className="modal-overlay" onClick={() => {
-          // Cancel conversion and invalidate token
+          /* 
+            Annulation : invalider le token et fermer la modale
+            Le token ne peut plus être utilisé après annulation
+          */
           setShowConversionModal(false);
           setConfirmationToken(null);
           setPendingConversion(null);
         }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Confirm conversion</h3>
+            {/* 
+              Affichage des formats source et destination
+              pour que l'utilisateur sache exactement ce qui va être converti
+            */}
             <p>
               Do you want to convert from <strong>{getFormatTitle(pendingConversion.fromFormat)}</strong> to <strong>{getFormatTitle(pendingConversion.toFormat)}</strong>?
             </p>
@@ -3397,24 +4180,36 @@ function App() {
               This action requires explicit confirmation.
             </p>
             <div className="modal-buttons">
+              {/* 
+                Bouton "Yes" : confirme et lance la conversion
+                - Appelle confirmAndConvert() qui utilise le token
+                - Ferme la modale
+                - Lance la conversion avec le token de confirmation
+              */}
               <button
                 onClick={confirmAndConvert}
                 style={{ 
-                  background: "#10b981", // Green for "Yes"
+                  background: "#10b981", // Vert pour "Oui"
                   flex: 1
                 }}
               >
                 Yes
               </button>
+              {/* 
+                Bouton "No" : annule la conversion
+                - Invalide le token
+                - Ferme la modale
+                - Ne lance pas la conversion
+              */}
               <button
                 onClick={() => {
-                  // Cancel: invalidate token and close modal
+                  // Annulation : invalider le token et fermer la modale
                   setShowConversionModal(false);
                   setConfirmationToken(null);
                   setPendingConversion(null);
                 }}
                 style={{ 
-                  background: "#ef4444", // Red for "No"
+                  background: "#ef4444", // Rouge pour "Non"
                   flex: 1
                 }}
               >
