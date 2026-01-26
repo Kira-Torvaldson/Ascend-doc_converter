@@ -4,9 +4,6 @@
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 # Ascend
-
-Pipeline de conversion documentaire local-first, basé sur des wrappers contractuels et un orchestrateur déterministe.
-
 ## Présentation
 
 Ascend est un système de conversion de documents en phase alpha. Il exécute des conversions entre formats déclarés via des modules isolés (wrappers) qui respectent un contrat d'interface strict. Chaque conversion s'exécute dans un environnement temporaire unique, avec validation explicite des entrées et journalisation structurée.
