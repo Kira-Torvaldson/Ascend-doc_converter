@@ -13,7 +13,7 @@ Each entry includes:
 
 ## Version History
 
-### 0.0.1.2.2 alpha (2026-01-19)
+### 0.0.1.3 Rise (2026-01-27)
 
 #### Added
 - Complete documentation reorganization

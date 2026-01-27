@@ -1,6 +1,6 @@
 # Ascend - Complete Documentation
 
-**Version:** 0.0.1.2.2 alpha  
+**Version:** 0.0.1.3 Rise  
 **Last Updated:** 2026-01-19  
 **Status:** Alpha - Architecture in crystallization
 
@@ -65,7 +65,7 @@ Ascend is a local-first document conversion pipeline. It converts documents betw
 
 ### Current Status
 
-**Version:** 0.0.1.2.2 alpha  
+**Version:** 0.0.1.3 Rise  
 **Supported Conversions:** AsciiDoc ↔ Markdown, Plain Text → Markdown  
 **Future Formats:** HTML, PDF, YAML, JSON, TXT (planned)
 
@@ -1179,7 +1179,7 @@ Execution profiles define resource limits and execution parameters for different
 
 ### Current Status
 
-**Version:** 0.0.1.2.2 alpha  
+**Version:** 0.0.1.3 Rise  
 **Status:** Active development  
 **Focus:** Core functionality and stability
 
@@ -1394,7 +1394,7 @@ List of explicitly allowed values. Anything not in the whitelist is rejected.
 
 ## 14. Changelog
 
-### 0.0.1.2.2 alpha (2026-01-19)
+### 0.0.1.3 Rise (2026-01-27)
 
 #### Added
 - Complete documentation reorganization

@@ -57,10 +57,65 @@ function basicCleanup(markdown) {
   return result
 }
 
+/**
+ * Processes AsciiDoc header: if it ends with :experimental:, adds :toc: automatically
+ * 
+ * @param {string} asciidoc - AsciiDoc content
+ * @returns {string} AsciiDoc content with :toc: added after :experimental: if present
+ */
+function removeExperimentalTag(asciidoc) {
+  if (!asciidoc || typeof asciidoc !== 'string') {
+    return asciidoc
+  }
+
+  const lines = asciidoc.split('\n')
+  const result = []
+  let foundExperimental = false
+  let tocAdded = false
+
+  // Find :experimental: in the header (before the document title starting with =)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmed = line.trim()
+    
+    // Check if we've reached the document title (header ends here)
+    if (/^=+\s+/.test(trimmed)) {
+      // If we found :experimental: and haven't added :toc: yet, add it now
+      if (foundExperimental && !tocAdded) {
+        result.push(':toc:')
+        tocAdded = true
+      }
+      result.push(line)
+      continue
+    }
+
+    // Check if this is :experimental:
+    if (/^:experimental:\s*$/i.test(trimmed)) {
+      foundExperimental = true
+      result.push(line)
+      // Check if next line is not :toc: already
+      const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : ''
+      if (!/^:toc:\s*$/i.test(nextLine)) {
+        // Add :toc: immediately after :experimental:
+        result.push(':toc:')
+        tocAdded = true
+      }
+      continue
+    }
+
+    result.push(line)
+  }
+
+  return result.join('\n')
+}
+
 async function convertAsciiDoc(asciidoc, mode = 'default') {
   if (!asciidoc || typeof asciidoc !== 'string') {
     throw new Error('AsciiDoc content must be a non-empty string')
   }
+
+  // Remove :experimental: tag from header if present
+  asciidoc = removeExperimentalTag(asciidoc)
 
   // Use downdoc directly with extensions for better performance
   // Use the parsedown extension when BookStack mode is enabled
@@ -1015,6 +1070,7 @@ module.exports = {
   convertMarkdownWithPandoc,
   convertHtmlWithPandoc,
   convertWithPandoc,
-  text2markdown
+  text2markdown,
+  removeExperimentalTag
 }
 

@@ -13,7 +13,7 @@ const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
 const path = require('path')
 const { runConverter } = require('../services/modules/lazyload.module.js')
-const { convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown } = require('../services/conversion/convert.js')
+const { convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown, removeExperimentalTag } = require('../services/conversion/convert.js')
 
 // Endpoint: AsciiDoc → Markdown (utilise lazy loader avec downdoc)
 router.post('/to-markdown', async (req, res) => {
@@ -37,6 +37,13 @@ router.post('/to-markdown', async (req, res) => {
 
     console.log(`[INFO] Converting ${text.length} characters (AsciiDoc → Markdown) with lazy loader${useParsedown ? ' (Parsedown/BookStack mode)' : ''}`)
 
+    // Process AsciiDoc content: add :toc: after :experimental: if present
+    // This ensures the source content has :toc: when :experimental: is present
+    const processedText = removeExperimentalTag(text)
+    if (processedText !== text) {
+      console.log(`[INFO] Processed AsciiDoc content: added :toc: after :experimental: (${text.length} → ${processedText.length} chars)`)
+    }
+
     // Créer le dossier temporaire
     mkdirSync(tempDir, { recursive: true })
 
@@ -44,8 +51,9 @@ router.post('/to-markdown', async (req, res) => {
     inputFile = path.join(tempDir, 'input.adoc')
     outputFile = path.join(tempDir, 'output.md')
 
-    // Écrire le contenu d'entrée
-    writeFileSync(inputFile, text, 'utf8')
+    // Écrire le contenu d'entrée (avec :toc: ajouté si nécessaire)
+    writeFileSync(inputFile, processedText, 'utf8')
+    console.log(`[INFO] Written processed content to temp file (${processedText.length} chars)`)
 
     // Utiliser le lazy loader pour exécuter la conversion
     const result = await runConverter('downdoc', inputFile, outputFile, {
@@ -64,13 +72,14 @@ router.post('/to-markdown', async (req, res) => {
     const markdown = readFileSync(outputFile, 'utf8')
 
     // Debug: vérifier que le résultat est bien du Markdown et non de l'AsciiDoc
-    if (markdown === text) {
-      console.error(`[ERROR] Output is identical to input - conversion did not occur!`)
-      console.error(`[ERROR] Input length: ${text.length}, Output length: ${markdown.length}`)
-      console.error(`[ERROR] First 100 chars of input: ${text.substring(0, 100)}`)
+    // Compare with processedText (not original text) since we may have added :toc:
+    if (markdown === processedText) {
+      console.error(`[ERROR] Output is identical to processed input - conversion did not occur!`)
+      console.error(`[ERROR] Processed input length: ${processedText.length}, Output length: ${markdown.length}`)
+      console.error(`[ERROR] First 100 chars of processed input: ${processedText.substring(0, 100)}`)
       console.error(`[ERROR] First 100 chars of output: ${markdown.substring(0, 100)}`)
       return res.status(500).json({
-        detail: 'Conversion error: output is identical to input. The conversion did not occur.'
+        detail: 'Conversion error: output is identical to processed input. The conversion did not occur.'
       })
     }
 
