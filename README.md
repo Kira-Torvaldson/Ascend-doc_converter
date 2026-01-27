@@ -1,11 +1,10 @@
+
+# Ascend
+
 ![Version](https://img.shields.io/badge/version-0.0.1.3_Rise-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-
-# Ascend
-
-Pipeline de conversion documentaire local-first, basé sur des wrappers contractuels et un orchestrateur déterministe.
 
 ## Présentation
 
