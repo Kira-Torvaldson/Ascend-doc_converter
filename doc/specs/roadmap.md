@@ -6,7 +6,7 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.2.2 alpha  
+**Version:** 0.0.1.3 Rise  
 **Status:** Active development  
 **Focus:** Core functionality and stability
 

@@ -58,6 +58,8 @@ import {
   requestConfirmationToken
 } from "./converters";
 import { FormatType, ConversionHistoryItem } from "./types";
+import { HistoryModalV2, useNewHistoryModal } from "./components/HistoryModalV2";
+import { removeExperimentalTag } from "./utils/asciidocHelpers";
 
 /**
  * ============================================================================
@@ -240,6 +242,9 @@ function App() {
   
   /** Indicates if window is minimized (hidden but visible in taskbar) */
   const [navigationWindowMinimized, setNavigationWindowMinimized] = useState<boolean>(false);
+
+  /** Indicates if history modal (V2) is minimized and shown in taskbar */
+  const [historyWindowMinimized, setHistoryWindowMinimized] = useState<boolean>(false);
   
   /** Indicates if window is maximized (full screen, 95vw x 95vh) */
   const [navigationWindowMaximized, setNavigationWindowMaximized] = useState<boolean>(false);
@@ -556,58 +561,57 @@ function App() {
 
   /**
    * ==========================================================================
-   * EFFET: OUVERTURE AUTOMATIQUE DE LA FENÊTRE DE NAVIGATION
+   * EFFECT: AUTOMATIC NAVIGATION WINDOW OPENING
    * ==========================================================================
-   * 
-   * Cet effet gère l'ouverture/fermeture automatique de la fenêtre de navigation
-   * selon l'état de l'application et le contenu du document.
-   * 
-   * CONDITIONS D'OUVERTURE:
-   * ------------------------
-   * La fenêtre s'ouvre automatiquement si TOUTES ces conditions sont remplies :
-   * 1. navigationEnabled === true (navigation activée par l'utilisateur)
-   * 2. sourceFormat === 'asciidoc' OU 'markdown' (formats supportés)
-   * 3. Il y a du texte dans le panneau source (text.trim().length > 0)
-   * 4. Des headings ont été détectés (headings.length > 0)
-   * 5. justConverted === false (pas de conversion récente)
-   * 6. loading === false (pas de conversion en cours)
-   * 
-   * CONDITIONS DE FERMETURE:
-   * ------------------------
-   * La fenêtre se ferme automatiquement si :
+   *
+   * This effect handles the automatic open/close of the navigation window
+   * based on application state and document content.
+   *
+   * OPEN CONDITIONS:
+   * ----------------
+   * The window opens automatically when ALL of the following are true:
+   * 1. navigationEnabled === true (navigation enabled by user)
+   * 2. sourceFormat === 'asciidoc' OR 'markdown' (supported formats)
+   * 3. There is text in the source panel (text.trim().length > 0)
+   * 4. Headings have been detected (headings.length > 0)
+   * 5. justConverted === false (no recent conversion)
+   * 6. loading === false (no conversion in progress)
+   *
+   * CLOSE CONDITIONS:
+   * -----------------
+   * The window closes automatically when:
    * - navigationEnabled === false
-   * - sourceFormat n'est ni 'asciidoc' ni 'markdown'
-   * - Il n'y a pas de texte dans le panneau source
-   * - Aucun heading n'est détecté
-   * - Une conversion vient de se terminer (justConverted === true)
-   * - Une conversion est en cours (loading === true)
-   * 
-   * DÉTECTION DU TEXTE SOURCE:
-   * ---------------------------
-   * IMPORTANT : Le texte source peut être dans adocInput OU mdOutput selon
-   * le format source. Il faut vérifier que le texte n'est PAS un résultat
-   * de conversion (détecté via targetFormat).
-   * 
-   * EXEMPLE:
+   * - sourceFormat is neither 'asciidoc' nor 'markdown'
+   * - There is no text in the source panel
+   * - No headings are detected
+   * - A conversion just finished (justConverted === true)
+   * - A conversion is in progress (loading === true)
+   *
+   * SOURCE TEXT DETECTION:
+   * ----------------------
+   * IMPORTANT: Source text may be in adocInput OR mdOutput depending on
+   * the source format. Ensure the text is NOT conversion output (detected via targetFormat).
+   *
+   * EXAMPLE:
    * - sourceFormat = 'asciidoc', targetFormat = 'markdown'
-   *   → Le texte source est dans adocInput (pas dans mdOutput qui est le résultat)
+   *   → Source text is in adocInput (not mdOutput, which is the result)
    * - sourceFormat = 'markdown', targetFormat = 'asciidoc'
-   *   → Le texte source est dans mdOutput (pas dans adocInput qui est le résultat)
-   * 
-   * POSITIONNEMENT INITIAL:
-   * -----------------------
-   * Si la fenêtre n'a pas encore de position (0, 0), elle est centrée à l'ouverture.
-   * 
-   * DÉBOGAGE:
-   * ---------
-   * Des logs sont affichés dans la console pour comprendre pourquoi la fenêtre
-   * ne s'ouvre pas (voir console.log dans le code).
-   * 
-   * DÉPENDANCES:
-   * ------------
-   * Re-exécute si : navigationEnabled, sourceFormat, targetFormat, adocInput,
-   *                mdOutput, headings, justConverted, loading changent
-   * 
+   *   → Source text is in mdOutput (not adocInput, which is the result)
+   *
+   * INITIAL POSITIONING:
+   * --------------------
+   * If the window has no position yet (0, 0), it is centered on open.
+   *
+   * DEBUGGING:
+   * ----------
+   * Logs are output to the console to understand why the window does not open
+   * (see console.log in the code).
+   *
+   * DEPENDENCIES:
+   * -------------
+   * Re-runs when: navigationEnabled, sourceFormat, targetFormat, adocInput,
+   *               mdOutput, headings, justConverted, loading change
+   *
    * ==========================================================================
    */
   useEffect(() => {
@@ -680,12 +684,12 @@ function App() {
   // ==========================================================================
   
   /**
-   * Démarre le déplacement de la fenêtre de navigation
-   * 
-   * Calcule la position de départ relative à la fenêtre et initialise
-   * l'état de drag. Ne fonctionne pas si la fenêtre est maximisée.
-   * 
-   * @param e - Événement de souris (mousedown sur l'en-tête)
+   * Starts navigation window dragging
+   *
+   * Computes the start position relative to the window and initializes
+   * drag state. Does nothing when the window is maximized.
+   *
+   * @param e - Mouse event (mousedown on the header)
    */
   const handleDragStart = (e: React.MouseEvent) => {
     if (navigationWindowMaximized || !navigationWindowRef.current) return;
@@ -878,7 +882,11 @@ function App() {
 
     const reader = new FileReader();
     reader.onload = () => {
-      const text = typeof reader.result === "string" ? reader.result : "";
+      let text = typeof reader.result === "string" ? reader.result : "";
+      // Process AsciiDoc content: add :toc: after :experimental: if present
+      if (sourceFormat === 'asciidoc') {
+        text = removeExperimentalTag(text);
+      }
       // Use sourceFormat to determine where to put text
       if (sourceFormat === 'asciidoc' || sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
         setAdocInput(text);
@@ -949,7 +957,11 @@ function App() {
     try {
       const reader = new FileReader();
       reader.onload = () => {
-        const text = typeof reader.result === "string" ? reader.result : "";
+        let text = typeof reader.result === "string" ? reader.result : "";
+        // Process AsciiDoc content: add :toc: after :experimental: if present
+        if (sourceFormat === 'asciidoc') {
+          text = removeExperimentalTag(text);
+        }
         // Use sourceFormat to determine where to put text
         if (sourceFormat === 'asciidoc' || sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json') {
           setAdocInput(text);
@@ -1036,7 +1048,7 @@ function App() {
         }
       }, 2000);
     } catch (err) {
-      // Fallback pour les navigateurs qui ne supportent pas clipboard API
+      // Fallback for browsers that do not support Clipboard API
       const textArea = document.createElement("textarea");
       textArea.value = textToCopy;
       textArea.style.position = "fixed";
@@ -1143,14 +1155,19 @@ function App() {
    */
   const restoreFromHistory = useCallback((item: ConversionHistoryItem) => {
     // Set content directly based on format
+    // Process AsciiDoc content: add :toc: after :experimental: if present
     if (item.fromFormat === 'markdown') {
       setMdOutput(item.sourceContent);
     } else {
-      setAdocInput(item.sourceContent);
+      const processedSource = item.fromFormat === 'asciidoc' 
+        ? removeExperimentalTag(item.sourceContent) 
+        : item.sourceContent;
+      setAdocInput(processedSource);
     }
     
     if (item.toFormat === 'asciidoc') {
-      setAdocInput(item.resultContent);
+      const processedResult = removeExperimentalTag(item.resultContent);
+      setAdocInput(processedResult);
     } else {
       setMdOutput(item.resultContent);
     }
@@ -1397,17 +1414,17 @@ function App() {
 
   /**
    * ==========================================================================
-   * HANDLER: DEMANDE DE CONFIRMATION POUR CONVERSION
+   * HANDLER: CONVERSION CONFIRMATION REQUEST
    * ==========================================================================
-   * 
-   * Cette fonction gère le flux de confirmation sécurisé:
-   * 1. Récupère le contenu source selon sourceFormat
-   * 2. Calcule la taille du contenu
-   * 3. Demande un token de confirmation au backend
-   * 4. Stocke les paramètres de conversion en attente
-   * 5. Affiche la modale de confirmation
-   * 
-   * Si l'utilisateur confirme, confirmAndConvert() sera appelé avec le token.
+   *
+   * This function handles the secure confirmation flow:
+   * 1. Get source content according to sourceFormat
+   * 2. Compute content size
+   * 3. Request a confirmation token from the backend
+   * 4. Store pending conversion parameters
+   * 5. Show the confirmation modal
+   *
+   * When the user confirms, confirmAndConvert() is called with the token.
    */
   const requestConversionConfirmation = useCallback(async () => {
     // Determine source text according to source format
@@ -1513,7 +1530,7 @@ function App() {
       sourceText = adocInput;
     }
 
-    // Lancer la conversion avec le token de confirmation
+    // Trigger conversion with confirmation token
     setJustConverted(true);
     convertText(
       sourceText,
@@ -1536,75 +1553,75 @@ function App() {
   }, [confirmationToken, pendingConversion, targetFormat, conversionOptions, setNotification, sourceFormat, adocInput, mdOutput]);
 
   // ==========================================================================
-  // EFFECTS: SAVE TO HISTORY AFTER SUCCESSFUL CONVERSION
+  // EFFECT: SAVE TO HISTORY AFTER SUCCESSFUL CONVERSION
   // ==========================================================================
-  
+
   /**
    * ==========================================================================
-   * EFFET: SAUVEGARDE AUTOMATIQUE DANS L'HISTORIQUE
+   * EFFECT: AUTOMATIC SAVE TO HISTORY
    * ==========================================================================
    * 
-   * Cet effet sauvegarde automatiquement une conversion dans l'historique
-   * quand elle se termine avec succès.
+   * This effect automatically saves a conversion to history
+   * when it completes successfully.
    * 
-   * CONDITIONS DE SAUVEGARDE:
-   * -------------------------
-   * La conversion est sauvegardée si :
-   * 1. loading === false (conversion terminée)
-   * 2. justConverted === true (conversion vient de se terminer)
-   * 3. sourceContent.trim() !== "" (contenu source non vide)
-   * 4. resultContent.trim() !== "" (contenu résultat non vide)
+   * SAVE CONDITIONS:
+   * ----------------
+   * The conversion is saved if:
+   * 1. loading === false (conversion has finished)
+   * 2. justConverted === true (conversion just finished)
+   * 3. sourceContent.trim() !== "" (source content is not empty)
+   * 4. resultContent.trim() !== "" (result content is not empty)
    * 
-   * DÉLAI:
+   * DELAY:
+   * ------
+   * A 500ms delay is used to ensure the result value
+   * is actually set in state before saving.
+   * 
+   * ENTRY STRUCTURE:
+   * ---------------
+   * Each entry contains:
+   * - id: unique identifier (timestamp)
+   * - timestamp: conversion date/time
+   * - fromFormat: source format
+   * - toFormat: destination format
+   * - sourceContent: full source content
+   * - resultContent: full result content
+   * 
+   * LIMIT:
+   * ------
+   * Only the 50 most recent conversions are kept (slice(0, 50)).
+   * Older ones are automatically removed.
+   * 
+   * STORAGE:
    * -------
-   * Un délai de 500ms est ajouté pour s'assurer que le résultat est bien
-   * défini dans l'état avant de sauvegarder.
+   * The history is stored in localStorage under the key 'ascend_conversion_history'.
+   * If storage fails, a message is written to the console.
    * 
-   * STRUCTURE DE L'ENTRÉE:
-   * ----------------------
-   * Chaque entrée contient :
-   * - id : identifiant unique (timestamp)
-   * - timestamp : date/heure de la conversion
-   * - fromFormat : format source
-   * - toFormat : format destination
-   * - sourceContent : contenu source complet
-   * - resultContent : contenu résultat complet
+   * CONTENT DETERMINATION:
+   * ---------------------
+   * Source and result content are chosen according to formats:
+   * - sourceContent: mdOutput if sourceFormat === 'markdown', otherwise adocInput
+   * - resultContent: adocInput if targetFormat === 'asciidoc', otherwise mdOutput
    * 
-   * LIMITE:
-   * -------
-   * Seules les 50 dernières conversions sont conservées (slice(0, 50)).
-   * Les plus anciennes sont automatiquement supprimées.
-   * 
-   * STOCKAGE:
-   * ---------
-   * L'historique est stocké dans localStorage sous la clé 'ascend_conversion_history'.
-   * En cas d'erreur de stockage, un message est affiché dans la console.
-   * 
-   * DÉTERMINATION DU CONTENU:
-   * --------------------------
-   * Le contenu source et résultat est déterminé selon les formats :
-   * - sourceContent : mdOutput si sourceFormat === 'markdown', sinon adocInput
-   * - resultContent : adocInput si targetFormat === 'asciidoc', sinon mdOutput
-   * 
-   * DÉPENDANCES:
-   * ------------
-   * Re-exécute si : loading, justConverted, sourceFormat, targetFormat,
-   *                adocInput, mdOutput changent
+   * DEPENDENCIES:
+   * -------------
+   * Runs on: loading, justConverted, sourceFormat, targetFormat,
+   *          adocInput, mdOutput change
    * 
    * ==========================================================================
    */
   useEffect(() => {
     if (!loading && justConverted) {
       /* 
-        Délai pour s'assurer que le résultat est bien défini dans l'état
-        avant de sauvegarder dans l'historique
+        Delay to ensure that the result is properly defined in the state
+        before saving to history
       */
       const timer = setTimeout(() => {
-        // Déterminer le contenu source et résultat selon les formats
+        // Determine source and result content based on formats
         const sourceContent = sourceFormat === 'markdown' ? mdOutput : adocInput;
         const resultContent = targetFormat === 'asciidoc' ? adocInput : mdOutput;
-        
-        // Sauvegarder uniquement si les deux contenus sont non vides
+
+        // Save only if both contents are not empty
         if (sourceContent.trim() && resultContent.trim()) {
           const historyItem: ConversionHistoryItem = {
             id: Date.now().toString(),
@@ -1616,10 +1633,10 @@ function App() {
           };
 
           setConversionHistory(prev => {
-            // Garder seulement les 50 dernières conversions
+            // Keep only the last 50 conversions
             const newHistory = [historyItem, ...prev].slice(0, 50);
             try {
-              // Sauvegarder dans localStorage (persistant)
+              // Save in localStorage (persistent)
               localStorage.setItem('ascend_conversion_history', JSON.stringify(newHistory));
             } catch (e) {
               console.error('Error saving conversion history:', e);
@@ -1627,9 +1644,12 @@ function App() {
             return newHistory;
           });
         }
+
+        // Reset so the navigation window can reopen when conditions are met
+        setJustConverted(false);
       }, 500);
       
-      // Nettoyer le timer si le composant est démonté ou si les dépendances changent
+      // Clean up timer when component unmounts or when dependencies change
       return () => clearTimeout(timer);
     }
   }, [loading, justConverted, sourceFormat, targetFormat, adocInput, mdOutput]);
@@ -1640,67 +1660,66 @@ function App() {
   
   /**
    * ==========================================================================
-   * EFFET: GESTION DES RACCOURCIS CLAVIER
+   * EFFECT: HANDLE KEYBOARD SHORTCUTS
    * ==========================================================================
    * 
-   * Cet effet gère tous les raccourcis clavier de l'application.
+   * This effect handles all keyboard shortcuts in the application.
    * 
-   * LOGIQUE DE DÉTECTION:
+   * LOGIC:
    * ----------------------
-   * Les raccourcis ne sont pas déclenchés si l'utilisateur est en train de
-   * taper dans un input, textarea ou élément éditable (pour éviter les conflits).
-   * 
-   * EXCEPTIONS DANS LES TEXTAREA:
+   * Shortcuts are not triggered if the user is typing in an input, textarea or editable element (to avoid conflicts).
+   *
+   * EXCEPTIONS IN TEXTAREA:
    * -----------------------------
-   * Certains raccourcis fonctionnent même dans les textarea :
-   * - Ctrl+S : sauvegarde (si en mode édition)
-   * - Ctrl+/ : aide (raccourcis)
-   * 
-   * RACCOURCIS GLOBAUX:
+   * Certain shortcuts work even in textarea:
+   * - Ctrl+S : save (if in edit mode)
+   * - Ctrl+/ : help (shortcuts)
+   *
+   * GLOBAL SHORTCUTS:
    * -------------------
-   * Fonctionnent partout sauf dans les inputs/textarea :
-   * 
-   * 1. Ctrl+S (ou Cmd+S sur Mac) :
-   *    - Si isEditingResult === true → ouvre la modale de sauvegarde
-   *    - Sinon → exporte le résultat (handleExport)
-   * 
-   * 2. Ctrl+Enter (ou Cmd+Enter) :
-   *    - Lance la conversion (handleConvert)
-   *    - Ne fonctionne pas si loading === true
-   * 
-   * 3. Ctrl+K (ou Cmd+K) :
-   *    - Efface le contenu source (handleClearSource)
-   *    - Affiche une modale de confirmation
-   * 
-   * 4. Ctrl+/ (ou Cmd+/) :
-   *    - Ouvre la modale d'aide (raccourcis clavier)
-   * 
-   * COMPATIBILITÉ:
+   * Work everywhere except in inputs/textarea:
+   *
+   * 1. Ctrl+S (or Cmd+S on Mac):
+   *    - If isEditingResult === true → open save modal
+   *    - Otherwise → export result (handleExport)
+   *
+   * 2. Ctrl+Enter (or Cmd+Enter):
+   *    - Triggers conversion (handleConvert)
+   *    - Does nothing if loading === true
+   *
+   * 3. Ctrl+K (or Cmd+K):
+   *    - Clears source content (handleClearSource)
+   *    - Shows confirmation modal
+   *
+   * 4. Ctrl+/ (or Cmd+/):
+   *    - Opens help modal (keyboard shortcuts)
+   *
+   * COMPATIBILITY:
    * --------------
-   * - Ctrl sur Windows/Linux
-   * - Cmd sur macOS (détecté via e.metaKey)
-   * 
-   * NETTOYAGE:
+   * - Ctrl on Windows/Linux
+   * - Cmd on macOS (detected via e.metaKey)
+   *
+   * CLEANUP:
    * ----------
-   * L'event listener est automatiquement retiré quand le composant est démonté
-   * ou quand les dépendances changent.
-   * 
-   * DÉPENDANCES:
+   * The event listener is automatically removed when the component unmounts
+   * or when dependencies change.
+   *
+   * DEPENDENCIES:
    * ------------
-   * Re-exécute si : isEditingResult, loading, targetFormat, adocInput,
-   *                mdOutput, requestConversionConfirmation changent
+   * Re-runs when: isEditingResult, loading, targetFormat, adocInput,
+   *               mdOutput, requestConversionConfirmation change
    * 
    * ==========================================================================
    */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      /* 
-        Ignorer les raccourcis si l'utilisateur tape dans un input/textarea
-        (sauf exceptions ci-dessous)
+      /*
+        Ignore shortcuts if the user is typing in an input/textarea
+        (except for the exceptions below)
       */
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        // Exception 1 : Ctrl+S dans textarea (sauvegarde si en mode édition)
+        // Exception 1: Ctrl+S in textarea (save when in edit mode)
         if (e.ctrlKey && e.key === 's' && target.tagName === 'TEXTAREA') {
           e.preventDefault();
           if (isEditingResult) {
@@ -1708,7 +1727,7 @@ function App() {
           }
           return;
         }
-        // Exception 2 : Ctrl+/ pour l'aide (fonctionne partout)
+        // Exception 2: Ctrl+/ for help (works everywhere)
         if (e.ctrlKey && e.key === '/') {
           e.preventDefault();
           setShowShortcutsModal(true);
@@ -1718,45 +1737,45 @@ function App() {
       }
 
       /* 
-        Raccourcis globaux (fonctionnent partout sauf dans inputs/textarea)
-        Compatible Windows/Linux (Ctrl) et macOS (Cmd via metaKey)
+        Global shortcuts (work everywhere except in inputs/textarea)
+        Compatible Windows/Linux (Ctrl) and macOS (Cmd via metaKey)
       */
       if (e.ctrlKey || e.metaKey) {
         switch (e.key) {
           case 's':
             e.preventDefault();
             if (isEditingResult) {
-              // Mode édition : sauvegarder les modifications
+              // Edit mode: save modifications
               setShowSaveModal(true);
             } else {
-              // Mode normal : exporter le résultat
+              // Normal mode: export result
               handleExport();
             }
             break;
           case 'Enter':
             e.preventDefault();
             if (!loading) {
-              // Lancer la conversion (si pas déjà en cours)
+              // Trigger conversion (if not already in progress)
               handleConvert();
             }
             break;
           case 'k':
             e.preventDefault();
-            // Effacer le contenu source (avec confirmation)
+            // Clear source content (with confirmation)
             handleClearSource();
             break;
           case '/':
             e.preventDefault();
-            // Afficher l'aide (raccourcis clavier)
+            // Show help (keyboard shortcuts)
             setShowShortcutsModal(true);
             break;
         }
       }
     };
 
-    // Ajouter l'event listener global
+    // Add global event listener
     window.addEventListener('keydown', handleKeyDown);
-    // Nettoyer lors du démontage ou changement de dépendances
+    // Clean up on unmount or dependency change
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isEditingResult, loading, targetFormat, adocInput, mdOutput, requestConversionConfirmation]);
 
@@ -1795,7 +1814,7 @@ function App() {
     );
 
     if (needsToken) {
-      // Conversion complexe : demander un token
+      // Complex conversion: request a token
     requestConversionConfirmation();
     } else {
       // Conversion simple : convertir directement
@@ -1842,7 +1861,7 @@ function App() {
         }
       };
 
-      // Lancer la conversion directement sans token
+      // Run conversion directly without token
       setJustConverted(true);
       convertText(
         sourceText,
@@ -1853,7 +1872,7 @@ function App() {
         setLoading,
         setNotification,
         conversionOptions,
-        null // Pas de token pour les conversions simples
+        null // No token for simple conversions
       );
     }
   }, [requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, setNotification]);
@@ -1980,34 +1999,33 @@ function App() {
 
   /**
    * ============================================================================
-   * COMPOSANT RÉUTILISABLE: PANEL SOURCE
+   * REUSABLE COMPONENT: SOURCE PANEL
    * ============================================================================
    * 
-   * Ce composant génère l'interface du panneau source (gauche) avec toutes
-   * ses fonctionnalités :
-   * - Zone de texte éditable (textarea)
-   * - Boutons d'action (fichier, dossier, convertir, effacer)
-   * - Indicateur de chargement pendant la conversion
-   * - Statistiques du texte (caractères, mots, lignes)
-   * - Sélecteur de fichiers (si un dossier a été importé)
-   * - Navigation par headings (si activée et disponible)
+   * This component renders the source panel (left) interface with all its features:
+   * - Editable text area (textarea)
+   * - Action buttons (file, folder, convert, clear)
+   * - Loading indicator during conversion
+   * - Text statistics (characters, words, lines)
+   * - File selector (when a folder has been imported)
+   * - Heading-based navigation (when enabled and available)
    * 
-   * PARAMÈTRES:
+   * PARAMETERS:
    * -----------
-   * @param title - Titre du panneau (ex: "AsciiDoc", "Markdown")
-   * @param value - Contenu actuel du textarea
-   * @param setValue - Fonction pour mettre à jour le contenu
-   * @param placeholder - Texte d'aide dans le textarea vide
-   * @param textAreaRef - Référence React au textarea (pour focus/scroll)
-   * @param onConvert - Fonction appelée lors du clic sur "Convertir"
-   * @param showHeadings - Afficher la navigation par headings (booléen)
-   * @param canConvert - Permettre la conversion (désactivé si formats identiques)
-   * @param onClear - Fonction optionnelle pour effacer le contenu
+   * @param title - Panel title (e.g. "AsciiDoc", "Markdown")
+   * @param value - Current textarea content
+   * @param setValue - Function to update content
+   * @param placeholder - Help text when textarea is empty
+   * @param textAreaRef - React ref to textarea (for focus/scroll)
+   * @param onConvert - Function called when "Convert" is clicked
+   * @param showHeadings - Show heading navigation (boolean)
+   * @param canConvert - Allow conversion (disabled when source and target formats are the same)
+   * @param onClear - Optional function to clear content
    * 
-   * RENDU:
-   * ------
-   * Retourne un élément <section> avec toute l'interface du panneau source.
-   * Le panneau est responsive et s'adapte au contenu.
+   * RENDER:
+   * -------
+   * Returns a <section> element with the full source panel interface.
+   * The panel is responsive and adapts to content.
    * 
    * ============================================================================
    */
@@ -2196,21 +2214,21 @@ function App() {
 
   /**
    * ============================================================================
-   * FONCTION UTILITAIRE: PLACEHOLDER PAR FORMAT
+   * UTILITY: PLACEHOLDER BY FORMAT
    * ============================================================================
    * 
-   * Retourne le texte d'aide (placeholder) approprié selon le format de document.
-   * Ce placeholder s'affiche dans le textarea quand il est vide pour guider
-   * l'utilisateur sur le type de contenu attendu.
+   * Returns the appropriate placeholder text for the given document format.
+   * The placeholder is shown in the textarea when it is empty to guide
+   * the user on the expected content type.
    * 
-   * @param format - Format du document (asciidoc, markdown, html, etc.)
-   * @returns Texte du placeholder en français
+   * @param format - Document format (asciidoc, markdown, html, etc.)
+   * @returns Placeholder text for the format
    * 
-   * EXEMPLES:
+   * EXAMPLES:
    * ---------
-   * - 'asciidoc' → "Texte AsciiDoc..."
-   * - 'markdown' → "Texte Markdown..."
-   * - 'html' → "Contenu HTML..."
+   * - 'asciidoc' → "AsciiDoc text..."
+   * - 'markdown' → "Markdown text..."
+   * - 'html' → "HTML content..."
    * 
    * ============================================================================
    */
@@ -2229,35 +2247,35 @@ function App() {
 
   /**
    * ============================================================================
-   * MÉMOISATION: PANEL SOURCE (useMemo)
+   * MEMO: SOURCE PANEL (useMemo)
    * ============================================================================
    * 
-   * Ce useMemo génère dynamiquement le composant du panneau source selon
-   * le format sélectionné (sourceFormat).
+   * This useMemo dynamically builds the source panel component based on
+   * the selected format (sourceFormat).
    * 
-   * LOGIQUE DE SÉLECTION DU CONTENU:
-   * ---------------------------------
-   * Le contenu affiché dépend du format source :
-   * - sourceFormat === 'asciidoc' → utilise adocInput
-   * - sourceFormat === 'markdown' → utilise mdOutput
-   * - sourceFormat === 'html'|'pdf'|'yaml'|'json'|'txt' → utilise adocInput (temporaire)
+   * CONTENT SELECTION LOGIC:
+   * ------------------------
+   * Displayed content depends on source format:
+   * - sourceFormat === 'asciidoc' → uses adocInput
+   * - sourceFormat === 'markdown' → uses mdOutput
+   * - sourceFormat === 'html'|'pdf'|'yaml'|'json'|'txt' → uses adocInput (temporary)
    * 
    * IMPORTANT:
    * -----------
-   * Le panneau source peut afficher n'importe quel format, mais le contenu
-   * est stocké dans adocInput OU mdOutput selon le format. Cette logique
-   * permet de gérer plusieurs formats avec seulement deux états de contenu.
+   * The source panel can display any format, but content is stored in
+   * adocInput OR mdOutput depending on format. This allows multiple formats
+   * with only two content state variables.
    * 
-   * VALIDATION DE CONVERSION:
-   * -------------------------
-   * La conversion n'est autorisée que si :
-   * 1. Les formats source et destination sont différents
-   * 2. La conversion est supportée (actuellement uniquement AsciiDoc ↔ Markdown)
+   * CONVERSION VALIDATION:
+   * ----------------------
+   * Conversion is allowed only if:
+   * 1. Source and target formats differ
+   * 2. Conversion is supported (currently only AsciiDoc ↔ Markdown)
    * 
-   * DÉPENDANCES:
-   * ------------
-   * Recalcule si : sourceFormat, adocInput, mdOutput, currentFileName, status,
-   *                headings, loading, folderFiles, selectedFileIndex changent
+   * DEPENDENCIES:
+   * -------------
+   * Recomputes when: sourceFormat, adocInput, mdOutput, currentFileName, status,
+   *                  headings, loading, folderFiles, selectedFileIndex change
    * 
    * ============================================================================
    */
@@ -2300,50 +2318,50 @@ function App() {
 
   /**
    * ============================================================================
-   * MÉMOISATION: PANEL RÉSULTAT (useMemo)
+   * MEMO: RESULT PANEL (useMemo)
    * ============================================================================
    * 
-   * Ce useMemo génère dynamiquement le composant du panneau résultat selon
-   * le format de destination sélectionné (targetFormat).
+   * This useMemo dynamically builds the result panel component based on
+   * the selected destination format (targetFormat).
    * 
-   * LOGIQUE DE SÉLECTION DU CONTENU:
-   * ---------------------------------
-   * Le contenu affiché dépend du format destination :
-   * - targetFormat === 'asciidoc' → utilise adocInput
-   * - targetFormat === 'markdown'|'html'|'pdf'|'yaml'|'json'|'txt' → utilise mdOutput
+   * CONTENT SELECTION LOGIC:
+   * ------------------------
+   * Displayed content depends on target format:
+   * - targetFormat === 'asciidoc' → uses adocInput
+   * - targetFormat === 'markdown'|'html'|'pdf'|'yaml'|'json'|'txt' → uses mdOutput
    * 
-   * FONCTIONNALITÉS DU PANEL RÉSULTAT:
-   * -----------------------------------
-   * 1. Mode édition : permet de modifier le résultat après conversion
-   *    - Bouton "✏️" pour activer l'édition
-   *    - Bouton "✕ Annuler" pour annuler les modifications
-   *    - Bouton "💾 Sauvegarder" pour sauvegarder les modifications
+   * RESULT PANEL FEATURES:
+   * ----------------------
+   * 1. Edit mode: allows editing the result after conversion
+   *    - "✏️" button to enable editing
+   *    - "✕ Cancel" button to discard changes
+   *    - "💾 Save" button to save changes
    * 
-   * 2. Actions disponibles :
-   *    - 📋 Copier : copie le résultat dans le presse-papiers
-   *    - ⬇️ Télécharger : exporte le résultat en fichier
-   *    - 🗑️ Effacer : supprime le contenu du résultat
+   * 2. Available actions:
+   *    - 📋 Copy: copy result to clipboard
+   *    - ⬇️ Download: export result to file
+   *    - 🗑️ Clear: remove result content
    * 
-   * 3. Indicateur de chargement :
-   *    - Affiche une barre de progression animée pendant la conversion
-   *    - Affiche le statut actuel de la conversion
+   * 3. Loading indicator:
+   *    - Animated progress bar during conversion
+   *    - Current conversion status
    * 
-   * 4. Statistiques :
-   *    - Nombre de caractères, mots, lignes
-   *    - Affichées dans la toolbar du panneau
+   * 4. Statistics:
+   *    - Character, word, line counts
+   *    - Shown in panel toolbar
    * 
-   * MODE ÉDITION:
-   * ------------
-   * Quand isEditingResult === true :
-   * - Le textarea devient éditable (readOnly = false)
-   * - Les boutons de copie/export/effacement sont désactivés
-   * - Le curseur change pour indiquer l'édition
-   * - Un backup du contenu original est créé avant édition
+   * EDIT MODE:
+   * ----------
+   * When isEditingResult === true:
+   * - Textarea becomes editable (readOnly = false)
+   * - Copy/export/clear buttons are disabled
+   * - Cursor indicates editing state
+   * - Original content backup is created before editing
    * 
-   * DÉPENDANCES:
-   * ------------
-   * Recalcule si : targetFormat, adocInput, mdOutput, status, loading,
-   *                copied, isEditingResult changent
+   * DEPENDENCIES:
+   * -------------
+   * Recomputes when: targetFormat, adocInput, mdOutput, status, loading,
+   *                  copied, isEditingResult change
    * 
    * ============================================================================
    */
@@ -2359,13 +2377,26 @@ function App() {
       setResultValue = setAdocInput;
     }
 
+    const isLocked = !!resultValue && !isEditingResult;
+    const isEditing = !!resultValue && isEditingResult;
+
     return (
-    <section className="panel">
+    <section className={`panel${isLocked ? " result-locked" : isEditing ? " result-editing" : ""}`}>
       <div className="panel-header">
         <h2>{getFormatTitle(targetFormat)}</h2>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
           {resultValue && (
             <>
+              {isLocked && (
+                <span className="result-zone-state result-zone-locked" role="status" aria-live="polite" title="Verrouillé">
+                  🔒
+                </span>
+              )}
+              {isEditing && (
+                <span className="result-zone-state result-zone-editing" role="status" aria-live="polite" title="En édition">
+                  🔓
+                </span>
+              )}
               <button
                 onClick={() => {
                   if (isEditingResult) {
@@ -2381,7 +2412,7 @@ function App() {
                 }}
                 title={isEditingResult ? "Annuler l'édition" : "Activer l'édition"}
               >
-                {isEditingResult ? "✕ Annuler" : "✏️"}
+                {isEditingResult ? "✕" : "✏️"}
               </button>
               {isEditingResult && (
               <button
@@ -2393,41 +2424,43 @@ function App() {
                 }}
                   title="Sauvegarder les modifications"
               >
-                  💾 Sauvegarder
+                  💾 
               </button>
           )}
-              <button
-                onClick={handleCopy}
-                disabled={isEditingResult}
-                style={{ fontSize: "0.85rem", padding: "0.4rem 0.9rem" }}
-                title={isEditingResult ? "Copie désactivée en mode édition" : "Copier le résultat"}
-              >
-                {copied ? "✓ Copié" : "📋"}
-              </button>
-              <button
-                onClick={handleExport}
-                disabled={isEditingResult || !resultValue.trim()}
-                style={{ 
-                  fontSize: "0.85rem", 
-                  padding: "0.4rem 0.9rem",
-                  background: "#3b82f6"
-                }}
-                title="Télécharger le résultat"
-              >
-                ⬇️ 
-              </button>
-              <button
-                onClick={handleClear}
-                disabled={isEditingResult}
-                style={{ 
-                  fontSize: "0.85rem", 
-                  padding: "0.4rem 0.9rem",
-                  background: "#ef4444"
-                }}
-                title={isEditingResult ? "Effacement désactivé en mode édition" : "Effacer le résultat"}
-              >
-                🗑️ 
-              </button>
+              {!isEditingResult && (
+                <>
+                  <button
+                    onClick={handleCopy}
+                    style={{ fontSize: "0.85rem", padding: "0.4rem 0.9rem" }}
+                    title="Copier le résultat"
+                  >
+                    {copied ? "✓ Copié" : "📋"}
+                  </button>
+                  <button
+                    onClick={handleExport}
+                    disabled={!resultValue.trim()}
+                    style={{ 
+                      fontSize: "0.85rem", 
+                      padding: "0.4rem 0.9rem",
+                      background: "#3b82f6"
+                    }}
+                    title="Télécharger le résultat"
+                  >
+                    ⬇️ 
+                  </button>
+                  <button
+                    onClick={handleClear}
+                    style={{ 
+                      fontSize: "0.85rem", 
+                      padding: "0.4rem 0.9rem",
+                      background: "#ef4444"
+                    }}
+                    title="Effacer le résultat"
+                  >
+                    🗑️ 
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
@@ -2516,12 +2549,12 @@ function App() {
         </div>
       )}
       <textarea
+        className="result-textarea"
         value={resultValue}
         onChange={(e) => setResultValue(e.target.value)}
         readOnly={!isEditingResult}
         placeholder={loading ? "Conversion en cours..." : `Résultat ${getFormatTitle(targetFormat)}...`}
         style={{
-          cursor: isEditingResult ? "text" : "default",
           opacity: loading ? 0.6 : 1,
           transition: "opacity 0.2s"
         }}
@@ -2536,31 +2569,31 @@ function App() {
         ========================================================================
         NOTIFICATION TOAST (SUCCESS/ERROR)
         ========================================================================
-        Système de notification non-intrusif qui s'affiche en haut de l'écran.
+        Non-intrusive notification system displayed at the top of the screen.
         
         TYPES:
-        - success : notification de succès (icône ✓, fond vert)
-        - error : notification d'erreur (icône ✕, fond rouge)
+        - success: success notification (✓ icon, green background)
+        - error: error notification (✕ icon, red background)
         
-        COMPORTEMENT:
-        - S'affiche automatiquement quand notification.visible === true
-        - Se ferme automatiquement après 5 secondes (voir useEffect)
-        - Peut être fermée manuellement avec le bouton ✕
-        - Animation de fade in/out lors de l'apparition/disparition
+        BEHAVIOR:
+        - Shown automatically when notification.visible === true
+        - Auto-closes after 5 seconds (see useEffect)
+        - Can be closed manually via the ✕ button
+        - Fade in/out animation on show/hide
         
-        UTILISATION:
-        - Appelée lors des conversions (succès/erreur)
-        - Appelée lors des actions utilisateur (copie, export, etc.)
-        - Appelée lors des erreurs réseau ou de validation
+        USAGE:
+        - Triggered on conversions (success/error)
+        - Triggered on user actions (copy, export, etc.)
+        - Triggered on network or validation errors
       */}
       {notification && notification.visible && (
         <div className={`notification notification-${notification.type}`}>
           <div className="notification-content">
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: 1 }}>
               {/* 
-                Icône selon le type de notification
-                - Success : ✓ (coche verte)
-                - Error : ✕ (croix rouge)
+                Icon based on notification type
+                - Success: ✓ (green check)
+                - Error: ✕ (red cross)
               */}
               {notification.type === 'success' && (
                 <span style={{ fontSize: "1.25rem" }}>✓</span>
@@ -2568,14 +2601,14 @@ function App() {
               {notification.type === 'error' && (
                 <span style={{ fontSize: "1.25rem" }}>✕</span>
               )}
-              {/* Message de la notification */}
+              {/* Notification message */}
               <span className="notification-message">{notification.message}</span>
             </div>
             {/* 
-              Bouton de fermeture manuelle
-              - Opacité réduite par défaut (0.8)
-              - Opacité maximale au survol (1.0)
-              - Transition fluide pour l'effet hover
+              Manual close button
+              - Reduced opacity by default (0.8)
+              - Full opacity on hover (1.0)
+              - Smooth transition on hover
             */}
             <button
               onClick={() => setNotification(null)}
@@ -2663,31 +2696,31 @@ function App() {
 
       {/* 
         ========================================================================
-        MODALE : PANEL DES PARAMÈTRES
+        MODAL: SETTINGS PANEL
         ========================================================================
-        Panneau latéral qui s'ouvre depuis le bouton ⚙️ dans l'en-tête.
+        Side panel opened from the ⚙️ button in the header.
         
         STRUCTURE:
-        - Overlay : fond semi-transparent qui ferme la modale au clic
-        - Panel : conteneur principal avec le contenu
-        - Header : en-tête avec titre et bouton de fermeture
-        - Content : contenu scrollable des paramètres
+        - Overlay: semi-transparent background that closes the modal on click
+        - Panel: main container with content
+        - Header: title and close button
+        - Content: scrollable settings content
         
-        COMPORTEMENT:
-        - S'ouvre/ferme via le bouton ⚙️ dans l'en-tête
-        - Se ferme en cliquant sur l'overlay ou le bouton ×
-        - stopPropagation() empêche la fermeture en cliquant dans le panel
+        BEHAVIOR:
+        - Opens/closes via the ⚙️ button in the header
+        - Closes when clicking the overlay or the × button
+        - stopPropagation() prevents closing when clicking inside the panel
       */}
       {settingsOpen && (
         <>
           {/* 
-            Overlay : fond semi-transparent
-            Ferme la modale au clic (mais pas si on clique dans le panel)
+            Overlay: semi-transparent background
+            Closes the modal on click (but not when clicking inside the panel)
           */}
           <div className="settings-overlay" onClick={() => setSettingsOpen(false)} />
           {/* 
-            Panel principal : contient tous les paramètres
-            stopPropagation() empêche la fermeture quand on clique dedans
+            Main panel: contains all settings
+            stopPropagation() prevents closing when clicking inside
           */}
           <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
             <div className="settings-panel-header">
@@ -2705,9 +2738,9 @@ function App() {
               <div className="settings-section">
                 <h4>Paramètres de l'application</h4>
                 {/* 
-                  NOTE: Les paramètres avancés sont actuellement dans la sidebar.
-                  Cette section est réservée pour de futurs paramètres globaux
-                  de l'application (thème, langue, etc.)
+                  NOTE: Advanced settings are currently in the sidebar.
+                  This section is reserved for future global app settings
+                  (theme, language, etc.)
                 */}
                 <p style={{ fontSize: "0.875rem", color: "#6b7280", marginTop: "0.5rem" }}>
                   Les paramètres seront disponibles prochainement.
@@ -2720,29 +2753,29 @@ function App() {
 
       {/* 
         ========================================================================
-        MODALE : PANEL D'HISTORIQUE DES CONVERSIONS
+        MODAL: CONVERSION HISTORY PANEL
         ========================================================================
-        Panneau qui affiche l'historique des conversions précédentes.
+        Panel that displays previous conversion history.
         
-        FONCTIONNALITÉS:
-        - Affiche les 50 dernières conversions (limite)
-        - Stockage dans localStorage (persistant)
-        - Restauration d'une conversion précédente au clic
-        - Effacement de tout l'historique
+        FEATURES:
+        - Shows the last 50 conversions (limit)
+        - Stored in localStorage (persistent)
+        - Restore a previous conversion on click
+        - Clear entire history
         
-        STRUCTURE D'UNE ENTRÉE:
-        - ID unique (timestamp)
-        - Timestamp de la conversion
-        - Formats source et destination
-        - Aperçu du contenu source (100 premiers caractères)
-        - Contenu complet (source + résultat) pour restauration
+        ENTRY STRUCTURE:
+        - Unique ID (timestamp)
+        - Conversion timestamp
+        - Source and target formats
+        - Source content preview (first 100 characters)
+        - Full content (source + result) for restoration
         
         INTERACTION:
-        - Clic sur une entrée → restaure la conversion (formats + contenus)
-        - Bouton "Effacer l'historique" → confirmation puis suppression
-        - Hover sur une entrée → changement de couleur pour feedback visuel
+        - Click on an entry → restores the conversion (formats + content)
+        - "Clear history" button → confirmation then deletion
+        - Hover on entry → color change for visual feedback
       */}
-      {showHistoryPanel && (
+      {showHistoryPanel && !useNewHistoryModal && (
         <>
           <div className="settings-overlay" onClick={() => setShowHistoryPanel(false)} />
           <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "600px" }}>
@@ -2759,7 +2792,7 @@ function App() {
             </div>
             <div className="settings-panel-content">
               {/* 
-                État vide : message informatif si aucun historique
+                Empty state: informative message when no history
               */}
               {conversionHistory.length === 0 ? (
                 <p style={{ fontSize: "0.875rem", color: "#6b7280", textAlign: "center", padding: "2rem" }}>
@@ -2768,14 +2801,14 @@ function App() {
               ) : (
                 <>
                   {/* 
-                    En-tête : compteur et bouton d'effacement
+                    Header: count and clear button
                   */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
                     <span style={{ fontSize: "0.875rem", color: "#6b7280" }}>
                       {conversionHistory.length} conversion{conversionHistory.length > 1 ? 's' : ''}
                     </span>
                     {/* 
-                      Bouton d'effacement : demande confirmation avant suppression
+                      Clear button: prompts for confirmation before deletion
                     */}
                     <button
                       onClick={clearHistory}
@@ -2793,7 +2826,7 @@ function App() {
                     </button>
                   </div>
                   {/* 
-                    Liste scrollable des conversions (max 60vh de hauteur)
+                    Scrollable list of conversions (max 60vh height)
                   */}
                   <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
                     {conversionHistory.map((item) => (
@@ -2809,8 +2842,8 @@ function App() {
                         }}
                         onClick={() => restoreFromHistory(item)}
                         /* 
-                          Effet hover : changement de couleur au survol
-                          pour indiquer que l'élément est cliquable
+                          Hover effect: color change on hover to show
+                          the item is clickable
                         */
                         onMouseEnter={(e) => {
                           e.currentTarget.style.background = "rgba(255, 255, 255, 0.1)";
@@ -2820,22 +2853,22 @@ function App() {
                         }}
                       >
                         {/* 
-                          En-tête de l'entrée : formats et date
+                          Entry header: formats and date
                         */}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
                           <span style={{ fontWeight: "600", color: "#e5e7eb" }}>
                             {getFormatTitle(item.fromFormat)} → {getFormatTitle(item.toFormat)}
                           </span>
-                          {/* 
-                            Date formatée en français (ex: "15/01/2024, 14:30:00")
-                          */}
+                            {/* 
+                              Formatted date (e.g. "15/01/2024, 14:30:00")
+                            */}
                           <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
                             {new Date(item.timestamp).toLocaleString('fr-FR')}
                           </span>
                         </div>
                         {/* 
-                          Aperçu du contenu source (100 premiers caractères)
-                          avec ellipsis si le texte est trop long
+                          Source content preview (first 100 characters)
+                          with ellipsis if text is too long
                         */}
                         <div style={{ fontSize: "0.75rem", color: "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {item.sourceContent.substring(0, 100)}...
@@ -2848,6 +2881,21 @@ function App() {
             </div>
           </div>
         </>
+      )}
+
+      {(showHistoryPanel || historyWindowMinimized) && useNewHistoryModal && (
+        <HistoryModalV2
+          open={showHistoryPanel && !historyWindowMinimized}
+          onClose={() => {
+            setShowHistoryPanel(false);
+            setHistoryWindowMinimized(false);
+          }}
+          onMinimize={() => setHistoryWindowMinimized(true)}
+          entries={conversionHistory}
+          onRestore={restoreFromHistory}
+          onClear={clearHistory}
+          getFormatTitle={getFormatTitle}
+        />
       )}
 
       {/* Keyboard shortcuts modal */}
@@ -2900,22 +2948,22 @@ function App() {
 
       {/* 
         ========================================================================
-        LAYOUT PRINCIPAL : SIDEBAR + CONTENU
+        MAIN LAYOUT: SIDEBAR + CONTENT
         ========================================================================
-        Le layout principal contient :
-        1. Sidebar (gauche) : options de conversion et paramètres
-        2. Main content (droite) : panneaux source et résultat
+        The main layout contains:
+        1. Sidebar (left): conversion options and settings
+        2. Main content (right): source and result panels
       */}
       <div className="main-layout">
         {/* 
           ====================================================================
-          SIDEBAR : OPTIONS ET PARAMÈTRES
+          SIDEBAR: OPTIONS AND SETTINGS
           ====================================================================
-          La sidebar contient toutes les options de configuration :
-          - Sélection des formats source/destination
-          - Options de conversion (normalisation, analyse, etc.)
-          - Paramètres de navigation
-          - Métadonnées du document
+          The sidebar holds all configuration options:
+          - Source/target format selection
+          - Conversion options (normalization, analysis, etc.)
+          - Navigation settings
+          - Document metadata
         */}
         <aside className="sidebar">
           <div className="sidebar-section">
@@ -2923,14 +2971,14 @@ function App() {
             <div className="sidebar-content">
               {/* 
                 ============================================================
-                SÉLECTEUR DE FORMAT SOURCE
+                SOURCE FORMAT SELECTOR
                 ============================================================
-                Permet de choisir le format du document source.
-                La logique de validation garantit que :
-                - Source et destination ne peuvent pas être identiques
-                - Seules les conversions AsciiDoc ↔ Markdown sont supportées
-                - Si le format source change et entre en conflit avec la destination,
-                  la destination est automatiquement ajustée
+                Chooses the source document format.
+                Validation ensures:
+                - Source and target cannot be the same
+                - Only AsciiDoc ↔ Markdown conversions are supported
+                - If source format changes and conflicts with target,
+                  the target is adjusted automatically
               */}
               <div className="format-selector-group">
                 <label className="format-label">Format source</label>
@@ -2941,35 +2989,35 @@ function App() {
                     setSourceFormat(newFormat);
                     
                     /* 
-                      LOGIQUE D'AJUSTEMENT AUTOMATIQUE DU FORMAT DESTINATION:
-                      -----------------------------------------------------------------
-                      Si le nouveau format source est identique à la destination,
-                      on ajuste automatiquement la destination pour éviter un conflit.
+                      AUTO-ADJUST TARGET FORMAT:
+                      --------------------------
+                      If the new source format equals the target, we adjust
+                      the target to avoid a conflict.
                       
-                      RÈGLES:
-                      1. Si source === destination → changer destination
-                      2. Si source n'est pas adoc/md → destination = markdown
-                      3. Si destination n'est pas adoc/md → destination = opposé de source
+                      RULES:
+                      1. If source === target → change target
+                      2. If source is not adoc/md → target = markdown
+                      3. If target is not adoc/md → target = opposite of source
                       
-                      EXEMPLE:
-                      - Source: asciidoc, Destination: asciidoc → Destination devient markdown
-                      - Source: html, Destination: markdown → Destination reste markdown
+                      EXAMPLE:
+                      - Source: asciidoc, Target: asciidoc → Target becomes markdown
+                      - Source: html, Target: markdown → Target stays markdown
                     */
                     if (newFormat === targetFormat) {
-                      // Formats identiques : ajuster la destination
+                      // Same formats: adjust target
                       if (newFormat === 'asciidoc') {
                         setTargetFormat('markdown');
                       } else if (newFormat === 'markdown') {
                         setTargetFormat('asciidoc');
                       } else {
-                        // Pour les autres formats, par défaut markdown
+                        // For other formats, default to markdown
                         setTargetFormat('markdown');
                       }
                     } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
-                      // Source n'est pas adoc/md → destination = markdown
+                      // Source is not adoc/md → target = markdown
                       setTargetFormat('markdown');
                     } else if (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') {
-                      // Destination n'est pas adoc/md → destination = opposé de source
+                      // Destination is not adoc/md → destination = opposite of source
                       setTargetFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
                     }
                   }}
@@ -2986,11 +3034,11 @@ function App() {
               </div>
               {/* 
                 ============================================================
-                SÉLECTEUR DE FORMAT DESTINATION
+                TARGET FORMAT SELECTOR
                 ============================================================
-                Permet de choisir le format de sortie après conversion.
-                Même logique d'ajustement automatique que pour le format source,
-                mais appliquée en sens inverse (ajustement de la source).
+                Chooses the output format after conversion.
+                Same auto-adjust logic as the source selector,
+                but applied in reverse (adjust source).
               */}
               <div className="format-selector-group">
                 <label className="format-label">Format destination</label>
@@ -3001,31 +3049,31 @@ function App() {
                     setTargetFormat(newFormat);
                     
                     /* 
-                      LOGIQUE D'AJUSTEMENT AUTOMATIQUE DU FORMAT SOURCE:
-                      -----------------------------------------------------------------
-                      Si le nouveau format destination est identique à la source,
-                      on ajuste automatiquement la source pour éviter un conflit.
+                      AUTO-ADJUST SOURCE FORMAT:
+                      --------------------------
+                      If the new target format equals the source, we adjust
+                      the source to avoid a conflict.
                       
-                      RÈGLES (inversées par rapport au sélecteur source):
-                      1. Si destination === source → changer source
-                      2. Si destination n'est pas adoc/md → source = asciidoc
-                      3. Si source n'est pas adoc/md → source = opposé de destination
+                      RULES (inverse of source selector):
+                      1. If target === source → change source
+                      2. If target is not adoc/md → source = asciidoc
+                      3. If source is not adoc/md → source = opposite of target
                     */
                     if (newFormat === sourceFormat) {
-                      // Formats identiques : ajuster la source
+                      // Same formats: adjust source
                       if (newFormat === 'asciidoc') {
                         setSourceFormat('markdown');
                       } else if (newFormat === 'markdown') {
                         setSourceFormat('asciidoc');
                       } else {
-                        // Pour les autres formats, par défaut asciidoc
+                        // For other formats, default to asciidoc
                         setSourceFormat('asciidoc');
                       }
                     } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
-                      // Destination n'est pas adoc/md → source = asciidoc
+                      // Target is not adoc/md → source = asciidoc
                       setSourceFormat('asciidoc');
                     } else if (sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') {
-                      // Source n'est pas adoc/md → source = opposé de destination
+                      // Source is not adoc/md → source = opposite of destination
                       setSourceFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
                     }
                   }}
@@ -3061,20 +3109,20 @@ function App() {
             <div className="sidebar-content">
               {/* 
                 ============================================================
-                SECTION : NAVIGATION DANS LE FICHIER
+                SECTION: FILE NAVIGATION
                 ============================================================
-                Cette section n'est visible que si le format source est
-                AsciiDoc ou Markdown (formats qui supportent les headings).
+                This section is only visible when source format is
+                AsciiDoc or Markdown (formats that support headings).
                 
-                FONCTIONNALITÉS:
-                - Activation/désactivation de la navigation
-                - Compteur de sections détectées
-                - Message d'aide si aucune section n'est disponible
+                FEATURES:
+                - Enable/disable navigation
+                - Count of detected sections
+                - Help message when no sections are available
                 
-                LOGIQUE D'ACTIVATION:
-                - Quand la navigation est activée ET qu'il y a du texte ET
-                  qu'il y a des headings → ouvre automatiquement la fenêtre
-                - Quand la navigation est désactivée → ferme la fenêtre
+                ENABLE LOGIC:
+                - When navigation is on AND there is text AND headings
+                  → window opens automatically
+                - When navigation is off → window closes
               */}
               {(sourceFormat === 'asciidoc' || sourceFormat === 'markdown') && (
                 <div className="option-section">
@@ -3100,24 +3148,23 @@ function App() {
                               setNavigationEnabled(enabled);
                               
                               /* 
-                                OUVERTURE AUTOMATIQUE DE LA FENÊTRE:
-                                Si la navigation est activée ET que les conditions
-                                sont remplies (texte + headings), on ouvre la fenêtre.
-                                Sinon, on la ferme.
+                                AUTO-OPEN WINDOW:
+                                If navigation is on AND conditions are met
+                                (text + headings), open the window. Otherwise close it.
                               */
                               if (enabled) {
-                                // Déterminer le texte source selon le format
+                                // Determine source text based on format
                                 const text = sourceFormat === 'asciidoc' 
                                   ? adocInput 
                                   : (sourceFormat === 'markdown' ? mdOutput : adocInput);
                                 const hasText = text.trim().length > 0;
                                 
-                                // Ouvrir la fenêtre si conditions remplies
+                                // Open window if conditions are met
                                 if (hasText && headings.length > 0) {
                                   setNavigationWindowOpen(true);
                                 }
                               } else {
-                                // Désactivation : fermer la fenêtre
+                                // When disabled: close the window
                                 setNavigationWindowOpen(false);
                               }
                             }}
@@ -3125,8 +3172,8 @@ function App() {
                           />
                           <span>Activer la navigation</span>
                           {/* 
-                            Compteur de sections : affiche le nombre de headings
-                            détectés avec gestion du singulier/pluriel
+                            Section count: number of detected headings
+                            with singular/plural handling
                           */}
                           {headings.length > 0 && (
                             <span className="navigation-count">
@@ -3136,8 +3183,8 @@ function App() {
                         </label>
                       </div>
                       {/* 
-                        Message d'aide : affiché si aucun heading n'est détecté
-                        Guide l'utilisateur pour ajouter des titres dans son document
+                        Help message: shown when no headings are detected.
+                        Guides the user to add titles in the document.
                       */}
                       {headings.length === 0 && (
                         <div style={{
@@ -3157,9 +3204,9 @@ function App() {
                   )}
                 </div>
               )}
-              {/* Options de conversion */}
+              {/* Conversion options */}
               <div className="conversion-options-container">
-                {/* Analyse du contenu */}
+                {/* Content analysis */}
                 <div className="option-section">
                   <button
                     type="button"
@@ -3211,7 +3258,7 @@ function App() {
                   )}
                 </div>
 
-                {/* Normalisation */}
+                {/* Normalization */}
                 <div className="option-section">
                   <button
                     type="button"
@@ -3311,7 +3358,7 @@ function App() {
                   )}
                 </div>
 
-                {/* Rendu documentaire */}
+                {/* Document rendering */}
                 <div className="option-section">
                   <button
                     type="button"
@@ -3489,39 +3536,39 @@ function App() {
         </aside>
         {/* 
           ====================================================================
-          CONTENU PRINCIPAL : GRID DE CONVERSION
+          MAIN CONTENT: CONVERSION GRID
           ====================================================================
-          Le contenu principal contient la grille de conversion avec :
-          1. Panneau source (gauche) : contenu à convertir
-          2. Bouton d'échange (milieu) : échange source ↔ destination
-          3. Panneau résultat (droite) : résultat de la conversion
+          Main content holds the conversion grid with:
+          1. Source panel (left): content to convert
+          2. Swap button (center): swap source ↔ target
+          3. Result panel (right): conversion result
           
           LAYOUT:
-          - Grid CSS avec 3 colonnes
-          - Panneaux source et résultat prennent l'espace disponible
-          - Colonne centrale pour le bouton d'échange
+          - CSS grid with 3 columns
+          - Source and result panels take available space
+          - Center column for the swap button
         */}
         <div className="main-content">
           <main className="grid">
             {/* 
-              Panneau source : affiche le contenu selon sourceFormat
-              Généré dynamiquement par sourceCard (useMemo)
+              Source panel: shows content according to sourceFormat
+              Built dynamically by sourceCard (useMemo)
             */}
             {sourceCard}
 
             {/* 
               ================================================================
-              COLONNE D'ÉCHANGE : BOUTON DE SWAP
+              SWAP COLUMN: SWAP BUTTON
               ================================================================
-              Bouton central qui permet d'échanger les formats source et destination.
+              Center button that swaps source and target formats.
               
-              FONCTIONNALITÉ:
-              - Échange sourceFormat ↔ targetFormat
-              - Échange le contenu : ancien résultat → nouvelle source, etc.
-              - Les panneaux restent en place (source à gauche, résultat à droite)
+              BEHAVIOR:
+              - Swaps sourceFormat ↔ targetFormat
+              - Swaps content: old result → new source, etc.
+              - Panels stay in place (source left, result right)
               
-              ICÔNE:
-              - ⇄ (double flèche) pour indiquer l'échange bidirectionnel
+              ICON:
+              - ⇄ (double arrow) for bidirectional swap
             */}
             <div className="swap-column">
               <button
@@ -3535,8 +3582,8 @@ function App() {
             </div>
 
             {/* 
-              Panneau résultat : affiche le résultat selon targetFormat
-              Généré dynamiquement par resultCard (useMemo)
+              Result panel: shows result according to targetFormat
+              Built dynamically by resultCard (useMemo)
             */}
             {resultCard}
           </main>
@@ -3550,39 +3597,42 @@ function App() {
 
       {/* 
         ========================================================================
-        BARRE DES TÂCHES : FENÊTRES MINIMISÉES
+        TASKBAR: MINIMIZED WINDOWS
         ========================================================================
-        Barre des tâches qui s'affiche en bas de l'écran quand une fenêtre
-        est minimisée. Permet de restaurer rapidement les fenêtres minimisées.
+        Taskbar shown at the bottom when a window is minimized.
+        Lets the user quickly restore minimized windows.
         
-        FONCTIONNALITÉ:
-        - Affiche les fenêtres minimisées sous forme d'icônes
-        - Clic sur une icône → restaure la fenêtre (maximized = false, open = true)
-        - Position : fixe en bas de l'écran
-        
-        ACTUELLEMENT:
-        - Seule la fenêtre de navigation peut être minimisée
-        - D'autres fenêtres pourront être ajoutées à l'avenir
+        BEHAVIOR:
+        - Shows minimized windows as icons
+        - Click on icon → restore window (maximized = false, open = true)
+        - Position: fixed at bottom of screen
+        - Shows Navigation and/or Historique when minimized
       */}
-      {navigationWindowMinimized && (
+      {(navigationWindowMinimized || historyWindowMinimized) && (
         <div className="taskbar">
-          <div 
-            className="taskbar-item"
-            onClick={() => {
-              /* 
-                Restauration de la fenêtre :
-                - Quitte le mode minimisé
-                - Rouvre la fenêtre
-                - La fenêtre réapparaît à sa position précédente
-              */
-              setNavigationWindowMinimized(false);
-              setNavigationWindowOpen(true);
-            }}
-            title="Navigation - Click to restore"
-          >
-            <span className="taskbar-icon">📋</span>
-            <span className="taskbar-label">Navigation</span>
-          </div>
+          {navigationWindowMinimized && (
+            <div
+              className="taskbar-item"
+              onClick={() => {
+                setNavigationWindowMinimized(false);
+                setNavigationWindowOpen(true);
+              }}
+              title="Navigation – Cliquer pour restaurer"
+            >
+              <span className="taskbar-icon" aria-hidden>🔍</span>
+              <span className="taskbar-label">Navigation</span>
+            </div>
+          )}
+          {historyWindowMinimized && (
+            <div
+              className="taskbar-item"
+              onClick={() => setHistoryWindowMinimized(false)}
+              title="Historique – Cliquer pour restaurer"
+            >
+              <span className="taskbar-icon" aria-hidden>🕐</span>
+              <span className="taskbar-label">Historique</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -3590,56 +3640,54 @@ function App() {
       {navigationWindowOpen && !navigationWindowMinimized && headings.length > 0 && (() => {
         /**
          * ========================================================================
-         * ALGORITHME: CONSTRUCTION DE LA HIÉRARCHIE DES HEADINGS
+         * ALGORITHM: BUILD HEADING HIERARCHY
          * ========================================================================
          * 
-         * Cette fonction transforme une liste plate de headings en structure
-         * hiérarchique arborescente (arbre) pour l'affichage dans la fenêtre
-         * de navigation.
+         * Transforms a flat list of headings into a tree structure for display
+         * in the navigation window.
          * 
-         * ALGORITHME:
-         * -----------
-         * Utilise une pile (stack) pour construire la hiérarchie :
-         * 1. Pour chaque heading, on retire de la pile tous les headings
-         *    de niveau supérieur ou égal (ceux qui ne peuvent pas être parents)
-         * 2. Si la pile est vide → heading de niveau racine
-         * 3. Sinon → heading enfant du dernier élément de la pile
-         * 4. On ajoute le heading à la pile pour qu'il puisse être parent
-         *    des headings suivants
+         * ALGORITHM:
+         * ----------
+         * Uses a stack to build the hierarchy:
+         * 1. For each heading, pop from the stack all headings at the same or
+         *    deeper level (those that cannot be parents)
+         * 2. If stack is empty → root-level heading
+         * 3. Otherwise → heading is child of the last stack element
+         * 4. Push the heading onto the stack so it can be parent of following ones
          * 
-         * EXEMPLE:
+         * EXAMPLE:
          * --------
          * Input: [
-         *   { level: 1, title: "Chapitre 1" },
+         *   { level: 1, title: "Chapter 1" },
          *   { level: 2, title: "Section 1.1" },
          *   { level: 2, title: "Section 1.2" },
-         *   { level: 3, title: "Sous-section 1.2.1" },
-         *   { level: 1, title: "Chapitre 2" }
+         *   { level: 3, title: "Subsection 1.2.1" },
+         *   { level: 1, title: "Chapter 2" }
          * ]
          * 
          * Output: [
          *   {
-         *     heading: { level: 1, title: "Chapitre 1" },
+         *     heading: { level: 1, title: "Chapter 1" },
          *     children: [
          *       { heading: { level: 2, title: "Section 1.1" }, children: [] },
          *       {
          *         heading: { level: 2, title: "Section 1.2" },
          *         children: [
-         *           { heading: { level: 3, title: "Sous-section 1.2.1" }, children: [] }
+         *           { heading: { level: 3, title: "Subsection 1.2.1" }, children: [] }
          *         ]
          *       }
          *     ]
          *   },
-         *   { heading: { level: 1, title: "Chapitre 2" }, children: [] }
+         *   { heading: { level: 1, title: "Chapter 2" }, children: [] }
          * ]
          * 
-         * COMPLEXITÉ:
+         * COMPLEXITY:
          * -----------
-         * - Temps : O(n) où n = nombre de headings
-         * - Espace : O(n) pour la pile et la structure résultante
+         * - Time: O(n) where n = number of headings
+         * - Space: O(n) for the stack and result structure
          * 
-         * @param headings - Liste plate de headings avec leur niveau
-         * @returns Structure hiérarchique avec enfants imbriqués
+         * @param headings - Flat list of headings with their level
+         * @returns Hierarchical structure with nested children
          * 
          * ========================================================================
          */
@@ -3676,36 +3724,36 @@ function App() {
 
         /**
          * ========================================================================
-         * FONCTION RÉCURSIVE: RENDU D'UN HEADING ET DE SES ENFANTS
+         * RECURSIVE: RENDER A HEADING AND ITS CHILDREN
          * ========================================================================
          * 
-         * Cette fonction récursive rend un heading et tous ses enfants de manière
-         * hiérarchique pour l'affichage dans la navigation.
+         * Recursively renders a heading and all its children in a hierarchical
+         * layout for the navigation.
          * 
-         * LOGIQUE:
-         * --------
-         * 1. Rend le heading actuel avec son titre et numéro de ligne
-         * 2. Si le heading a des enfants, les rend récursivement dans une <ul>
-         * 3. La profondeur (depth) est utilisée pour l'indentation visuelle
+         * LOGIC:
+         * ------
+         * 1. Renders the current heading with its title and line number
+         * 2. If the heading has children, renders them recursively in a <ul>
+         * 3. Depth is used for visual indentation
          * 
          * STYLES:
          * -------
-         * Les classes CSS sont générées dynamiquement selon le niveau :
-         * - file-nav-item : élément de navigation de base
-         * - file-nav-level-{level} : style spécifique au niveau (1, 2, 3, etc.)
-         * - file-nav-link : lien cliquable vers le heading
-         * - file-nav-children : conteneur des enfants (imbriqué)
+         * CSS classes are generated dynamically by level:
+         * - file-nav-item: base navigation item
+         * - file-nav-level-{level}: level-specific style (1, 2, 3, etc.)
+         * - file-nav-link: clickable link to the heading
+         * - file-nav-children: container for nested children
          * 
          * INTERACTION:
          * ------------
-         * Au clic sur un heading, scrollToHeading() est appelé pour :
-         * - Faire défiler le textarea source jusqu'à la ligne du heading
-         * - Mettre en surbrillance la ligne
-         * - Donner le focus au textarea
+         * On heading click, scrollToHeading() is called to:
+         * - Scroll the source textarea to the heading line
+         * - Highlight the line
+         * - Focus the textarea
          * 
-         * @param item - Objet contenant le heading et ses enfants
-         * @param depth - Profondeur actuelle dans l'arbre (0 = racine)
-         * @returns Élément <li> avec le heading et ses enfants imbriqués
+         * @param item - Object containing the heading and its children
+         * @param depth - Current depth in the tree (0 = root)
+         * @returns <li> element with the heading and nested children
          * 
          * ========================================================================
          */
@@ -3742,41 +3790,41 @@ function App() {
 
         /**
          * ========================================================================
-         * RENDU: FENÊTRE DE NAVIGATION FLOTTANTE
+         * RENDER: FLOATING NAVIGATION WINDOW
          * ========================================================================
          * 
-         * Cette fenêtre flottante permet de naviguer dans la structure hiérarchique
-         * du document (headings, sections). Elle est :
-         * - DRAGGABLE : déplaçable par glisser-déposer sur l'en-tête
-         * - RESIZABLE : redimensionnable par la poignée en bas à droite
-         * - MINIMIZABLE : peut être réduite et affichée dans la barre des tâches
-         * - MAXIMIZABLE : peut occuper 95% de l'écran
+         * This floating window lets the user navigate the document structure
+         * (headings, sections). It is:
+         * - DRAGGABLE: moved by drag-and-drop on the header
+         * - RESIZABLE: resized via the handle at bottom-right
+         * - MINIMIZABLE: can be reduced and shown in the taskbar
+         * - MAXIMIZABLE: can take up 95% of the screen
          * 
-         * POSITIONNEMENT:
+         * POSITIONING:
+         * ------------
+         * - Maximized: centered (50% left/top with translate -50%)
+         * - Normal: custom position (navigationWindowPosition)
+         * - Minimized: automatic position (auto)
+         * 
+         * CSS TRANSFORMS:
          * ---------------
-         * - Maximisée : centrée (50% left/top avec translate -50%)
-         * - Normale : position personnalisée (navigationWindowPosition)
-         * - Minimisée : position automatique (auto)
+         * - Maximized: translate(-50%, -50%) to center
+         * - During drag: translate3d(offsetX, offsetY, 0) for smooth movement
+         * - Normal: translate3d(0, 0, 0) (no transform)
          * 
-         * TRANSFORMATIONS CSS:
-         * --------------------
-         * - Maximisée : translate(-50%, -50%) pour centrer
-         * - Pendant drag : translate3d(offsetX, offsetY, 0) pour mouvement fluide
-         * - Normale : translate3d(0, 0, 0) (pas de transformation)
-         * 
-         * ÉTATS VISUELS:
+         * VISUAL STATES:
          * --------------
-         * Classes CSS appliquées selon l'état :
-         * - .minimized : fenêtre réduite
-         * - .maximized : fenêtre agrandie
-         * - .dragging : pendant le déplacement (améliore les performances)
-         * - .resizing : pendant le redimensionnement (optimise le rendu)
+         * CSS classes applied by state:
+         * - .minimized: reduced window
+         * - .maximized: enlarged window
+         * - .dragging: during move (improves performance)
+         * - .resizing: during resize (optimizes rendering)
          * 
-         * CONTENU:
+         * CONTENT:
          * --------
-         * - En-tête : titre, compteur de sections, boutons de contrôle
-         * - Corps : liste hiérarchique des headings (rendue récursivement)
-         * - Poignée de redimensionnement : visible uniquement si non minimisée/maximisée
+         * - Header: title, section count, control buttons
+         * - Body: hierarchical list of headings (rendered recursively)
+         * - Resize handle: visible only when not minimized/maximized
          * 
          * ========================================================================
          */
@@ -3806,20 +3854,18 @@ function App() {
           >
             {/* 
               ====================================================================
-              EN-TÊTE DE LA FENÊTRE : ZONE DE DÉPLACEMENT ET CONTRÔLES
+              WINDOW HEADER: DRAG AREA AND CONTROLS
               ====================================================================
-              L'en-tête sert de zone de déplacement (drag zone) : on peut cliquer
-              et glisser n'importe où sur l'en-tête pour déplacer la fenêtre.
-              Contient également les boutons de contrôle (minimize, maximize, close).
+              The header acts as the drag area: click and drag anywhere on the
+              header to move the window. Also holds control buttons (minimize, maximize, close).
             */}
             <div 
               className="navigation-window-header"
               onMouseDown={handleDragStart}
             >
               {/* 
-                Titre et compteur de sections
-                Le compteur affiche le nombre total de headings détectés avec
-                gestion du singulier/pluriel en français.
+                Title and section count
+                The count shows total detected headings with singular/plural handling.
               */}
               <div className="navigation-window-title">
                 <span>Navigation</span>
@@ -3830,19 +3876,19 @@ function App() {
               
               {/* 
                 ================================================================
-                BOUTONS DE CONTRÔLE DE LA FENÊTRE
+                WINDOW CONTROL BUTTONS
                 ================================================================
-                Trois boutons permettent de gérer l'état de la fenêtre :
-                1. Minimize (−) : réduit la fenêtre et l'affiche dans la barre des tâches
-                2. Maximize/Restore (□/⧉) : bascule entre plein écran et taille normale
-                3. Close (×) : ferme la fenêtre et désactive la navigation
+                Three buttons to control the window:
+                1. Minimize (−): reduce window and show in taskbar
+                2. Maximize/Restore (□/⧉): toggle full screen and normal size
+                3. Close (×): close window and disable navigation
               */}
               <div className="navigation-window-controls">
                 {/* 
-                  Bouton Minimize : réduit la fenêtre
-                  - Met navigationWindowMinimized à true
-                  - Cache la fenêtre (navigationWindowOpen = false)
-                  - La fenêtre apparaît dans la barre des tâches en bas
+                  Minimize button: reduces the window
+                  - Sets navigationWindowMinimized to true
+                  - Hides window (navigationWindowOpen = false)
+                  - Window appears in the taskbar at the bottom
                 */}
                 <button
                   type="button"
@@ -3857,10 +3903,10 @@ function App() {
                 </button>
                 
                 {/* 
-                  Bouton Maximize/Restore : bascule plein écran ↔ normale
-                  - Si maximized : restaure la taille normale
-                  - Si normale : agrandit à 95vw x 95vh (centré)
-                  - L'icône change selon l'état (□ = maximize, ⧉ = restore)
+                  Maximize/Restore button: toggle full screen ↔ normal
+                  - If maximized: restore normal size
+                  - If normal: expand to 95vw x 95vh (centered)
+                  - Icon changes by state (□ = maximize, ⧉ = restore)
                 */}
                 <button
                   type="button"
@@ -3872,10 +3918,10 @@ function App() {
                 </button>
                 
                 {/* 
-                  Bouton Close : ferme la fenêtre et désactive la navigation
-                  - Met navigationWindowOpen à false
-                  - Désactive la navigation (navigationEnabled = false)
-                  - La fenêtre disparaît complètement
+                  Close button: closes window and disables navigation
+                  - Sets navigationWindowOpen to false
+                  - Disables navigation (navigationEnabled = false)
+                  - Window disappears completely
                 */}
                 <button
                   type="button"
@@ -3893,19 +3939,18 @@ function App() {
             
             {/* 
               ====================================================================
-              CONTENU DE LA FENÊTRE : LISTE HIÉRARCHIQUE DES HEADINGS
+              WINDOW CONTENT: HIERARCHICAL LIST OF HEADINGS
               ====================================================================
-              Le contenu n'est affiché que si la fenêtre n'est pas minimisée.
-              Contient la structure hiérarchique des headings du document,
-              rendue récursivement par renderHeading().
+              Content is shown only when the window is not minimized.
+              Contains the document heading hierarchy, rendered recursively by renderHeading().
             */}
             {!navigationWindowMinimized && (
               <div className="navigation-window-content">
                 <div className="file-navigation-container">
                   {/* 
-                    Liste hiérarchique : chaque item peut avoir des enfants
-                    La structure est construite par buildHierarchy() et rendue
-                    récursivement par renderHeading().
+                    Hierarchical list: each item can have children.
+                    Structure is built by buildHierarchy() and rendered
+                    recursively by renderHeading().
                   */}
                   <ul className="file-navigation-list">
                     {hierarchy.map((item) => renderHeading(item))}
@@ -3916,11 +3961,11 @@ function App() {
             
             {/* 
               ====================================================================
-              POIGNÉE DE REDIMENSIONNEMENT
+              RESIZE HANDLE
               ====================================================================
-              Visible uniquement si la fenêtre n'est ni minimisée ni maximisée.
-              Permet de redimensionner la fenêtre en glissant depuis le coin
-              inférieur droit. Déclenche handleResizeStart() au mousedown.
+              Visible only when the window is neither minimized nor maximized.
+              Resize the window by dragging from the bottom-right corner.
+              Triggers handleResizeStart() on mousedown.
             */}
             {!navigationWindowMinimized && !navigationWindowMaximized && (
               <div 
@@ -3971,7 +4016,7 @@ function App() {
         </div>
       )}
 
-      {/* Modale de confirmation pour la sauvegarde */}
+      {/* Save confirmation modal */}
       {showSaveModal && (
         <div className="modal-overlay" onClick={() => setShowSaveModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -4127,41 +4172,41 @@ function App() {
 
       {/* 
         ========================================================================
-        MODALE DE CONFIRMATION : CONVERSION SÉCURISÉE (AVEC TOKEN)
+        CONFIRMATION MODAL: SECURE CONVERSION (WITH TOKEN)
         ========================================================================
-        Cette modale s'affiche pour les conversions qui nécessitent une
-        confirmation explicite de l'utilisateur (sécurité).
+        This modal is shown for conversions that require explicit user
+        confirmation (security).
         
-        SYSTÈME DE SÉCURITÉ:
-        --------------------
-        1. Un token de confirmation est demandé au backend avant d'afficher la modale
-        2. Le token est unique, à usage unique et limité dans le temps
-        3. Le token DOIT être inclus dans la requête de conversion finale
-        4. Si l'utilisateur annule, le token est invalidé
+        SECURITY:
+        ---------
+        1. A confirmation token is requested from the backend before showing the modal
+        2. Token is unique, single-use and time-limited
+        3. Token MUST be included in the final conversion request
+        4. If the user cancels, the token is invalidated
         
-        CONDITIONS D'AFFICHAGE:
-        -----------------------
-        La modale s'affiche uniquement si :
+        DISPLAY CONDITIONS:
+        -------------------
+        Modal is shown only when:
         - showConversionModal === true
-        - confirmationToken existe (token valide)
-        - pendingConversion existe (paramètres de conversion en attente)
+        - confirmationToken exists (valid token)
+        - pendingConversion exists (pending conversion parameters)
         
         ACTIONS:
         --------
-        - "Yes" : lance la conversion avec le token (confirmAndConvert)
-        - "No" : annule et invalide le token
-        - Clic sur overlay : annule et invalide le token
+        - "Yes": run conversion with token (confirmAndConvert)
+        - "No": cancel and invalidate token
+        - Overlay click: cancel and invalidate token
         
         IMPORTANT:
         ----------
-        Cette modale est utilisée pour les conversions sensibles qui nécessitent
-        une confirmation explicite pour éviter les conversions accidentelles.
+        This modal is used for sensitive conversions that require explicit
+        confirmation to avoid accidental conversions.
       */}
       {showConversionModal && confirmationToken && pendingConversion && (
         <div className="modal-overlay" onClick={() => {
           /* 
-            Annulation : invalider le token et fermer la modale
-            Le token ne peut plus être utilisé après annulation
+            Cancel: invalidate token and close modal.
+            Token cannot be used after cancel.
           */
           setShowConversionModal(false);
           setConfirmationToken(null);
@@ -4170,8 +4215,8 @@ function App() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Confirm conversion</h3>
             {/* 
-              Affichage des formats source et destination
-              pour que l'utilisateur sache exactement ce qui va être converti
+              Show source and target formats so the user knows
+              exactly what will be converted
             */}
             <p>
               Do you want to convert from <strong>{getFormatTitle(pendingConversion.fromFormat)}</strong> to <strong>{getFormatTitle(pendingConversion.toFormat)}</strong>?
@@ -4181,35 +4226,35 @@ function App() {
             </p>
             <div className="modal-buttons">
               {/* 
-                Bouton "Yes" : confirme et lance la conversion
-                - Appelle confirmAndConvert() qui utilise le token
-                - Ferme la modale
-                - Lance la conversion avec le token de confirmation
+                "Yes" button: confirms and runs the conversion
+                - Calls confirmAndConvert() which uses the token
+                - Closes the modal
+                - Runs conversion with the confirmation token
               */}
               <button
                 onClick={confirmAndConvert}
                 style={{ 
-                  background: "#10b981", // Vert pour "Oui"
+                  background: "#10b981", // Green for "Yes"
                   flex: 1
                 }}
               >
                 Yes
               </button>
               {/* 
-                Bouton "No" : annule la conversion
-                - Invalide le token
-                - Ferme la modale
-                - Ne lance pas la conversion
+                "No" button: cancels the conversion
+                - Invalidates the token
+                - Closes the modal
+                - Does not run the conversion
               */}
               <button
                 onClick={() => {
-                  // Annulation : invalider le token et fermer la modale
+                  // Cancel: invalidate token and close modal
                   setShowConversionModal(false);
                   setConfirmationToken(null);
                   setPendingConversion(null);
                 }}
                 style={{ 
-                  background: "#ef4444", // Rouge pour "Non"
+                  background: "#ef4444", // Red for "No"
                   flex: 1
                 }}
               >

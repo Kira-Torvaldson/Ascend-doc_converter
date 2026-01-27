@@ -53,7 +53,7 @@ This document defines the canonical identity, purpose, and core principles of th
 
 ## Current Status
 
-**Version:** 0.0.1.2.2 alpha  
+**Version:** 0.0.1.3 Rise  
 **Supported Conversions:** AsciiDoc ↔ Markdown  
 **Future Formats:** HTML, PDF, YAML, JSON, TXT (planned)
 

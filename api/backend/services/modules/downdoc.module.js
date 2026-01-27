@@ -48,6 +48,58 @@ const MODULE_CONFIG = {
 // ============================================================================
 
 /**
+ * Processes AsciiDoc header: if it ends with :experimental:, adds :toc: automatically
+ * 
+ * @param {string} asciidoc - AsciiDoc content
+ * @returns {string} AsciiDoc content with :toc: added after :experimental: if present
+ */
+function removeExperimentalTag(asciidoc) {
+  if (!asciidoc || typeof asciidoc !== 'string') {
+    return asciidoc
+  }
+
+  const lines = asciidoc.split('\n')
+  const result = []
+  let foundExperimental = false
+  let tocAdded = false
+
+  // Find :experimental: in the header (before the document title starting with =)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmed = line.trim()
+    
+    // Check if we've reached the document title (header ends here)
+    if (/^=+\s+/.test(trimmed)) {
+      // If we found :experimental: and haven't added :toc: yet, add it now
+      if (foundExperimental && !tocAdded) {
+        result.push(':toc:')
+        tocAdded = true
+      }
+      result.push(line)
+      continue
+    }
+
+    // Check if this is :experimental:
+    if (/^:experimental:\s*$/i.test(trimmed)) {
+      foundExperimental = true
+      result.push(line)
+      // Check if next line is not :toc: already
+      const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : ''
+      if (!/^:toc:\s*$/i.test(nextLine)) {
+        // Add :toc: immediately after :experimental:
+        result.push(':toc:')
+        tocAdded = true
+      }
+      continue
+    }
+
+    result.push(line)
+  }
+
+  return result.join('\n')
+}
+
+/**
  * Basic cleanup to fix common downdoc issues
  * Conforms to downdoc.module.md specification
  * 
@@ -229,6 +281,25 @@ const downdocModule = {
         }
       }
       logs.push(`[${conversionId}] Input file read successfully (${asciidocContent.length} characters)`)
+
+      // Remove :experimental: tag from header if present
+      const originalLength = asciidocContent.length
+      asciidocContent = removeExperimentalTag(asciidocContent)
+      if (originalLength !== asciidocContent.length) {
+        logs.push(`[${conversionId}] Removed :experimental: tag from header (${originalLength} → ${asciidocContent.length} chars)`)
+      }
+      
+      // Validate content is still not empty after tag removal
+      if (!asciidocContent || typeof asciidocContent !== 'string' || asciidocContent.trim().length === 0) {
+        const duration = (Date.now() - startTime) / 1000
+        logs.push(`[${conversionId}] Input file is empty after removing :experimental: tag`)
+        return {
+          success: false,
+          logs: logs,
+          error: 'Input file content is empty after removing :experimental: tag',
+          duration: duration
+        }
+      }
 
       // Step 3: In-memory conversion via downdoc (downdoc.module.md)
       logs.push(`[${conversionId}] Converting AsciiDoc to Markdown...`)

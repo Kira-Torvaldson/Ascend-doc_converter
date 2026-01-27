@@ -6,6 +6,7 @@
 
 import { useState, useCallback } from 'react';
 import { FormatType } from '../types';
+import { removeExperimentalTag } from '../utils/asciidocHelpers';
 
 interface UseFileHandlingReturn {
   currentFileName: string | null;
@@ -35,13 +36,15 @@ export function useFileHandling(
   const [selectedFileIndex, setSelectedFileIndex] = useState<number>(-1);
 
   const handleFileSelect = useCallback(async (file: File) => {
-    const text = await file.text();
+    let text = await file.text();
     const extension = file.name.split('.').pop()?.toLowerCase();
     
     // Determine format from extension
     let format: FormatType = 'txt';
     if (extension === 'adoc' || extension === 'asciidoc') {
       format = 'asciidoc';
+      // Process AsciiDoc content: add :toc: after :experimental: if present
+      text = removeExperimentalTag(text);
       setAdocInput(text);
       setMdOutput('');
     } else if (extension === 'md' || extension === 'markdown') {
