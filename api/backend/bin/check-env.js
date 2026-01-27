@@ -80,15 +80,34 @@ const TEST_FILE_NAME = '.ascend-write-test'
  *   compareVersions('16.17.0', '18.0.0') => -1
  *   compareVersions('18.0.0', '16.17.0') => 1
  *   compareVersions('16.17.0', '16.17.0') => 0
+ * 
+ * Note: Handles partial versions by padding with zeros (e.g., "16.17" becomes "16.17.0")
  */
 function compareVersions(version1, version2) {
   const v1Parts = version1.split('.').map(Number)
   const v2Parts = version2.split('.').map(Number)
   
+  // Ensure both arrays have at least 3 elements, padding with 0 if necessary
+  while (v1Parts.length < 3) {
+    v1Parts.push(0)
+  }
+  while (v2Parts.length < 3) {
+    v2Parts.push(0)
+  }
+  
   // Compare major, minor, and patch versions
+  // Use explicit number comparison to handle NaN cases
   for (let i = 0; i < 3; i++) {
-    if (v1Parts[i] < v2Parts[i]) return -1
-    if (v1Parts[i] > v2Parts[i]) return 1
+    const v1 = v1Parts[i]
+    const v2 = v2Parts[i]
+    
+    // Handle NaN cases: if either value is NaN, treat as invalid and fail comparison
+    if (isNaN(v1) || isNaN(v2)) {
+      throw new Error(`Invalid version component: cannot compare "${version1}" with "${version2}"`)
+    }
+    
+    if (v1 < v2) return -1
+    if (v1 > v2) return 1
   }
   
   return 0
@@ -99,11 +118,13 @@ function compareVersions(version1, version2) {
  * the first three version components (major.minor.patch)
  * 
  * @param {string} versionString - Raw version string (e.g., "v18.0.0" or "18.0.0")
- * @returns {string} - Normalized version (e.g., "18.0.0")
+ * @returns {string} - Normalized version (e.g., "18.0.0"), always in major.minor.patch format
+ * 
+ * Note: If version is partial (e.g., "16.17"), it will be padded to "16.17.0"
  */
 function normalizeVersion(versionString) {
   // Remove 'v' prefix if present
-  const cleaned = versionString.replace(/^v/i, '')
+  const cleaned = versionString.replace(/^v/i, '').trim()
   
   // Extract major.minor.patch (ignore pre-release and build metadata)
   const match = cleaned.match(/^(\d+)\.(\d+)\.(\d+)/)
@@ -111,7 +132,17 @@ function normalizeVersion(versionString) {
     return `${match[1]}.${match[2]}.${match[3]}`
   }
   
-  return cleaned
+  // Try to extract partial version (major.minor or just major)
+  const partialMatch = cleaned.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/)
+  if (partialMatch) {
+    const major = partialMatch[1] || '0'
+    const minor = partialMatch[2] || '0'
+    const patch = partialMatch[3] || '0'
+    return `${major}.${minor}.${patch}`
+  }
+  
+  // If no version pattern found, throw error to prevent invalid comparisons
+  throw new Error(`Invalid version string format: "${versionString}"`)
 }
 
 /**
@@ -199,23 +230,32 @@ function ensureDirectoryExists(dirPath) {
  * @returns {Object} - { passed: boolean, message: string, version?: string }
  */
 function checkNodeVersion() {
-  const currentNodeVersion = process.version
-  const normalizedCurrent = normalizeVersion(currentNodeVersion)
-  const normalizedMin = normalizeVersion(MIN_NODE_VERSION)
-  
-  const comparison = compareVersions(normalizedCurrent, normalizedMin)
-  
-  if (comparison >= 0) {
-    return {
-      passed: true,
-      message: `✓ Node.js version ${normalizedCurrent} meets requirement (>= ${MIN_NODE_VERSION})`,
-      version: normalizedCurrent
+  try {
+    const currentNodeVersion = process.version
+    const normalizedCurrent = normalizeVersion(currentNodeVersion)
+    const normalizedMin = normalizeVersion(MIN_NODE_VERSION)
+    
+    const comparison = compareVersions(normalizedCurrent, normalizedMin)
+    
+    if (comparison >= 0) {
+      return {
+        passed: true,
+        message: `✓ Node.js version ${normalizedCurrent} meets requirement (>= ${MIN_NODE_VERSION})`,
+        version: normalizedCurrent
+      }
+    } else {
+      return {
+        passed: false,
+        message: `✗ Node.js version ${normalizedCurrent} is below minimum requirement (>= ${MIN_NODE_VERSION})`,
+        version: normalizedCurrent
+      }
     }
-  } else {
+  } catch (error) {
+    // Handle version parsing errors
     return {
       passed: false,
-      message: `✗ Node.js version ${normalizedCurrent} is below minimum requirement (>= ${MIN_NODE_VERSION})`,
-      version: normalizedCurrent
+      message: `✗ Failed to parse Node.js version: ${error.message}`,
+      version: process.version
     }
   }
 }
