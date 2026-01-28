@@ -17,40 +17,70 @@ export function removeExperimentalTag(asciidoc: string): string {
   }
 
   const lines = asciidoc.split('\n')
+  
+  // First pass: detect :experimental: and :toc: in header only (before title)
+  let hasExperimental = false
+  let hasToc = false
+  let titleIndex = -1
+  
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim()
+    
+    // Stop at document title
+    if (/^=+\s+/.test(trimmed)) {
+      titleIndex = i
+      break
+    }
+    
+    // Check for :experimental:
+    if (/^:experimental:\s*$/i.test(trimmed)) {
+      hasExperimental = true
+    }
+    
+    // Check for :toc:
+    if (/^:toc:\s*$/i.test(trimmed)) {
+      hasToc = true
+    }
+  }
+  
+  // Second pass: rebuild document, insert :toc: and additional parameters if needed
   const result: string[] = []
-  let foundExperimental = false
-  let tocAdded = false
-
-  // Find :experimental: in the header (before the document title starting with =)
+  let tocInserted = false
+  let tocParamsInserted = false
+  
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     const trimmed = line.trim()
     
-    // Check if we've reached the document title (header ends here)
+    // Stop processing header at title
     if (/^=+\s+/.test(trimmed)) {
-      // If we found :experimental: and haven't added :toc: yet, add it now
-      if (foundExperimental && !tocAdded) {
-        result.push(':toc:')
-        tocAdded = true
-      }
       result.push(line)
       continue
     }
-
+    
     // Check if this is :experimental:
     if (/^:experimental:\s*$/i.test(trimmed)) {
-      foundExperimental = true
       result.push(line)
-      // Check if next line is not :toc: already
-      const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : ''
-      if (!/^:toc:\s*$/i.test(nextLine)) {
-        // Add :toc: immediately after :experimental:
+      // Insert :toc: immediately after :experimental: if needed
+      if (hasExperimental && !hasToc && !tocInserted) {
         result.push(':toc:')
-        tocAdded = true
+        tocInserted = true
+        // Add additional TOC parameters
+        if (!tocParamsInserted) {
+          result.push(':toclevels: 3')
+          result.push(':toc-placement: auto')
+          tocParamsInserted = true
+        }
       }
       continue
     }
-
+    
+    // Check if this is :toc: - if it already exists, don't add anything
+    if (/^:toc:\s*$/i.test(trimmed)) {
+      result.push(line)
+      continue
+    }
+    
     result.push(line)
   }
 

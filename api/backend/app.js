@@ -16,6 +16,7 @@ const errorHandler = require('./middleware/error-handler.middleware.js')
 const conversionRoutes = require('./routes/conversion.routes.js')
 const apiRoutes = require('./routes/api.routes.js')
 const proxyRoutes = require('./services/proxy/secure-proxy.js')
+const roundtripRoutes = require('./routes/roundtrip.routes.js')
 
 // Import security and logging
 const {
@@ -75,6 +76,9 @@ app.use('/api', apiRoutes)
 
 // Proxy routes (secure data normalization)
 app.use('/api/proxy', proxyRoutes)
+
+// Round-trip pipeline AsciiDoc → Markdown (GFM) → AsciiDoc
+app.use('/api', roundtripRoutes)
 
 // ============================================================================
 // ERROR HANDLING

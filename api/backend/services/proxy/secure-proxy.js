@@ -377,18 +377,16 @@ router.post('/convert', async (req, res) => {
     
     // Step 4: Check conversion result
     if (conversionResult.success) {
-      // Conversion succeeded
-      // Read the result from the output file
+      // Conversion succeeded – main orchestrator returns outputContent
       const fs = require('fs')
       let resultContent = ''
-      
-      if (conversionResult.outputPath && fs.existsSync(conversionResult.outputPath)) {
+      if (conversionResult.outputContent != null && typeof conversionResult.outputContent === 'string') {
+        resultContent = conversionResult.outputContent
+      } else if (conversionResult.outputPath && fs.existsSync(conversionResult.outputPath)) {
         resultContent = fs.readFileSync(conversionResult.outputPath, 'utf8')
-      } else if (conversionResult.result) {
-        // Some converters return result directly
-        resultContent = conversionResult.result
+      } else if (conversionResult.result != null) {
+        resultContent = typeof conversionResult.result === 'string' ? conversionResult.result : String(conversionResult.result)
       }
-      
       return res.json({
         success: true,
         result: resultContent

@@ -6,6 +6,19 @@
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
+## Dernières modifications (0.0.1.3 Rise)
+
+- **UI (frontend)**
+  - Le header a été simplifié (logo seul) et sa hauteur stabilisée.
+  - Le logo a été agrandi (tests de rendu) tout en gardant un header compact.
+  - Le footer affiche la **version automatiquement** depuis `api/frontend/package.json` et inclut un **Copyleft**.
+- **Conversion AsciiDoc → Markdown**
+  - En cas d’échec de conversion (retour AsciiDoc au lieu de Markdown), une **fenêtre (modal)** s’affiche pour demander de **modifier la source** puis de **relancer** la conversion.
+- **Documentation**
+  - Tri du dossier `doc/` pour ne garder à la racine que l’essentiel (`README.md`, `changelog.md`).
+  - Fusion de `doc/DOCUMENTATION.md` dans `doc/README.md` (la doc complète est désormais dans `doc/README.md`).
+  - Déplacement du glossaire vers `doc/references/glossary.md`.
+
 ## Présentation
 
 Ascend est un système de conversion de documents en phase alpha. Il exécute des conversions entre formats déclarés via des modules isolés (wrappers) qui respectent un contrat d'interface strict. Chaque conversion s'exécute dans un environnement temporaire unique, avec validation explicite des entrées et journalisation structurée.

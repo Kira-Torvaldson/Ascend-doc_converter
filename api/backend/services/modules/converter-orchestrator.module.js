@@ -17,7 +17,7 @@
 const path = require('path')
 const { runConverter } = require('./lazyload.module.js')
 const { spawn } = require('child_process')
-const { existsSync } = require('fs')
+const { existsSync, statSync } = require('fs')
 
 // Import pipeline security for load control (only for external calls)
 const {
@@ -217,6 +217,28 @@ class ConverterOrchestrator {
 
       logs.push(`[${conversionId}] Converter found: ${converter.name}`)
       logs.push(`[${conversionId}] Execution type: ${converter.config.executionType}`)
+
+      // ------------------------------------------------------------------------
+      // Invariant: No output artifact can be produced from an empty input.
+      // Before running any wrapper, reject 0-byte input and do not create output.
+      // ------------------------------------------------------------------------
+      const inputBytes = existsSync(inputPath) ? statSync(inputPath).size : 0
+      if (inputBytes === 0) {
+        const duration = (Date.now() - startTime) / 1000
+        const msg = 'Input is empty → conversion skipped → no output produced'
+        logs.push(`[${conversionId}] ${msg}`)
+        const result = {
+          success: false,
+          logs,
+          error: msg,
+          duration,
+          pipelineState: 'empty_input'
+        }
+        if (!isInternalCall && slotAcquired) {
+          concurrencyController.releaseSlot(conversionId)
+        }
+        return result
+      }
 
       // Step 2: Execute conversion according to execution type
       let result
