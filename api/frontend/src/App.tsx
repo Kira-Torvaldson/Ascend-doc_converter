@@ -60,6 +60,7 @@ import {
 import { FormatType, ConversionHistoryItem } from "./types";
 import { HistoryModalV2, useNewHistoryModal } from "./components/HistoryModalV2";
 import { removeExperimentalTag } from "./utils/asciidocHelpers";
+import packageJson from "../package.json";
 
 /**
  * ============================================================================
@@ -198,6 +199,12 @@ function App() {
   
   /** Shows confirmation modal for sensitive conversions */
   const [showConversionModal, setShowConversionModal] = useState<boolean>(false);
+  
+  /** Shows error modal when conversion fails */
+  const [showConversionErrorModal, setShowConversionErrorModal] = useState<boolean>(false);
+  
+  /** Error message to display in conversion error modal */
+  const [conversionErrorMessage, setConversionErrorMessage] = useState<string>("");
   
   /** Confirmation token obtained from backend (single use, time-limited) */
   const [confirmationToken, setConfirmationToken] = useState<string | null>(null);
@@ -1541,7 +1548,9 @@ function App() {
       setLoading,
       setNotification,
       conversionOptions,
-      confirmationToken // ✅ Confirmation token included in request
+      confirmationToken, // ✅ Confirmation token included in request
+      setShowConversionErrorModal,
+      setConversionErrorMessage
     );
 
     // Reset states
@@ -1872,7 +1881,9 @@ function App() {
         setLoading,
         setNotification,
         conversionOptions,
-        null // No token for simple conversions
+        null, // No token for simple conversions
+        setShowConversionErrorModal,
+        setConversionErrorMessage
       );
     }
   }, [requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, setNotification]);
@@ -2641,15 +2652,12 @@ function App() {
               src="http://localhost:3003/public/logo.png"
               alt="Logo"
               style={{
-                width: 32,
-                height: 32,
+                width: 130,
+                height: 130,
                 borderRadius: 999,
                 objectFit: "cover",
               }}
             />
-            <div>
-              <h1>Ascend - Convertisseur de documents</h1>
-            </div>
           </div>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             <button
@@ -3591,7 +3599,8 @@ function App() {
       </div>
 
       <footer className="footer">
-        <span className="footer-version">Version : 0.0.1.2.2 alpha</span>
+        <span className="footer-version">Version : {packageJson.version}</span>
+        <span className="footer-copyleft">Copyleft © {new Date().getFullYear()} Ascend</span>
         <span className="footer-author">Make by TBE</span>
       </footer>
 
@@ -4259,6 +4268,55 @@ function App() {
                 }}
               >
                 No
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 
+        ERROR MODAL: Displays when conversion fails
+        Shows a message asking user to modify source and retry conversion
+      */}
+      {showConversionErrorModal && (
+        <div className="modal-overlay" onClick={() => setShowConversionErrorModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ color: "#ef4444", marginBottom: "1rem" }}>⚠️ Erreur de conversion</h3>
+            <div style={{ marginBottom: "1rem" }}>
+              <p style={{ marginBottom: "0.5rem", lineHeight: "1.6", fontWeight: "500" }}>
+                La conversion a échoué. Le résultat contient encore de l'AsciiDoc au lieu du Markdown.
+              </p>
+              {conversionErrorMessage && conversionErrorMessage !== "La conversion a échoué. Le résultat contient encore de l'AsciiDoc au lieu du Markdown. Veuillez modifier la source et réessayer la conversion." && (
+                <p style={{ fontSize: "0.9rem", color: "#6b7280", fontStyle: "italic", marginTop: "0.5rem" }}>
+                  {conversionErrorMessage}
+                </p>
+              )}
+            </div>
+            <div style={{ 
+              backgroundColor: "#fef3c7", 
+              border: "1px solid #fbbf24", 
+              borderRadius: "6px", 
+              padding: "1rem", 
+              marginTop: "1rem",
+              marginBottom: "1rem"
+            }}>
+              <p style={{ margin: 0, fontSize: "0.95rem", color: "#92400e", lineHeight: "1.6" }}>
+                <strong>🔧 Action recommandée :</strong><br />
+                Veuillez modifier la source et réessayer la conversion.
+              </p>
+            </div>
+            <div className="modal-buttons" style={{ marginTop: "1rem" }}>
+              <button
+                onClick={() => setShowConversionErrorModal(false)}
+                style={{ 
+                  background: "#3b82f6",
+                  flex: 1,
+                  padding: "0.75rem",
+                  fontSize: "1rem",
+                  fontWeight: "500"
+                }}
+              >
+                Compris
               </button>
             </div>
           </div>

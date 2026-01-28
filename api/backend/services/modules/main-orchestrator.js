@@ -209,10 +209,10 @@ class MainOrchestrator {
       // Minimal logging: start
       logs.push(`[${conversionId}] Main orchestrator started`)
       logs.push(`[${conversionId}] Source: ${sourceFormat} → Target: ${targetFormat}`)
-      logs.push(`[${conversionId}] Content size: ${content.length} characters`)
+      logs.push(`[${conversionId}] Content size: ${(content && typeof content === 'string' ? content : String(content || '')).length} characters`)
       
       addLogMessage(conversionId, 'info', `Source: ${sourceFormat} → Target: ${targetFormat}`)
-      addLogMessage(conversionId, 'info', `Content size: ${content.length} characters`)
+      addLogMessage(conversionId, 'info', `Content size: ${(content && typeof content === 'string' ? content : String(content || '')).length} characters`)
 
       // Step 0: Load control - Check system overload before starting
       logs.push(`[${conversionId}] Checking system load...`)
@@ -251,22 +251,25 @@ class MainOrchestrator {
       resourceBudgetManager.initializeBudget(conversionId)
       logs.push(`[${conversionId}] Resource budget initialized`)
 
-      // Step 1: Validate content
-      if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      // Step 1: Normalise input (trim, unicode NFC) then validate non-empty
+      const rawContent = (content != null && typeof content === 'string') ? content : String(content || '')
+      const normalizedContent = rawContent.trim().normalize('NFC')
+      if (normalizedContent.length === 0) {
         const duration = (Date.now() - startTime) / 1000
-        const error = 'Content is empty or invalid'
-        logs.push(`[${conversionId}] ${error}`)
-        
-        // Release slot on early failure
+        const msg = 'Input is empty (or empty after normalization) → conversion skipped → no output produced'
+        logs.push(`[${conversionId}] ${msg}`)
+        addLogMessage(conversionId, 'info', msg)
         concurrencyController.releaseSlot(conversionId)
-        
         return {
           success: false,
-          logs: logs,
-          error: error,
-          duration: duration
+          logs,
+          error: msg,
+          duration,
+          pipelineState: 'empty_input'
         }
       }
+      logs.push(`[${conversionId}] Content size after normalization: ${normalizedContent.length} characters`)
+      addLogMessage(conversionId, 'info', `Content size after normalization: ${normalizedContent.length} characters`)
 
       // Step 2: Find conversion path
       logs.push(`[${conversionId}] Finding conversion path...`)
@@ -293,9 +296,9 @@ class MainOrchestrator {
         logs.push(`[${conversionId}]   Step ${index + 1}: ${step.from} → ${step.to}`)
       })
 
-      // Step 3: Create temporary input file
+      // Step 3: Create temporary input file (from normalized content)
       logs.push(`[${conversionId}] Creating temporary input file...`)
-      const inputFilePath = this.tempManager.createInputFile(content, sourceFormat)
+      const inputFilePath = this.tempManager.createInputFile(normalizedContent, sourceFormat)
       logs.push(`[${conversionId}] Temporary input file: ${inputFilePath}`)
       
       // Record input file in structured log
@@ -324,23 +327,22 @@ class MainOrchestrator {
       if (!executionResult.success) {
         const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Execution failed: ${executionResult.error}`)
-        
-        // Record failure in structured log
         addLogMessage(conversionId, 'error', `Execution failed: ${executionResult.error}`)
         finalizeLog(conversionId, 'error', {
           totalDuration: duration,
           error: executionResult.error
         })
-        
-        // Record failure for graceful degradation
         gracefulDegradationManager.recordFailure(conversionId)
-        
-        return {
+        const ret = {
           success: false,
-          logs: logs,
-          error: `Execution failed: ${executionResult.error}`,
-          duration: duration
+          logs,
+          error: executionResult.error,
+          duration
         }
+        if (executionResult.pipelineState) {
+          ret.pipelineState = executionResult.pipelineState
+        }
+        return ret
       }
 
       // Step 7: Record success and return result

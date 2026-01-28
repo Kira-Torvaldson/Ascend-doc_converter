@@ -83,12 +83,19 @@ router.post('/to-markdown', async (req, res) => {
       })
     }
 
-    // Vérifier que le résultat contient du Markdown (commence par #) et non de l'AsciiDoc (commence par =)
-    if (markdown.trim().startsWith('=') && !markdown.trim().startsWith('#')) {
+    // Vérifier que le résultat contient du Markdown et non de l'AsciiDoc
+    // Détecter les attributs AsciiDoc (commencent par :) ou les titres AsciiDoc (commencent par =)
+    const firstLines = markdown.trim().split('\n').slice(0, 5).join('\n')
+    const hasAsciiDocAttributes = /^:[a-zA-Z-]+:/m.test(firstLines)
+    const hasAsciiDocTitle = /^=+\s+\w+/m.test(firstLines)
+    const hasMarkdownTitle = /^#+\s+\w+/m.test(markdown.trim())
+    
+    if ((hasAsciiDocAttributes || hasAsciiDocTitle) && !hasMarkdownTitle) {
       console.error(`[ERROR] Output appears to be AsciiDoc instead of Markdown!`)
-      console.error(`[ERROR] First line: ${markdown.split('\n')[0]}`)
+      console.error(`[ERROR] First 200 chars: ${markdown.substring(0, 200)}`)
+      console.error(`[ERROR] Has AsciiDoc attributes: ${hasAsciiDocAttributes}, Has AsciiDoc title: ${hasAsciiDocTitle}, Has Markdown title: ${hasMarkdownTitle}`)
       return res.status(500).json({
-        detail: 'Conversion error: output appears to be AsciiDoc instead of Markdown.'
+        detail: 'Conversion error: output appears to be AsciiDoc instead of Markdown. The conversion did not occur.'
       })
     }
 

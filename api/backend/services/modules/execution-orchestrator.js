@@ -16,7 +16,7 @@
  */
 
 const path = require('path')
-const { mkdirSync, rmSync, existsSync, copyFileSync, readFileSync } = require('fs')
+const { mkdirSync, rmSync, existsSync, copyFileSync, readFileSync, statSync, unlinkSync } = require('fs')
 const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
 const { executeConversion } = require('./converter-orchestrator.module.js')
@@ -27,6 +27,55 @@ const {
   recordStep,
   recordOutputFile
 } = require('../logging/structured-logger.js')
+
+// ============================================================================
+// POST-WRAPPER VALIDATION
+// ============================================================================
+
+/**
+ * Returns the expected file extension for a target format.
+ * Must match the convention used when building output paths (toExt in the loop).
+ * @param {string} toFormat - Target format (e.g. 'markdown', 'asciidoc')
+ * @returns {string} Extension without leading dot (e.g. 'adoc', 'markdown')
+ */
+function getExpectedExtension(toFormat) {
+  const n = (toFormat || '').toLowerCase()
+  if (n === 'asciidoc') return 'adoc'
+  if (n === 'txt') return 'txt'
+  return n
+}
+
+/**
+ * Validates wrapper output artifact: exists, size > 0, extension matches expected format.
+ * Used in post-wrapper phase only; does not modify files.
+ *
+ * @param {string} outputPath - Absolute path to the output file
+ * @param {string} expectedToFormat - Expected target format (e.g. 'markdown')
+ * @returns {{ valid: boolean, reason?: string }}
+ */
+function validatePostWrapperOutput(outputPath, expectedToFormat) {
+  if (!outputPath || typeof outputPath !== 'string') {
+    return { valid: false, reason: 'output path missing or invalid' }
+  }
+  if (!existsSync(outputPath)) {
+    return { valid: false, reason: 'output file does not exist' }
+  }
+  let size
+  try {
+    size = statSync(outputPath).size
+  } catch (_) {
+    return { valid: false, reason: 'output file not readable' }
+  }
+  if (size === 0) {
+    return { valid: false, reason: 'output file is empty (0 bytes)' }
+  }
+  const ext = path.extname(outputPath).toLowerCase().replace(/^\./, '')
+  const expectedExt = getExpectedExtension(expectedToFormat)
+  if (ext !== expectedExt) {
+    return { valid: false, reason: `output type/extension mismatch: got .${ext}, expected .${expectedExt} for format ${expectedToFormat}` }
+  }
+  return { valid: true }
+}
 
 // ============================================================================
 // CONFIGURATION
@@ -161,6 +210,25 @@ class ExecutionOrchestrator {
         }
       }
 
+      // ------------------------------------------------------------------------
+      // Invariant: No output artifact can be produced from an empty input.
+      // Skip all wrappers when input is 0 bytes; do not create any output file.
+      // ------------------------------------------------------------------------
+      const inputBytes = statSync(inputFilePath).size
+      if (inputBytes === 0) {
+        const duration = (Date.now() - startTime) / 1000
+        const msg = 'Input is empty → conversion skipped → no output produced'
+        logs.push(`[${conversionId}] ${msg}`)
+        addLogMessage(conversionId, 'info', msg)
+        return {
+          success: false,
+          logs,
+          error: msg,
+          duration,
+          pipelineState: 'empty_input'
+        }
+      }
+
       // Step 2: Validate conversion path
       if (!Array.isArray(conversionPath) || conversionPath.length === 0) {
         const duration = (Date.now() - startTime) / 1000
@@ -244,7 +312,63 @@ class ExecutionOrchestrator {
           logs.push(stepResult.logs)
         }
 
-        // Record step in structured log
+        // Check if step (wrapper) reported failure
+        if (!stepResult.success) {
+          recordStep(conversionId, {
+            stepNumber: stepNumber,
+            module: step.converter || 'auto',
+            fromFormat: step.from,
+            toFormat: step.to,
+            inputFile: currentInputFile,
+            outputFile: outputFile,
+            duration: parseFloat(stepDuration),
+            status: 'error',
+            logs: Array.isArray(stepResult.logs) ? stepResult.logs : [stepResult.logs],
+            error: stepResult.error || null
+          })
+          const duration = (Date.now() - startTime) / 1000
+          logs.push(`[${conversionId}] Step ${stepNumber} failed: ${stepResult.error}`)
+          addLogMessage(conversionId, 'error', `Step ${stepNumber} failed: ${stepResult.error}`)
+          return {
+            success: false,
+            logs: logs,
+            error: `Step ${stepNumber} failed: ${stepResult.error}`,
+            duration: duration
+          }
+        }
+
+        // Post-wrapper validation: exists, size > 0, type/extension matches expected format
+        const validation = validatePostWrapperOutput(outputFile, step.to)
+        if (!validation.valid) {
+          if (existsSync(outputFile)) {
+            try { unlinkSync(outputFile) } catch (_) { /* ignore */ }
+          }
+          const wrapperName = step.converter || `step${stepNumber}`
+          const msg = `Wrapper ${wrapperName} failed: output invalid or empty (${validation.reason})`
+          logs.push(`[${conversionId}] ${msg}`)
+          addLogMessage(conversionId, 'warn', msg)
+          recordStep(conversionId, {
+            stepNumber: stepNumber,
+            module: step.converter || 'auto',
+            fromFormat: step.from,
+            toFormat: step.to,
+            inputFile: currentInputFile,
+            outputFile: outputFile,
+            duration: parseFloat(stepDuration),
+            status: 'wrapper_failed_clean',
+            logs: Array.isArray(stepResult.logs) ? stepResult.logs : [stepResult.logs],
+            error: validation.reason
+          })
+          const duration = (Date.now() - startTime) / 1000
+          return {
+            success: false,
+            logs,
+            error: msg,
+            duration,
+            pipelineState: 'wrapper_failed_clean'
+          }
+        }
+
         recordStep(conversionId, {
           stepNumber: stepNumber,
           module: step.converter || 'auto',
@@ -253,25 +377,10 @@ class ExecutionOrchestrator {
           inputFile: currentInputFile,
           outputFile: outputFile,
           duration: parseFloat(stepDuration),
-          status: stepResult.success ? 'success' : 'error',
+          status: 'success',
           logs: Array.isArray(stepResult.logs) ? stepResult.logs : [stepResult.logs],
-          error: stepResult.error || null
+          error: null
         })
-
-        // Check if step succeeded
-        if (!stepResult.success) {
-          const duration = (Date.now() - startTime) / 1000
-          logs.push(`[${conversionId}] Step ${stepNumber} failed: ${stepResult.error}`)
-          
-          addLogMessage(conversionId, 'error', `Step ${stepNumber} failed: ${stepResult.error}`)
-          
-          return {
-            success: false,
-            logs: logs,
-            error: `Step ${stepNumber} failed: ${stepResult.error}`,
-            duration: duration
-          }
-        }
 
         logs.push(`[${conversionId}] Step ${stepNumber} completed successfully`)
         addLogMessage(conversionId, 'info', `Step ${stepNumber} completed successfully in ${stepDuration}s`)
@@ -281,22 +390,41 @@ class ExecutionOrchestrator {
         currentFormat = step.to
       }
 
-      // Step 6: Read final result
+      // Step 6: Read final result and validate output artifacts
       const lastStep = conversionPath[conversionPath.length - 1]
       const normalizedTarget = lastStep.to.toLowerCase()
       const targetExt = normalizedTarget === 'asciidoc' ? 'adoc' : (normalizedTarget === 'txt' ? 'txt' : normalizedTarget)
       const finalOutputFile = this.tempManager.getFilePath(`final_output.${targetExt}`)
-      
-      if (!existsSync(finalOutputFile)) {
+
+      // ------------------------------------------------------------------------
+      // Invariant: A pipeline cannot be successful if no output artifact exists.
+      // Collect real output files, require at least one valid artifact (exists, size > 0)
+      // before allowing success. Otherwise requalify to no_output.
+      // ------------------------------------------------------------------------
+      const outputFiles = [finalOutputFile]
+      const validArtifacts = outputFiles.filter((f) => {
+        if (!existsSync(f)) return false
+        try {
+          return statSync(f).size > 0
+        } catch (_) {
+          return false
+        }
+      })
+
+      if (validArtifacts.length === 0) {
         const duration = (Date.now() - startTime) / 1000
-        const error = 'Final output file was not created'
-        logs.push(`[${conversionId}] ${error}`)
-        
+        const msg = 'Pipeline finished without valid output artifact → success forbidden'
+        logs.push(`[${conversionId}] ${msg}`)
+        addLogMessage(conversionId, 'warn', msg)
+        if (existsSync(finalOutputFile) && statSync(finalOutputFile).size === 0) {
+          try { unlinkSync(finalOutputFile) } catch (_) { /* ignore */ }
+        }
         return {
           success: false,
-          logs: logs,
-          error: error,
-          duration: duration
+          logs,
+          error: msg,
+          duration,
+          pipelineState: 'no_output'
         }
       }
 
@@ -307,7 +435,7 @@ class ExecutionOrchestrator {
       recordOutputFile(conversionId, finalOutputFile)
       addLogMessage(conversionId, 'info', `Final output file read: ${finalContent.length} characters`)
 
-      // Step 7: Return success result
+      // Step 7: Return success result (only reached when at least one valid artifact exists)
       const duration = (Date.now() - startTime) / 1000
       logs.push(`[${conversionId}] Execution completed successfully`)
       logs.push(`[${conversionId}] Total duration: ${duration.toFixed(3)}s`)
