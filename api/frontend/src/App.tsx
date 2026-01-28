@@ -3599,9 +3599,21 @@ function App() {
       </div>
 
       <footer className="footer">
-        <span className="footer-version">Version : {packageJson.version}</span>
-        <span className="footer-copyleft">Copyleft © {new Date().getFullYear()} Ascend</span>
-        <span className="footer-author">Make by TBE</span>
+        <div className="footer-content">
+          <div className="footer-author">
+            <span className="footer-author-text">Make by TBE</span>
+          </div>
+          <div className="footer-copyright">
+            <span className="footer-brand">© Ascend</span>
+            <span className="footer-separator">•</span>
+            <span className="footer-version">v{packageJson.version} (Alpha)</span>
+          </div>
+          <div className="footer-license-info">
+            <span className="footer-license">MIT License</span>
+            <span className="footer-separator">•</span>
+            <span className="footer-note">Future versions may use a different licensing model</span>
+          </div>
+        </div>
       </footer>
 
       {/* 

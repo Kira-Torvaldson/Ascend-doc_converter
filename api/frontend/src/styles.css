@@ -2191,32 +2191,100 @@ button:disabled:hover {
    PIED DE PAGE (FOOTER)
    ============================================ */
 
-/* Barre de pied de page avec version et auteur */
+/* Barre de pied de page avec version et licence */
 .footer {
-  padding: 0.75rem 2rem 1.25rem;
-  font-size: 0.8rem;
+  padding: 1rem 2rem;
+  font-size: 0.8125rem;
   color: #6b7280;
-  border-top: 1px solid rgba(229, 231, 235, 0.2);
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(3px);
+  border-top: 1px solid rgba(229, 231, 235, 0.3);
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  backdrop-filter: blur(8px);
+  position: relative;
+  margin-top: auto;
+}
+
+.footer-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.footer-copyright,
+.footer-license-info {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  position: relative;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.footer-brand {
+  font-weight: 600;
+  color: rgba(107, 114, 128, 0.95);
+  letter-spacing: 0.025em;
 }
 
 .footer-version {
   font-weight: 500;
-  color: rgba(107, 114, 128, 0.9);
+  color: rgba(107, 114, 128, 0.85);
+  font-size: 0.8125rem;
+  padding: 0.125rem 0.5rem;
+  background: rgba(107, 114, 128, 0.1);
+  border-radius: 0.25rem;
   letter-spacing: 0.02em;
 }
 
-.footer-author {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+.footer-separator {
+  color: rgba(107, 114, 128, 0.4);
+  font-weight: 300;
+  margin: 0 0.125rem;
+}
+
+.footer-license {
   font-weight: 500;
   color: rgba(107, 114, 128, 0.9);
+  letter-spacing: 0.01em;
+}
+
+.footer-note {
+  font-weight: 400;
+  color: rgba(107, 114, 128, 0.7);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.footer-author {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.25rem;
+}
+
+.footer-author-text {
+  font-weight: 400;
+  color: rgba(107, 114, 128, 0.75);
+  font-size: 0.75rem;
+  letter-spacing: 0.01em;
+}
+
+/* Responsive: ajustements sur petits écrans */
+@media (max-width: 768px) {
+  .footer {
+    padding: 0.875rem 1.5rem;
+  }
+  
+  .footer-content {
+    gap: 0.625rem;
+  }
+  
+  .footer-copyright,
+  .footer-license-info {
+    flex-wrap: wrap;
+    text-align: center;
+  }
 }
 
 /* Modale de confirmation */
