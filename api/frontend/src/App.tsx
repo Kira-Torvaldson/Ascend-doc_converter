@@ -134,6 +134,9 @@ function App() {
   /** Indicates if "Copy" button was just used (for visual feedback) */
   const [copied, setCopied] = useState<boolean>(false);
   
+  /** Indicates if text is being deleted from source (for visual feedback) */
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  
   /** Indicates if edit mode is active on result panel */
   const [isEditingResult, setIsEditingResult] = useState<boolean>(false);
   
@@ -2049,9 +2052,26 @@ function App() {
     onConvert: () => void,
     showHeadings: boolean = false,
     canConvert: boolean = true,
-    onClear?: () => void
-  ) => (
-    <section className="panel">
+    onClear?: () => void,
+    isDeleting: boolean = false
+  ) => {
+    const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const newValue = e.target.value;
+      // Detect if text length decreased (deletion)
+      if (newValue.length < value.length) {
+        setIsDeleting(true);
+        // Reset after 500ms
+        setTimeout(() => setIsDeleting(false), 500);
+      }
+      setValue(newValue);
+    };
+
+    return (
+    <section className="panel" style={{
+      border: isDeleting ? "2px solid #3b82f6" : undefined,
+      background: isDeleting ? "rgba(59, 130, 246, 0.05)" : undefined,
+      transition: "all 0.2s ease"
+    }}>
       <div className="panel-header">
         <h2>{title}</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
@@ -2217,11 +2237,12 @@ function App() {
       <textarea
         ref={textAreaRef}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={handleChange}
         placeholder={placeholder}
       />
     </section>
-  );
+    );
+  };
 
   /**
    * ============================================================================
@@ -2392,7 +2413,11 @@ function App() {
     const isEditing = !!resultValue && isEditingResult;
 
     return (
-    <section className={`panel${isLocked ? " result-locked" : isEditing ? " result-editing" : ""}`}>
+    <section className={`panel${isLocked ? " result-locked" : isEditing ? " result-editing" : ""}`} style={{
+      border: isDeleting ? "2px solid #3b82f6" : undefined,
+      background: isDeleting ? "rgba(59, 130, 246, 0.05)" : undefined,
+      transition: "all 0.2s ease"
+    }}>
       <div className="panel-header">
         <h2>{getFormatTitle(targetFormat)}</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
@@ -2572,7 +2597,7 @@ function App() {
       />
     </section>
     );
-  }, [targetFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, getFormatTitle, setMdOutput, setAdocInput, handleExport, getTextStats]);
+  }, [targetFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, getFormatTitle, setMdOutput, setAdocInput, handleExport, getTextStats, isDeleting]);
 
   return (
     <div className="page">
@@ -4171,7 +4196,7 @@ function App() {
               <button
                 onClick={confirmClearSourceAndResult}
                 style={{ 
-                  background: "#10b981",
+                  background: "#3b82f6",
                   width: "100%"
                 }}
               >
