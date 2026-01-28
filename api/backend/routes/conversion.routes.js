@@ -13,7 +13,7 @@ const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
 const path = require('path')
 const { runConverter } = require('../services/modules/lazyload.module.js')
-const { convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown, removeExperimentalTag } = require('../services/conversion/convert.js')
+const { convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown, removeExperimentalTag, normalizeAsciiDocInput } = require('../services/conversion/convert.js')
 
 // Endpoint: AsciiDoc → Markdown (utilise lazy loader avec downdoc)
 router.post('/to-markdown', async (req, res) => {
@@ -37,12 +37,9 @@ router.post('/to-markdown', async (req, res) => {
 
     console.log(`[INFO] Converting ${text.length} characters (AsciiDoc → Markdown) with lazy loader${useParsedown ? ' (Parsedown/BookStack mode)' : ''}`)
 
-    // Process AsciiDoc content: add :toc: after :experimental: if present
-    // This ensures the source content has :toc: when :experimental: is present
-    const processedText = removeExperimentalTag(text)
-    if (processedText !== text) {
-      console.log(`[INFO] Processed AsciiDoc content: added :toc: after :experimental: (${text.length} → ${processedText.length} chars)`)
-    }
+    // Remove :experimental: line from header only (no :toc: injection), then normalize
+    let processedText = removeExperimentalTag(text)
+    processedText = normalizeAsciiDocInput(processedText)
 
     // Créer le dossier temporaire
     mkdirSync(tempDir, { recursive: true })
@@ -51,11 +48,11 @@ router.post('/to-markdown', async (req, res) => {
     inputFile = path.join(tempDir, 'input.adoc')
     outputFile = path.join(tempDir, 'output.md')
 
-    // Écrire le contenu d'entrée (avec :toc: ajouté si nécessaire)
+    // Écrire le contenu d'entrée normalisé
     writeFileSync(inputFile, processedText, 'utf8')
-    console.log(`[INFO] Written processed content to temp file (${processedText.length} chars)`)
+    console.log(`[INFO] Written normalized content to temp file (${processedText.length} chars)`)
 
-    // Utiliser le lazy loader pour exécuter la conversion
+    // Utiliser le lazy loader pour exécuter la conversion (downdoc with Pandoc fallback)
     const result = await runConverter('downdoc', inputFile, outputFile, {
       conversionId: conversionId,
       mode: mode
@@ -72,7 +69,6 @@ router.post('/to-markdown', async (req, res) => {
     const markdown = readFileSync(outputFile, 'utf8')
 
     // Debug: vérifier que le résultat est bien du Markdown et non de l'AsciiDoc
-    // Compare with processedText (not original text) since we may have added :toc:
     if (markdown === processedText) {
       console.error(`[ERROR] Output is identical to processed input - conversion did not occur!`)
       console.error(`[ERROR] Processed input length: ${processedText.length}, Output length: ${markdown.length}`)

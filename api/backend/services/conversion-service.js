@@ -14,66 +14,19 @@ const { writeFileSync, unlinkSync, readFileSync } = require('fs')
 const { tmpdir } = require('os')
 const path = require('path')
 const { randomUUID } = require('crypto')
-const downdoc = require('../../../lib/index.js')
-const { adaptForBookStack } = require('../../shared/adapters/bookstack-adapter.js')
+const { convertAsciiDoc: convertAsciiDocFromConvert } = require('./conversion/convert.js')
 
 /**
- * Basic cleanup function that fixes common downdoc issues
- * This is always applied, regardless of mode
- */
-function basicCleanup(markdown) {
-  if (!markdown || typeof markdown !== 'string') {
-    return markdown
-  }
-
-  let result = markdown
-
-  // Fix horizontal rules: downdoc sometimes converts --- to "- --"
-  result = result.replace(/^-\s*--\s*$/gm, '---')
-  result = result.replace(/^-\s*--$/gm, '---')
-  result = result.replace(/^-\s+--\s*$/gm, '---')
-  result = result.replace(/^-\s*--\s+$/gm, '---')
-  
-  // Line-by-line pass for horizontal rules
-  const lines = result.split('\n')
-  const fixedLines = lines.map(line => {
-    const trimmed = line.trim()
-    if (trimmed === '- --' || trimmed === '-  --' || /^-\s*--\s*$/.test(trimmed)) {
-      const indent = line.match(/^(\s*)/)[1]
-      return indent + '---'
-    }
-    return line
-  })
-  result = fixedLines.join('\n')
-
-  return result
-}
-
-/**
- * Converts AsciiDoc content to Markdown using the downdoc CLI tool
- * 
+ * Converts AsciiDoc content to Markdown via convert.js pipeline
+ * (normalize, removeExperimentalTag, downdoc with Pandoc fallback).
+ *
  * @param {string} asciidoc - The AsciiDoc content to convert
- * @param {"default" | "bookstack"} mode - Conversion mode: "default" for standard Markdown, "bookstack" for Parsedown-compatible Markdown
+ * @param {"default" | "bookstack"} mode - Conversion mode
  * @returns {Promise<string>} Promise that resolves to the converted Markdown
- * @throws {Error} If downdoc execution fails or returns non-zero exit code
  */
 async function convertAsciiDoc(asciidoc, mode = 'default') {
-  if (!asciidoc || typeof asciidoc !== 'string') {
-    throw new Error('AsciiDoc content must be a non-empty string')
-  }
-
-  // Convert using downdoc
-  let markdown = downdoc(asciidoc)
-
-  // Always apply basic cleanup
-  markdown = basicCleanup(markdown)
-
-  // Apply BookStack adaptation if requested
-  if (mode === 'bookstack') {
-    markdown = adaptForBookStack(markdown)
-  }
-
-  return markdown
+  const result = await convertAsciiDocFromConvert(asciidoc, mode)
+  return result.markdown
 }
 
 /**
@@ -114,6 +67,5 @@ module.exports = {
   convertMarkdownWithPandoc,
   convertHtmlWithPandoc,
   convertWithPandoc,
-  text2markdown,
-  basicCleanup
+  text2markdown
 }

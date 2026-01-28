@@ -35,85 +35,41 @@ const STATE_NO_OUTPUT = 'no_output'
 const STATE_SUCCESS = 'success'
 
 /**
- * Processes AsciiDoc header: if it ends with :experimental:, adds :toc: automatically
- * 
+ * Removes the :experimental: line from the AsciiDoc header (before first title).
+ * No :toc: or any other attribute is added.
+ *
  * @param {string} asciidoc - AsciiDoc content
- * @returns {string} AsciiDoc content with :toc: added after :experimental: if present
+ * @returns {string} AsciiDoc content with :experimental: line removed from header
  */
 function removeExperimentalTag(asciidoc) {
-  if (!asciidoc || typeof asciidoc !== 'string') {
-    return asciidoc
-  }
-
+  if (!asciidoc || typeof asciidoc !== 'string') return asciidoc
   const lines = asciidoc.split('\n')
-  
-  // First pass: detect :experimental: and :toc: in header only (before title)
-  let hasExperimental = false
-  let hasToc = false
-  let titleIndex = -1
-  
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim()
-    
-    // Stop at document title
-    if (/^=+\s+/.test(trimmed)) {
-      titleIndex = i
-      break
-    }
-    
-    // Check for :experimental:
-    if (/^:experimental:\s*$/i.test(trimmed)) {
-      hasExperimental = true
-    }
-    
-    // Check for :toc:
-    if (/^:toc:\s*$/i.test(trimmed)) {
-      hasToc = true
-    }
-  }
-  
-  // Second pass: rebuild document, insert :toc: and additional parameters if needed
   const result = []
-  let tocInserted = false
-  let tocParamsInserted = false
-  
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     const trimmed = line.trim()
-    
-    // Stop processing header at title
     if (/^=+\s+/.test(trimmed)) {
       result.push(line)
-      continue
+      for (let j = i + 1; j < lines.length; j++) result.push(lines[j])
+      return result.join('\n')
     }
-    
-    // Check if this is :experimental:
-    if (/^:experimental:\s*$/i.test(trimmed)) {
-      result.push(line)
-      // Insert :toc: immediately after :experimental: if needed
-      if (hasExperimental && !hasToc && !tocInserted) {
-        result.push(':toc:')
-        tocInserted = true
-        // Add additional TOC parameters
-        if (!tocParamsInserted) {
-          result.push(':toclevels: 3')
-          result.push(':toc-placement: auto')
-          tocParamsInserted = true
-        }
-      }
-      continue
-    }
-    
-    // Check if this is :toc: - if it already exists, don't add anything
-    if (/^:toc:\s*$/i.test(trimmed)) {
-      result.push(line)
-      continue
-    }
-    
+    if (/^:experimental:\s*$/i.test(trimmed)) continue
     result.push(line)
   }
-
   return result.join('\n')
+}
+
+/**
+ * Normalizes AsciiDoc input: LF line endings, no trailing spaces per line, single trailing newline.
+ *
+ * @param {string} asciidoc - AsciiDoc content
+ * @returns {string} Normalized AsciiDoc
+ */
+function normalizeAsciiDocInput(asciidoc) {
+  if (!asciidoc || typeof asciidoc !== 'string') return asciidoc
+  const lf = asciidoc.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const trimmedLines = lf.split('\n').map(line => line.replace(/[ \t]+$/, ''))
+  return trimmedLines.join('\n').trimEnd() + '\n'
 }
 
 /**
@@ -316,9 +272,10 @@ async function runRoundTrip(inputAdocPath, options = {}) {
   }
   let sourceAdocContent = inputValidation.normalizedContent ?? readFileSync(inputAdocPath, 'utf8')
   
-  // Remove :experimental: tag from header if present
+  // Remove :experimental: line from header only (no :toc: injection)
   sourceAdocContent = removeExperimentalTag(sourceAdocContent)
-  logs.push(`[${conversionId}] Removed :experimental: tag from header if present`)
+  sourceAdocContent = normalizeAsciiDocInput(sourceAdocContent)
+  logs.push(`[${conversionId}] Removed :experimental: line from header, normalized input (LF, trim, single trailing newline)`)
 
   ensureWorkDir()
   

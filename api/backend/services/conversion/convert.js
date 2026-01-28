@@ -9,15 +9,8 @@ const downdoc = require('../../../../lib/index.js')
 const { adaptForBookStack } = require('../../../shared/adapters/bookstack-adapter.js')
 
 /**
- * Converts AsciiDoc content to Markdown using the downdoc CLI tool
- * 
- * @param {string} asciidoc - The AsciiDoc content to convert
- * @param {"default" | "bookstack"} mode - Conversion mode: "default" for standard Markdown, "bookstack" for Parsedown-compatible Markdown
- * @returns {Promise<string>} Promise that resolves to the converted Markdown
- * @throws {Error} If downdoc execution fails or returns non-zero exit code
- * 
- * @example
- * const markdown = await convertAsciiDoc('= Title\n\nContent', 'bookstack')
+ * Converts AsciiDoc content to Markdown. Tries downdoc first; on failure falls back to Pandoc.
+ * See convertAsciiDoc() implementation below.
  */
 /**
  * Basic cleanup function that fixes common downdoc issues
@@ -58,120 +51,84 @@ function basicCleanup(markdown) {
 }
 
 /**
- * Processes AsciiDoc header: if it ends with :experimental:, adds :toc: automatically
- * 
+ * Removes the :experimental: line from the AsciiDoc header (before first title).
+ * No :toc: or any other attribute is added. No side effects.
+ *
  * @param {string} asciidoc - AsciiDoc content
- * @returns {string} AsciiDoc content with :toc: added after :experimental: if present
+ * @returns {string} AsciiDoc content with :experimental: line removed from header
  */
 function removeExperimentalTag(asciidoc) {
-  if (!asciidoc || typeof asciidoc !== 'string') {
-    return asciidoc
-  }
-
+  if (!asciidoc || typeof asciidoc !== 'string') return asciidoc
   const lines = asciidoc.split('\n')
-  
-  // First pass: detect :experimental: and :toc: in header only (before title)
-  let hasExperimental = false
-  let hasToc = false
-  let titleIndex = -1
-  
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim()
-    
-    // Stop at document title
-    if (/^=+\s+/.test(trimmed)) {
-      titleIndex = i
-      break
-    }
-    
-    // Check for :experimental:
-    if (/^:experimental:\s*$/i.test(trimmed)) {
-      hasExperimental = true
-    }
-    
-    // Check for :toc:
-    if (/^:toc:\s*$/i.test(trimmed)) {
-      hasToc = true
-    }
-  }
-  
-  // Second pass: rebuild document, insert :toc: and additional parameters if needed
   const result = []
-  let tocInserted = false
-  let tocParamsInserted = false
-  
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     const trimmed = line.trim()
-    
-    // Stop processing header at title
     if (/^=+\s+/.test(trimmed)) {
       result.push(line)
-      continue
+      for (let j = i + 1; j < lines.length; j++) result.push(lines[j])
+      return result.join('\n')
     }
-    
-    // Check if this is :experimental:
-    if (/^:experimental:\s*$/i.test(trimmed)) {
-      result.push(line)
-      // Insert :toc: immediately after :experimental: if needed
-      if (hasExperimental && !hasToc && !tocInserted) {
-        result.push(':toc:')
-        tocInserted = true
-        // Add additional TOC parameters
-        if (!tocParamsInserted) {
-          result.push(':toclevels: 3')
-          result.push(':toc-placement: auto')
-          tocParamsInserted = true
-        }
-      }
-      continue
-    }
-    
-    // Check if this is :toc: - if it already exists, don't add anything
-    if (/^:toc:\s*$/i.test(trimmed)) {
-      result.push(line)
-      continue
-    }
-    
+    if (/^:experimental:\s*$/i.test(trimmed)) continue
     result.push(line)
   }
-
   return result.join('\n')
 }
 
+/**
+ * Normalizes AsciiDoc input before conversion: LF line endings, no trailing spaces
+ * per line, exactly one trailing newline. Deterministic and pure.
+ *
+ * @param {string} asciidoc - AsciiDoc content
+ * @returns {string} Normalized AsciiDoc
+ */
+function normalizeAsciiDocInput(asciidoc) {
+  if (!asciidoc || typeof asciidoc !== 'string') return asciidoc
+  const lf = asciidoc.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const trimmedLines = lf.split('\n').map(line => line.replace(/[ \t]+$/, ''))
+  return trimmedLines.join('\n').trimEnd() + '\n'
+}
+
+/**
+ * Converts AsciiDoc to Markdown. Tries downdoc first; on failure falls back to Pandoc.
+ * Returns { markdown, engineUsed, fallbackReason? }.
+ *
+ * @param {string} asciidoc - AsciiDoc content
+ * @param {"default" | "bookstack"} mode - Conversion mode
+ * @returns {Promise<{ markdown: string, engineUsed: "downdoc"|"pandoc", fallbackReason?: string }>}
+ */
 async function convertAsciiDoc(asciidoc, mode = 'default') {
   if (!asciidoc || typeof asciidoc !== 'string') {
     throw new Error('AsciiDoc content must be a non-empty string')
   }
 
-  // Remove :experimental: tag from header if present
   asciidoc = removeExperimentalTag(asciidoc)
+  asciidoc = normalizeAsciiDocInput(asciidoc)
 
-  // Use downdoc directly with extensions for better performance
-  // Use the parsedown extension when BookStack mode is enabled
+  let markdown
+  let engineUsed = 'downdoc'
+  let fallbackReason = null
+
   try {
     const options = {}
-    
-    if (mode === 'bookstack') {
-      // Use the parsedown extension for BookStack compatibility
-      options.extensions = ['parsedown']
+    if (mode === 'bookstack') options.extensions = ['parsedown']
+    markdown = downdoc(asciidoc, options)
+    if (!markdown || typeof markdown !== 'string' || markdown === asciidoc) {
+      throw new Error(markdown === asciidoc ? 'output identical to input' : 'downdoc returned invalid result')
     }
-    
-    // Convert AsciiDoc to Markdown using downdoc
-    let markdown = downdoc(asciidoc, options)
-    
-    // Always apply basic cleanup (fixes common issues like "- --" -> "---")
-    markdown = basicCleanup(markdown)
-    
-    // Apply full BookStack adapter for post-processing if in bookstack mode
-    if (mode === 'bookstack') {
-      markdown = adaptForBookStack(markdown)
+  } catch (err) {
+    fallbackReason = err && err.message ? err.message : 'downdoc failed'
+    markdown = await convertAsciiDocWithPandoc(asciidoc)
+    if (!markdown || typeof markdown !== 'string' || markdown.trim().length === 0 || markdown === asciidoc) {
+      throw new Error(`Conversion failed (downdoc: ${fallbackReason}; pandoc: invalid or identical output)`)
     }
-    
-    return markdown
-  } catch (error) {
-    throw new Error(`Conversion failed: ${error.message}`)
+    engineUsed = 'pandoc'
   }
+
+  markdown = basicCleanup(markdown)
+  if (mode === 'bookstack') markdown = adaptForBookStack(markdown)
+
+  return { markdown, engineUsed, fallbackReason: fallbackReason || undefined }
 }
 
 /**
@@ -1097,10 +1054,12 @@ module.exports = {
   convertAsciiDoc,
   convertMarkdown,
   normalizeForBookStack,
+  convertAsciiDocWithPandoc,
   convertMarkdownWithPandoc,
   convertHtmlWithPandoc,
   convertWithPandoc,
   text2markdown,
-  removeExperimentalTag
+  removeExperimentalTag,
+  normalizeAsciiDocInput
 }
 

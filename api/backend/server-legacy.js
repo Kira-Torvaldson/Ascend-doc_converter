@@ -76,15 +76,13 @@ app.post('/convert', async (req, res) => {
     
     let markdown
     if (bookstackMode) {
-      // Use the new convert module with BookStack mode
-      // This uses child_process and applies Parsedown normalization
       console.log('BookStack mode enabled, using convertAsciiDoc with Parsedown normalization...')
-      markdown = await convertAsciiDoc(asciidoc, 'bookstack')
+      const result = await convertAsciiDoc(asciidoc, 'bookstack')
+      markdown = result.markdown
     } else {
-      // Use convertAsciiDoc in default mode (applies basic cleanup)
-      // This ensures consistent output and fixes common downdoc issues
       console.log('Using convertAsciiDoc in default mode (with basic cleanup)...')
-      markdown = await convertAsciiDoc(asciidoc, 'default')
+      const result = await convertAsciiDoc(asciidoc, 'default')
+      markdown = result.markdown
     }
 
     res.json({
@@ -149,7 +147,7 @@ app.post('/test', async (req, res) => {
     const rawMarkdown = downdoc(asciidoc, { attributes })
     
     // Get BookStack adapted output using the new convert module
-    const adaptedMarkdown = await convertAsciiDoc(asciidoc, 'bookstack')
+    const adaptedMarkdown = (await convertAsciiDoc(asciidoc, 'bookstack')).markdown
 
     // Analyze differences
     const linesRaw = rawMarkdown.split('\n')

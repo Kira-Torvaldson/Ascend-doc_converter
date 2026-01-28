@@ -17,6 +17,7 @@
 const { readFileSync, writeFileSync, statSync, existsSync, unlinkSync } = require('fs')
 const path = require('path')
 const { adaptForBookStack } = require('../../../shared/adapters/bookstack-adapter.js')
+const { convertAsciiDocWithPandoc } = require('../conversion/convert.js')
 
 // Load downdoc library with absolute path resolution
 const libPath = path.resolve(__dirname, '../../../../lib/index.js')
@@ -48,85 +49,44 @@ const MODULE_CONFIG = {
 // ============================================================================
 
 /**
- * Processes AsciiDoc header: if it ends with :experimental:, adds :toc: automatically
- * 
+ * Removes the :experimental: line from the AsciiDoc header (before first title).
+ * No :toc: or any other attribute is added. No side effects.
+ *
  * @param {string} asciidoc - AsciiDoc content
- * @returns {string} AsciiDoc content with :toc: added after :experimental: if present
+ * @returns {string} AsciiDoc content with :experimental: line removed from header
  */
 function removeExperimentalTag(asciidoc) {
   if (!asciidoc || typeof asciidoc !== 'string') {
     return asciidoc
   }
-
   const lines = asciidoc.split('\n')
-  
-  // First pass: detect :experimental: and :toc: in header only (before title)
-  let hasExperimental = false
-  let hasToc = false
-  let titleIndex = -1
-  
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim()
-    
-    // Stop at document title
-    if (/^=+\s+/.test(trimmed)) {
-      titleIndex = i
-      break
-    }
-    
-    // Check for :experimental:
-    if (/^:experimental:\s*$/i.test(trimmed)) {
-      hasExperimental = true
-    }
-    
-    // Check for :toc:
-    if (/^:toc:\s*$/i.test(trimmed)) {
-      hasToc = true
-    }
-  }
-  
-  // Second pass: rebuild document, insert :toc: and additional parameters if needed
   const result = []
-  let tocInserted = false
-  let tocParamsInserted = false
-  
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     const trimmed = line.trim()
-    
-    // Stop processing header at title
     if (/^=+\s+/.test(trimmed)) {
       result.push(line)
-      continue
+      for (let j = i + 1; j < lines.length; j++) result.push(lines[j])
+      return result.join('\n')
     }
-    
-    // Check if this is :experimental:
-    if (/^:experimental:\s*$/i.test(trimmed)) {
-      result.push(line)
-      // Insert :toc: immediately after :experimental: if needed
-      if (hasExperimental && !hasToc && !tocInserted) {
-        result.push(':toc:')
-        tocInserted = true
-        // Add additional TOC parameters
-        if (!tocParamsInserted) {
-          result.push(':toclevels: 3')
-          result.push(':toc-placement: auto')
-          tocParamsInserted = true
-        }
-      }
-      continue
-    }
-    
-    // Check if this is :toc: - if it already exists, don't add anything
-    if (/^:toc:\s*$/i.test(trimmed)) {
-      result.push(line)
-      continue
-    }
-    
+    if (/^:experimental:\s*$/i.test(trimmed)) continue
     result.push(line)
   }
-
   return result.join('\n')
+}
+
+/**
+ * Normalizes AsciiDoc input before downdoc: LF line endings, no trailing spaces
+ * per line, exactly one trailing newline. Deterministic and pure.
+ *
+ * @param {string} asciidoc - AsciiDoc content
+ * @returns {string} Normalized AsciiDoc
+ */
+function normalizeAsciiDocInput(asciidoc) {
+  if (!asciidoc || typeof asciidoc !== 'string') return asciidoc
+  const lf = asciidoc.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const trimmedLines = lf.split('\n').map(line => line.replace(/[ \t]+$/, ''))
+  return trimmedLines.join('\n').trimEnd() + '\n'
 }
 
 /**
@@ -312,99 +272,77 @@ const downdocModule = {
       }
       logs.push(`[${conversionId}] Input file read successfully (${asciidocContent.length} characters)`)
 
-      // Remove :experimental: tag from header if present
+      // Remove :experimental: line from header only (no :toc: or other attribute injection)
       const originalLength = asciidocContent.length
       asciidocContent = removeExperimentalTag(asciidocContent)
       if (originalLength !== asciidocContent.length) {
-        logs.push(`[${conversionId}] Removed :experimental: tag from header (${originalLength} → ${asciidocContent.length} chars)`)
+        logs.push(`[${conversionId}] Removed :experimental: line from header (${originalLength} → ${asciidocContent.length} chars)`)
       }
-      
-      // Validate content is still not empty after tag removal
+
+      // Normalize input before downdoc: LF, no trailing spaces per line, single trailing newline
+      asciidocContent = normalizeAsciiDocInput(asciidocContent)
+      logs.push(`[${conversionId}] Input normalized (LF, trim, single trailing newline)`)
+
+      // Validate content is still not empty
       if (!asciidocContent || typeof asciidocContent !== 'string' || asciidocContent.trim().length === 0) {
         const duration = (Date.now() - startTime) / 1000
-        logs.push(`[${conversionId}] Input file is empty after removing :experimental: tag`)
+        logs.push(`[${conversionId}] Input file is empty after normalization`)
         return {
           success: false,
           logs: logs,
-          error: 'Input file content is empty after removing :experimental: tag',
+          error: 'Input file content is empty after normalization',
           duration: duration
         }
       }
 
-      // Step 3: In-memory conversion via downdoc (downdoc.module.md)
+      // Step 3: Try downdoc first; on failure fallback to Pandoc
       logs.push(`[${conversionId}] Converting AsciiDoc to Markdown...`)
-      logs.push(`[${conversionId}] Input content preview (first 100 chars): ${asciidocContent.substring(0, 100)}...`)
-      
       let markdown
+      let engineUsed = 'downdoc'
+      let fallbackReason = null
+
       try {
         const mode = options.mode || 'default'
         const downdocOptions = {}
-
         if (mode === 'bookstack') {
           downdocOptions.extensions = ['parsedown']
           logs.push(`[${conversionId}] Using BookStack/Parsedown mode`)
         }
-
-        // Verify downdoc function is available
         if (typeof downdoc !== 'function') {
-          const duration = (Date.now() - startTime) / 1000
-          logs.push(`[${conversionId}] ERROR: downdoc is not a function. Type: ${typeof downdoc}`)
-          logs.push(`[${conversionId}] Library path: ${libPath}`)
-          return {
-            success: false,
-            logs: logs,
-            error: 'downdoc library is not properly loaded',
-            duration: duration
-          }
+          throw new Error(`downdoc is not a function (type: ${typeof downdoc})`)
         }
-
-        // Conversion via downdoc
-        logs.push(`[${conversionId}] Calling downdoc function...`)
-        logs.push(`[${conversionId}] Input sample: ${asciidocContent.substring(0, 100)}...`)
-        logs.push(`[${conversionId}] Input length: ${asciidocContent.length} chars`)
+        logs.push(`[${conversionId}] Calling downdoc...`)
         markdown = downdoc(asciidocContent, downdocOptions)
-        logs.push(`[${conversionId}] Downdoc returned: ${markdown ? markdown.substring(0, 100) + '...' : 'null/undefined'}`)
-        logs.push(`[${conversionId}] Downdoc result length: ${markdown ? markdown.length : 0} chars`)
-        logs.push(`[${conversionId}] Downdoc result is Markdown: ${markdown ? /^#+\s+/.test(markdown.trim()) : false}`)
-        logs.push(`[${conversionId}] Downdoc result has AsciiDoc attributes: ${markdown ? /^:[a-zA-Z-]+:/m.test(markdown) : false}`)
-        
-        // Verify conversion actually happened
         if (!markdown || typeof markdown !== 'string') {
-          const duration = (Date.now() - startTime) / 1000
-          logs.push(`[${conversionId}] ERROR: downdoc returned invalid result. Type: ${typeof markdown}`)
-          return {
-            success: false,
-            logs: logs,
-            error: 'downdoc returned invalid result',
-            duration: duration
-          }
+          throw new Error(`downdoc returned invalid result (type: ${typeof markdown})`)
         }
-        
-        // Check if result is different from input (basic sanity check)
         if (markdown === asciidocContent) {
+          throw new Error('downdoc output identical to input')
+        }
+        logs.push(`[${conversionId}] Downdoc succeeded (${markdown.length} chars)`)
+      } catch (downdocError) {
+        fallbackReason = downdocError && downdocError.message ? downdocError.message : 'downdoc failed'
+        logs.push(`[${conversionId}] Downdoc failed: ${fallbackReason}. Falling back to Pandoc.`)
+        try {
+          markdown = await convertAsciiDocWithPandoc(asciidocContent)
+          if (!markdown || typeof markdown !== 'string' || markdown.trim().length === 0) {
+            throw new Error('Pandoc returned empty or invalid result')
+          }
+          if (markdown === asciidocContent) {
+            throw new Error('Pandoc output identical to input')
+          }
+          engineUsed = 'pandoc'
+          logs.push(`[${conversionId}] Pandoc fallback succeeded (${markdown.length} chars)`)
+        } catch (pandocError) {
           const duration = (Date.now() - startTime) / 1000
-          logs.push(`[${conversionId}] ERROR: Conversion result is identical to input - conversion failed!`)
-          logs.push(`[${conversionId}] Input length: ${asciidocContent.length}, Output length: ${markdown.length}`)
-          logs.push(`[${conversionId}] This indicates downdoc did not perform the conversion`)
+          const msg = pandocError && pandocError.message ? pandocError.message : 'Pandoc fallback failed'
+          logs.push(`[${conversionId}] Pandoc fallback failed: ${msg}`)
           return {
             success: false,
             logs: logs,
-            error: 'Conversion failed: output is identical to input. The downdoc library may not be working correctly.',
+            error: `Conversion failed (downdoc: ${fallbackReason}; pandoc: ${msg})`,
             duration: duration
           }
-        }
-        
-        logs.push(`[${conversionId}] Conversion completed`)
-        logs.push(`[${conversionId}] Output content preview (first 100 chars): ${markdown.substring(0, 100)}...`)
-        logs.push(`[${conversionId}] Output length: ${markdown.length} characters`)
-      } catch (error) {
-        const duration = (Date.now() - startTime) / 1000
-        logs.push(`[${conversionId}] Conversion failed: ${error.message}`)
-        return {
-          success: false,
-          logs: logs,
-          error: `Conversion failed: ${error.message}`,
-          duration: duration
         }
       }
 
@@ -574,6 +512,8 @@ const downdocModule = {
       const endTime = Date.now()
       const duration = (endTime - startTime) / 1000
       logs.push(`[${conversionId}] Conversion completed successfully`)
+      logs.push(`[${conversionId}] engineUsed: ${engineUsed}`)
+      if (fallbackReason) logs.push(`[${conversionId}] fallbackReason: ${fallbackReason}`)
       logs.push(`[${conversionId}] Duration: ${duration.toFixed(3)}s`)
       logs.push(`[${conversionId}] Finished at ${new Date().toISOString()}`)
 
@@ -581,7 +521,9 @@ const downdocModule = {
         success: true,
         logs: logs,
         error: null,
-        duration: duration
+        duration: duration,
+        engineUsed,
+        fallbackReason: fallbackReason || undefined
       }
 
     } catch (error) {
