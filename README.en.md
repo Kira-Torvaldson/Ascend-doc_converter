@@ -404,6 +404,8 @@ Documentation is organized in the `doc/` directory:
 
 ## License
 
-MIT
+Ascend is currently released under the MIT License during its alpha phase (v0.x).
+
+The project's licensing model may evolve in future major versions (v1.x and above), including the possibility of a proprietary core or dual-licensing.
 
 See the [LICENSE](LICENSE) file for the full license text.
