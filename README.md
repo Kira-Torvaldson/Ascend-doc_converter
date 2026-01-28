@@ -405,6 +405,8 @@ La documentation est organisée dans le dossier `doc/` :
 
 ## Licence
 
-MIT
+Ascend est actuellement publié sous licence MIT pendant sa phase alpha (v0.x).
+
+Le modèle de licence du projet peut évoluer dans les versions majeures futures (v1.x et au-delà), incluant la possibilité d'un cœur propriétaire ou d'une double licence.
 
 Voir le fichier [LICENSE](LICENSE) pour le texte complet de la licence.
