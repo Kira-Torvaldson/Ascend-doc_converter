@@ -50,7 +50,7 @@
  * ============================================================================
  */
 
-import { useMemo, useRef, useState, useCallback, useEffect } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
 import {
   convertAsciiDocToMarkdown,
   convertMarkdownToAsciiDoc,
@@ -61,6 +61,82 @@ import { FormatType, ConversionHistoryItem } from "./types";
 import { HistoryModalV2, useNewHistoryModal } from "./components/HistoryModalV2";
 import { removeExperimentalTag } from "./utils/asciidocHelpers";
 import packageJson from "../package.json";
+
+type UserPreferences = { displayName: string; organization: string; defaultLanguage: 'fr' | 'en' | 'es' | 'de' };
+type SettingsValidationErrors = { displayName?: string; organization?: string };
+const USER_PREFS_KEY = 'ascend_user_prefs';
+const MAX_DISPLAY_NAME = 100;
+const MAX_ORGANIZATION = 100;
+
+function validateUserPrefs(prefs: UserPreferences): SettingsValidationErrors {
+  const err: SettingsValidationErrors = {};
+  const dn = (prefs.displayName || '').trim();
+  const org = (prefs.organization || '').trim();
+  if (dn.length > MAX_DISPLAY_NAME) err.displayName = `Maximum ${MAX_DISPLAY_NAME} caractères`;
+  if (org.length > MAX_ORGANIZATION) err.organization = `Maximum ${MAX_ORGANIZATION} caractères`;
+  return err;
+}
+
+function loadUserPrefs(): UserPreferences {
+  try {
+    const stored = localStorage.getItem(USER_PREFS_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return {
+        displayName: typeof parsed.displayName === 'string' ? parsed.displayName : '',
+        organization: typeof parsed.organization === 'string' ? parsed.organization : '',
+        defaultLanguage: ['fr', 'en', 'es', 'de'].includes(parsed.defaultLanguage) ? parsed.defaultLanguage : 'fr'
+      };
+    }
+  } catch (e) {
+    console.error('Error loading user prefs:', e);
+  }
+  return { displayName: '', organization: '', defaultLanguage: 'fr' };
+}
+
+type UserSettings = {
+  profile: { displayName: string; organization: string; signature: string; defaultLanguage: 'fr'|'en'|'es'|'de' };
+  conversion: { defaultOutputFormat: string; autoApplyUserToMetadata: boolean; defaultTocEnabled: boolean };
+  ui: { theme: 'system'|'light'|'dark'; editorFontSize: number; compactMode: boolean };
+};
+const USER_SETTINGS_KEY = 'ascend_user_settings';
+const DEFAULT_USER_SETTINGS: UserSettings = {
+  profile: { displayName: '', organization: '', signature: '', defaultLanguage: 'fr' },
+  conversion: { defaultOutputFormat: '', autoApplyUserToMetadata: false, defaultTocEnabled: false },
+  ui: { theme: 'system', editorFontSize: 14, compactMode: false }
+};
+function loadUserSettings(): UserSettings {
+  try {
+    const stored = localStorage.getItem(USER_SETTINGS_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      const p = parsed.profile || {};
+      const c = parsed.conversion || {};
+      const u = parsed.ui || {};
+      return {
+        profile: {
+          displayName: typeof p.displayName === 'string' ? p.displayName : '',
+          organization: typeof p.organization === 'string' ? p.organization : '',
+          signature: typeof p.signature === 'string' ? p.signature : '',
+          defaultLanguage: ['fr', 'en', 'es', 'de'].includes(p.defaultLanguage) ? p.defaultLanguage : 'fr'
+        },
+        conversion: {
+          defaultOutputFormat: typeof c.defaultOutputFormat === 'string' ? c.defaultOutputFormat : '',
+          autoApplyUserToMetadata: !!c.autoApplyUserToMetadata,
+          defaultTocEnabled: !!c.defaultTocEnabled
+        },
+        ui: {
+          theme: ['system', 'light', 'dark'].includes(u.theme) ? u.theme : 'system',
+          editorFontSize: typeof u.editorFontSize === 'number' && u.editorFontSize >= 8 && u.editorFontSize <= 32 ? u.editorFontSize : 14,
+          compactMode: !!u.compactMode
+        }
+      };
+    }
+  } catch (e) {
+    console.error('Error loading user settings:', e);
+  }
+  return { ...DEFAULT_USER_SETTINGS, profile: { ...DEFAULT_USER_SETTINGS.profile }, conversion: { ...DEFAULT_USER_SETTINGS.conversion }, ui: { ...DEFAULT_USER_SETTINGS.ui } };
+}
 
 /**
  * ============================================================================
@@ -285,6 +361,103 @@ function App() {
   
   /** Indicates if settings panel is open */
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+
+  /** Settings panel size (resizable) */
+  const SETTINGS_MIN_W = 320;
+  const SETTINGS_MIN_H = 200;
+  const SETTINGS_DEFAULT_W = 480;
+  const SETTINGS_DEFAULT_H = 420;
+  const [settingsPanelSize, setSettingsPanelSize] = useState<{ width: number; height: number }>({ width: SETTINGS_DEFAULT_W, height: SETTINGS_DEFAULT_H });
+  const [isResizingSettings, setIsResizingSettings] = useState<boolean>(false);
+  const [settingsResizeStart, setSettingsResizeStart] = useState<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
+
+  /** Position du panneau Paramètres (déplaçable) */
+  const [settingsPanelPosition, setSettingsPanelPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDraggingSettings, setIsDraggingSettings] = useState<boolean>(false);
+  const [settingsDragStart, setSettingsDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [settingsDragOffset, setSettingsDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  useLayoutEffect(() => {
+    if (settingsOpen) {
+      setSettingsPanelPosition({
+        x: Math.max(0, (window.innerWidth - settingsPanelSize.width) / 2),
+        y: Math.max(0, (window.innerHeight - settingsPanelSize.height) / 2),
+      });
+    }
+  }, [settingsOpen, settingsPanelSize.width, settingsPanelSize.height]);
+
+  const handleSettingsDragStart = useCallback((e: React.MouseEvent) => {
+    if (isResizingSettings) return;
+    e.preventDefault();
+    setIsDraggingSettings(true);
+    setSettingsDragStart({ x: e.clientX - settingsPanelPosition.x, y: e.clientY - settingsPanelPosition.y });
+    setSettingsDragOffset({ x: 0, y: 0 });
+  }, [settingsPanelPosition, isResizingSettings]);
+
+  const handleSettingsDrag = useCallback((e: MouseEvent) => {
+    if (!isDraggingSettings) return;
+    const newX = e.clientX - settingsDragStart.x;
+    const newY = e.clientY - settingsDragStart.y;
+    const maxX = window.innerWidth - settingsPanelSize.width;
+    const maxY = window.innerHeight - settingsPanelSize.height;
+    setSettingsDragOffset({
+      x: Math.max(-settingsPanelPosition.x, Math.min(newX - settingsPanelPosition.x, maxX - settingsPanelPosition.x)),
+      y: Math.max(-settingsPanelPosition.y, Math.min(newY - settingsPanelPosition.y, maxY - settingsPanelPosition.y)),
+    });
+  }, [isDraggingSettings, settingsDragStart, settingsPanelPosition, settingsPanelSize]);
+
+  const handleSettingsDragEnd = useCallback(() => {
+    if (isDraggingSettings) {
+      const maxX = window.innerWidth - settingsPanelSize.width;
+      const maxY = window.innerHeight - settingsPanelSize.height;
+      setSettingsPanelPosition({
+        x: Math.max(0, Math.min(settingsPanelPosition.x + settingsDragOffset.x, maxX)),
+        y: Math.max(0, Math.min(settingsPanelPosition.y + settingsDragOffset.y, maxY)),
+      });
+      setSettingsDragOffset({ x: 0, y: 0 });
+    }
+    setIsDraggingSettings(false);
+  }, [isDraggingSettings, settingsPanelPosition, settingsDragOffset, settingsPanelSize]);
+
+  useEffect(() => {
+    if (!isDraggingSettings) return;
+    window.addEventListener('mousemove', handleSettingsDrag);
+    window.addEventListener('mouseup', handleSettingsDragEnd);
+    return () => {
+      window.removeEventListener('mousemove', handleSettingsDrag);
+      window.removeEventListener('mouseup', handleSettingsDragEnd);
+    };
+  }, [isDraggingSettings, handleSettingsDrag, handleSettingsDragEnd]);
+
+  const handleSettingsResizeStart = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsResizingSettings(true);
+    setSettingsResizeStart({ x: e.clientX, y: e.clientY, width: settingsPanelSize.width, height: settingsPanelSize.height });
+  }, [settingsPanelSize]);
+
+  const handleSettingsResize = useCallback((e: MouseEvent) => {
+    if (!isResizingSettings) return;
+    const deltaX = e.clientX - settingsResizeStart.x;
+    const deltaY = e.clientY - settingsResizeStart.y;
+    const maxW = Math.min(window.innerWidth - 40, 900);
+    const maxH = Math.min(window.innerHeight - 40, 85 * window.innerHeight / 100);
+    setSettingsPanelSize({
+      width: Math.max(SETTINGS_MIN_W, Math.min(settingsResizeStart.width + deltaX, maxW)),
+      height: Math.max(SETTINGS_MIN_H, Math.min(settingsResizeStart.height + deltaY, maxH)),
+    });
+  }, [isResizingSettings, settingsResizeStart]);
+
+  const handleSettingsResizeEnd = useCallback(() => setIsResizingSettings(false), []);
+
+  useEffect(() => {
+    if (!isResizingSettings) return;
+    window.addEventListener('mousemove', handleSettingsResize);
+    window.addEventListener('mouseup', handleSettingsResizeEnd);
+    return () => {
+      window.removeEventListener('mousemove', handleSettingsResize);
+      window.removeEventListener('mouseup', handleSettingsResizeEnd);
+    };
+  }, [isResizingSettings, handleSettingsResize, handleSettingsResizeEnd]);
   
   // ==========================================================================
   // STATES: CONVERSION OPTIONS
@@ -409,7 +582,7 @@ function App() {
   const [conversionOptions, setConversionOptions] = useState<ConversionOptions>({});
   
   /** Set of settings panel sections that are currently open */
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set([]));
   
   /**
    * Toggles the open/closed state of a settings panel section
@@ -424,6 +597,30 @@ function App() {
     }
     setExpandedSections(newExpanded);
   };
+
+  const [userSettings, setUserSettings] = useState<UserSettings>(loadUserSettings);
+  const [settingsErrors, setSettingsErrors] = useState<SettingsValidationErrors>({});
+  useEffect(() => {
+    setSettingsErrors(validateUserPrefs({ displayName: userSettings.profile.displayName, organization: userSettings.profile.organization, defaultLanguage: userSettings.profile.defaultLanguage }));
+  }, [userSettings.profile.displayName, userSettings.profile.organization]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(userSettings));
+    } catch (e) {
+      console.error('Error saving user settings:', e);
+    }
+  }, [userSettings]);
+  useEffect(() => {
+    const root = document.documentElement;
+    const theme = userSettings.ui.theme;
+    if (theme === 'system') {
+      root.removeAttribute('data-theme');
+      root.style.colorScheme = 'light dark';
+    } else {
+      root.setAttribute('data-theme', theme);
+      root.style.colorScheme = theme;
+    }
+  }, [userSettings.ui.theme]);
   
   /**
    * Updates a conversion option at a specific path
@@ -1540,7 +1737,18 @@ function App() {
       sourceText = adocInput;
     }
 
-    // Trigger conversion with confirmation token
+    let opts = conversionOptions;
+    if (userSettings.conversion.autoApplyUserToMetadata) {
+      const meta = { ...conversionOptions.metadata };
+      if (!meta?.author && userSettings.profile.displayName) meta.author = userSettings.profile.displayName;
+      if (!meta?.language && userSettings.profile.defaultLanguage) meta.language = userSettings.profile.defaultLanguage;
+      opts = { ...conversionOptions, metadata: meta };
+    }
+    if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
+      opts = { ...opts, rendering: { ...opts.rendering, tableOfContents: { ...opts.rendering.tableOfContents, enabled: true } } };
+    } else if (userSettings.conversion.defaultTocEnabled) {
+      opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
+    }
     setJustConverted(true);
     convertText(
       sourceText,
@@ -1550,19 +1758,17 @@ function App() {
       setOutput,
       setLoading,
       setNotification,
-      conversionOptions,
-      confirmationToken, // ✅ Confirmation token included in request
+      opts,
+      confirmationToken,
       setShowConversionErrorModal,
       setConversionErrorMessage
     );
-
-    // Reset states
     setTimeout(() => {
       setJustConverted(false);
       setConfirmationToken(null);
       setPendingConversion(null);
     }, 2000);
-  }, [confirmationToken, pendingConversion, targetFormat, conversionOptions, setNotification, sourceFormat, adocInput, mdOutput]);
+  }, [confirmationToken, pendingConversion, targetFormat, conversionOptions, userSettings, setNotification, sourceFormat, adocInput, mdOutput]);
 
   // ==========================================================================
   // EFFECT: SAVE TO HISTORY AFTER SUCCESSFUL CONVERSION
@@ -1873,7 +2079,18 @@ function App() {
         }
       };
 
-      // Run conversion directly without token
+      let opts = conversionOptions;
+      if (userSettings.conversion.autoApplyUserToMetadata) {
+        const meta = { ...conversionOptions.metadata };
+        if (!meta?.author && userSettings.profile.displayName) meta.author = userSettings.profile.displayName;
+        if (!meta?.language && userSettings.profile.defaultLanguage) meta.language = userSettings.profile.defaultLanguage;
+        opts = { ...conversionOptions, metadata: meta };
+      }
+      if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
+        opts = { ...opts, rendering: { ...opts.rendering, tableOfContents: { ...opts.rendering.tableOfContents, enabled: true } } };
+      } else if (userSettings.conversion.defaultTocEnabled) {
+        opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
+      }
       setJustConverted(true);
       convertText(
         sourceText,
@@ -1883,13 +2100,13 @@ function App() {
         setOutput,
         setLoading,
         setNotification,
-        conversionOptions,
-        null, // No token for simple conversions
+        opts,
+        null,
         setShowConversionErrorModal,
         setConversionErrorMessage
       );
     }
-  }, [requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, setNotification]);
+  }, [requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, setNotification]);
 
   // ==========================================================================
   // HELPERS: CONTENT MANAGEMENT BY FORMAT
@@ -2429,7 +2646,7 @@ function App() {
                 </span>
               )}
               {isEditing && (
-                <span className="result-zone-state result-zone-editing" role="status" aria-live="polite" title="En édition">
+                <span className="result-zone-state result-zone-editing" role="status" aria-live="polite" title="Edition">
                   🔓
                 </span>
               )}
@@ -2755,31 +2972,138 @@ function App() {
             Main panel: contains all settings
             stopPropagation() prevents closing when clicking inside
           */}
-          <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
-            <div className="settings-panel-header">
+          <div
+            className={`settings-panel${isResizingSettings ? ' settings-panel-resizing' : ''}${isDraggingSettings ? ' settings-panel-dragging' : ''}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              left: settingsPanelPosition.x,
+              top: settingsPanelPosition.y,
+              width: settingsPanelSize.width,
+              height: settingsPanelSize.height,
+              minWidth: SETTINGS_MIN_W,
+              minHeight: SETTINGS_MIN_H,
+              maxWidth: '90vw',
+              maxHeight: '85vh',
+              transform: isDraggingSettings ? `translate(${settingsDragOffset.x}px, ${settingsDragOffset.y}px)` : undefined,
+            }}
+          >
+            <div
+              className="settings-panel-header settings-panel-header-draggable"
+              onMouseDown={handleSettingsDragStart}
+            >
               <h3>Paramètres</h3>
               <button
                 type="button"
                 className="settings-close-btn"
                 onClick={() => setSettingsOpen(false)}
+                onMouseDown={(e) => e.stopPropagation()}
                 title="Fermer"
               >
                 ×
               </button>
             </div>
             <div className="settings-panel-content">
-              <div className="settings-section">
-                <h4>Paramètres de l'application</h4>
-                {/* 
-                  NOTE: Advanced settings are currently in the sidebar.
-                  This section is reserved for future global app settings
-                  (theme, language, etc.)
-                */}
-                <p style={{ fontSize: "0.875rem", color: "#6b7280", marginTop: "0.5rem" }}>
-                  Les paramètres seront disponibles prochainement.
-                </p>
+              <div className="settings-param-list">
+                <div className="settings-param-section">
+                  <button type="button" className="settings-param-header" onClick={() => toggleSection('settingsProfil')}>
+                    <span>Profil</span>
+                    <span className="settings-param-arrow">{expandedSections.has('settingsProfil') ? '▼' : '▶'}</span>
+                  </button>
+                  {expandedSections.has('settingsProfil') && (
+                    <div className="settings-param-body">
+                      <div className="option-group">
+                        <label className="option-label">Nom / pseudo</label>
+                        <input type="text" value={userSettings.profile.displayName} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, displayName: e.target.value } }))} className="option-input" placeholder="Nom ou pseudo" style={settingsErrors.displayName ? { borderColor: '#ef4444', outlineColor: '#ef4444' } : undefined} />
+                        {settingsErrors.displayName && <span style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '0.25rem' }} role="alert">{settingsErrors.displayName}</span>}
+                      </div>
+                      <div className="option-group">
+                        <label className="option-label">Organisation</label>
+                        <input type="text" value={userSettings.profile.organization} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, organization: e.target.value } }))} className="option-input" placeholder="Organisation" style={settingsErrors.organization ? { borderColor: '#ef4444', outlineColor: '#ef4444' } : undefined} />
+                        {settingsErrors.organization && <span style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '0.25rem' }} role="alert">{settingsErrors.organization}</span>}
+                      </div>
+                      <div className="option-group">
+                        <label className="option-label">Signature</label>
+                        <input type="text" value={userSettings.profile.signature} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, signature: e.target.value } }))} className="option-input" placeholder="Votre signature" />
+                      </div>
+                      <div className="option-group">
+                        <label className="option-label">Langue par défaut</label>
+                        <select value={userSettings.profile.defaultLanguage} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, defaultLanguage: e.target.value as 'fr'|'en'|'es'|'de' } }))} className="option-select">
+                          <option value="fr">Français</option>
+                          <option value="en">Anglais</option>
+                          <option value="es">Espagnol</option>
+                          <option value="de">Allemand</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="settings-param-section">
+                  <button type="button" className="settings-param-header" onClick={() => toggleSection('settingsConversion')}>
+                    <span>Conversion</span>
+                    <span className="settings-param-arrow">{expandedSections.has('settingsConversion') ? '▼' : '▶'}</span>
+                  </button>
+                  {expandedSections.has('settingsConversion') && (
+                    <div className="settings-param-body">
+                      <div className="option-group">
+                        <label className="option-label">Format de sortie par défaut</label>
+                        <select value={userSettings.conversion.defaultOutputFormat} onChange={(e) => setUserSettings(s => ({ ...s, conversion: { ...s.conversion, defaultOutputFormat: e.target.value } }))} className="option-select">
+                          <option value="">—</option>
+                          <option value="asciidoc">AsciiDoc</option>
+                          <option value="markdown">Markdown</option>
+                          <option value="html">HTML</option>
+                          <option value="pdf">PDF</option>
+                          <option value="yaml">YAML</option>
+                          <option value="json">JSON</option>
+                          <option value="txt">Texte</option>
+                        </select>
+                      </div>
+                      <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                        <input type="checkbox" checked={userSettings.conversion.autoApplyUserToMetadata} onChange={(e) => setUserSettings(s => ({ ...s, conversion: { ...s.conversion, autoApplyUserToMetadata: e.target.checked } }))} className="option-checkbox" />
+                        <span>Appliquer automatiquement au document</span>
+                      </label>
+                      <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                        <input type="checkbox" checked={userSettings.conversion.defaultTocEnabled} onChange={(e) => setUserSettings(s => ({ ...s, conversion: { ...s.conversion, defaultTocEnabled: e.target.checked } }))} className="option-checkbox" />
+                        <span>Table des matières par défaut</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+                <div className="settings-param-section">
+                  <button type="button" className="settings-param-header" onClick={() => toggleSection('settingsInterface')}>
+                    <span>Interface</span>
+                    <span className="settings-param-arrow">{expandedSections.has('settingsInterface') ? '▼' : '▶'}</span>
+                  </button>
+                  {expandedSections.has('settingsInterface') && (
+                    <div className="settings-param-body">
+                      <div className="option-group">
+                        <label className="option-label">Thème</label>
+                        <select value={userSettings.ui.theme} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, theme: e.target.value as 'system'|'light'|'dark' } }))} className="option-select">
+                          <option value="system">Système</option>
+                          <option value="light">Clair</option>
+                          <option value="dark">Sombre</option>
+                        </select>
+                      </div>
+                      <div className="option-group">
+                        <label className="option-label">Taille police éditeur</label>
+                        <input type="number" min={8} max={32} value={userSettings.ui.editorFontSize} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, editorFontSize: Math.min(32, Math.max(8, parseInt(e.target.value, 10) || 14)) } }))} className="option-input" />
+                      </div>
+                      <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                        <input type="checkbox" checked={userSettings.ui.compactMode} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, compactMode: e.target.checked } }))} className="option-checkbox" />
+                        <span>Mode compact</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+                <button type="button" className="settings-param-apply-btn" onClick={() => { if (!conversionOptions.metadata?.author && userSettings.profile.displayName) updateOption(['metadata', 'author'], userSettings.profile.displayName); if (!conversionOptions.metadata?.language) updateOption(['metadata', 'language'], userSettings.profile.defaultLanguage); }}>
+                  Appliquer au document
+                </button>
               </div>
             </div>
+            <div
+              className="settings-resize-handle"
+              onMouseDown={handleSettingsResizeStart}
+              title="Redimensionner"
+            />
           </div>
         </>
       )}
@@ -3540,7 +3864,7 @@ function App() {
                         <label className="option-label">Auteur</label>
                         <input
                           type="text"
-                          value={conversionOptions.metadata?.author || ''}
+                          value={(conversionOptions.metadata?.author ?? userSettings.profile.displayName) || ''}
                           onChange={(e) => updateOption(['metadata', 'author'], e.target.value || null)}
                           className="option-input"
                           placeholder="Auteur"
@@ -3549,7 +3873,7 @@ function App() {
                       <div className="option-group">
                         <label className="option-label">Langue</label>
                         <select
-                          value={conversionOptions.metadata?.language || 'fr'}
+                          value={conversionOptions.metadata?.language || userSettings.profile.defaultLanguage || 'fr'}
                           onChange={(e) => updateOption(['metadata', 'language'], e.target.value)}
                           className="option-select"
                         >
@@ -3630,8 +3954,8 @@ function App() {
           </div>
           <div className="footer-copyright">
             <span className="footer-brand">© Ascend</span>
-            <span className="footer-separator">•</span>
-            <span className="footer-version">v{packageJson.version} (Alpha)</span>
+            <span className="footer-separator">-</span>
+            <span className="footer-version">v{packageJson.version}</span>
           </div>
           <div className="footer-license-info">
             <span className="footer-license">MIT License</span>

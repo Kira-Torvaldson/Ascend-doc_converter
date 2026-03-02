@@ -1,0 +1,7 @@
+# Ignore when building backend (context is root)
+api/backend/node_modules
+api/frontend/node_modules
+.git
+*.log
+.env
+.env.*

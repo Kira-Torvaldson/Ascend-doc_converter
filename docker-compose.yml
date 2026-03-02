@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: api/backend/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      LOGS_DIR: /app/api/backend/logs
+      TMPDIR: /app/api/backend/tmp
+    volumes:
+      - ascend-logs:/app/api/backend/logs
+      - ascend-tmp:/app/api/backend/tmp
+    expose:
+      - "3003"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./api/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: ""
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  ascend-logs:
+  ascend-tmp:

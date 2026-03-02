@@ -340,6 +340,44 @@ Ce script vérifie :
 - L'installation de Pandoc
 - Les permissions d'écriture
 
+## Développement
+
+Lancement du frontend et du backend en une seule commande depuis la racine du dépôt.
+
+### Prérequis
+
+- Node.js >= 16.17.0
+
+### Installation (racine)
+
+```bash
+npm i
+```
+
+Installe les dépendances à la racine (inclut `concurrently`). Les dépendances des sous-projets (`api/frontend`, `api/backend`) doivent être installées séparément (voir section Installation ci-dessus) avant la première utilisation.
+
+### Lancement
+
+```bash
+npm run dev
+# ou
+npm run dev:all
+```
+
+Lance le frontend (Vite) et le backend (Node) en parallèle.
+
+### Commandes séparées
+
+```bash
+npm run dev:front   # Frontend uniquement (api/frontend)
+npm run dev:back    # Backend uniquement (api/backend)
+```
+
+---
+- La version de Node.js
+- L'installation de Pandoc
+- Les permissions d'écriture
+
 ## Démarrage
 
 ### Backend
@@ -394,6 +432,16 @@ GET /api/logs/:conversionId
 ```
 
 Retourne le log JSON structuré de la conversion.
+
+## Docker
+
+Lancer l'application avec Docker Compose : voir [DOCKER.md](DOCKER.md).
+
+```bash
+docker compose up --build
+```
+
+URL : http://localhost:8080
 
 ## Documentation
 

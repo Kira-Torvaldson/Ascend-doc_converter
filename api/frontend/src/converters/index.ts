@@ -13,4 +13,4 @@ export { API_BASE } from './api';
 export { convertAsciiDocToMarkdown } from './asciidoc-to-markdown';
 export { convertMarkdownToAsciiDoc } from './markdown-to-asciidoc';
 export { convertText, requestConfirmationToken } from './generic-converter';
-export { adaptForBookStack } from './bookstack-adapter.ts';
+export { adaptForBookStack } from './bookstack-adapter';

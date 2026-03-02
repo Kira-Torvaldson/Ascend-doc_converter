@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * Post-process Markdown output to make it compatible with BookStack/Parsedown
  * Parsedown is strict and doesn't support complex Markdown syntax
@@ -883,8 +884,8 @@ export function adaptForBookStack(markdown: string | null | undefined): string {
   // Clean up any double blank lines that might have been created
   result = result.replace(/\n{3,}/g, '\n\n')
   
-  // Debug log
-  if (process.env.NODE_ENV !== 'production') {
+  // Debug log (development only)
+  if (import.meta.env.DEV) {
     console.log(`BookStack adapter: ${originalLength} -> ${result.length} chars`)
   }
   
