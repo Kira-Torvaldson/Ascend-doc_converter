@@ -96,14 +96,42 @@ function loadUserPrefs(): UserPreferences {
 
 type UserSettings = {
   profile: { displayName: string; organization: string; signature: string; defaultLanguage: 'fr'|'en'|'es'|'de' };
-  conversion: { defaultOutputFormat: string; autoApplyUserToMetadata: boolean; defaultTocEnabled: boolean };
-  ui: { theme: 'system'|'light'|'dark'; editorFontSize: number; compactMode: boolean };
+  conversion: {
+    defaultOutputFormat: string;
+    autoApplyUserToMetadata: boolean;
+    defaultTocEnabled: boolean;
+    saveConversionHistory: boolean;
+  };
+  ui: {
+    theme: 'default'|'dark';
+    editorFontSize: number;
+    compactMode: boolean;
+    editorWordWrap: boolean;
+    reduceMotion: boolean;
+    showLineNumbers: boolean;
+    tabSize: 2 | 4;
+    showTooltips: boolean;
+  };
 };
 const USER_SETTINGS_KEY = 'ascend_user_settings';
 const DEFAULT_USER_SETTINGS: UserSettings = {
   profile: { displayName: '', organization: '', signature: '', defaultLanguage: 'fr' },
-  conversion: { defaultOutputFormat: '', autoApplyUserToMetadata: false, defaultTocEnabled: false },
-  ui: { theme: 'system', editorFontSize: 14, compactMode: false }
+  conversion: {
+    defaultOutputFormat: '',
+    autoApplyUserToMetadata: false,
+    defaultTocEnabled: false,
+    saveConversionHistory: true
+  },
+  ui: {
+    theme: 'default',
+    editorFontSize: 14,
+    compactMode: false,
+    editorWordWrap: false,
+    reduceMotion: false,
+    showLineNumbers: false,
+    tabSize: 4,
+    showTooltips: true
+  }
 };
 function loadUserSettings(): UserSettings {
   try {
@@ -123,12 +151,18 @@ function loadUserSettings(): UserSettings {
         conversion: {
           defaultOutputFormat: typeof c.defaultOutputFormat === 'string' ? c.defaultOutputFormat : '',
           autoApplyUserToMetadata: !!c.autoApplyUserToMetadata,
-          defaultTocEnabled: !!c.defaultTocEnabled
+          defaultTocEnabled: !!c.defaultTocEnabled,
+          saveConversionHistory: c.saveConversionHistory !== false
         },
         ui: {
-          theme: ['system', 'light', 'dark'].includes(u.theme) ? u.theme : 'system',
+          theme: ['default', 'dark'].includes(u.theme) ? u.theme : 'default',
           editorFontSize: typeof u.editorFontSize === 'number' && u.editorFontSize >= 8 && u.editorFontSize <= 32 ? u.editorFontSize : 14,
-          compactMode: !!u.compactMode
+          compactMode: !!u.compactMode,
+          editorWordWrap: !!u.editorWordWrap,
+          reduceMotion: !!u.reduceMotion,
+          showLineNumbers: !!u.showLineNumbers,
+          tabSize: u.tabSize === 2 ? 2 : 4,
+          showTooltips: u.showTooltips !== false
         }
       };
     }
@@ -186,6 +220,11 @@ function App() {
   
   /** Flag to prevent certain actions immediately after conversion */
   const [justConverted, setJustConverted] = useState<boolean>(false);
+
+  /** Source panel content modified since last conversion */
+  const [sourceModified, setSourceModified] = useState<boolean>(false);
+  /** Result panel content modified (edited) since last conversion */
+  const [resultModified, setResultModified] = useState<boolean>(false);
 
   // ==========================================================================
   // STATES: FILE MANAGEMENT
@@ -610,18 +649,44 @@ function App() {
       console.error('Error saving user settings:', e);
     }
   }, [userSettings]);
-  useEffect(() => {
+
+  const applyThemeToDocument = useCallback((theme: 'default' | 'dark') => {
     const root = document.documentElement;
-    const theme = userSettings.ui.theme;
-    if (theme === 'system') {
-      root.removeAttribute('data-theme');
-      root.style.colorScheme = 'light dark';
+    root.setAttribute('data-theme', theme);
+    root.style.colorScheme = theme === 'default' ? 'dark' : theme;
+  }, []);
+
+  const applyUiPreferencesToDocument = useCallback((ui: UserSettings['ui']) => {
+    applyThemeToDocument(ui.theme);
+    const root = document.documentElement;
+    root.setAttribute('data-editor-word-wrap', ui.editorWordWrap ? 'true' : 'false');
+    root.setAttribute('data-reduce-motion', ui.reduceMotion ? 'true' : 'false');
+    root.setAttribute('data-show-line-numbers', ui.showLineNumbers ? 'true' : 'false');
+    root.setAttribute('data-tab-size', String(ui.tabSize));
+    root.setAttribute('data-show-tooltips', ui.showTooltips ? 'true' : 'false');
+    if (ui.showTooltips) {
+      root.querySelectorAll('[data-saved-title]').forEach((el) => {
+        const saved = el.getAttribute('data-saved-title');
+        if (saved) {
+          el.setAttribute('title', saved);
+          el.removeAttribute('data-saved-title');
+        }
+      });
     } else {
-      root.setAttribute('data-theme', theme);
-      root.style.colorScheme = theme;
+      root.querySelectorAll('[title]').forEach((el) => {
+        const t = el.getAttribute('title');
+        if (t) {
+          el.setAttribute('data-saved-title', t);
+          el.removeAttribute('title');
+        }
+      });
     }
-  }, [userSettings.ui.theme]);
-  
+  }, [applyThemeToDocument]);
+
+  useEffect(() => {
+    applyUiPreferencesToDocument(userSettings.ui);
+  }, []);
+
   /**
    * Updates a conversion option at a specific path
    * 
@@ -1329,6 +1394,7 @@ function App() {
    * Saves current conversion to history
    */
   const saveToHistory = useCallback(() => {
+    if (!userSettings.conversion.saveConversionHistory) return;
     // Get content directly from state
     const sourceContent = sourceFormat === 'markdown' ? mdOutput : adocInput;
     const resultContent = targetFormat === 'asciidoc' ? adocInput : mdOutput;
@@ -1355,7 +1421,7 @@ function App() {
       }
       return newHistory;
     });
-  }, [sourceFormat, targetFormat, adocInput, mdOutput]);
+  }, [userSettings.conversion.saveConversionHistory, sourceFormat, targetFormat, adocInput, mdOutput]);
 
   /**
    * Restores a conversion from history
@@ -1382,6 +1448,8 @@ function App() {
     setSourceFormat(item.fromFormat);
     setTargetFormat(item.toFormat);
     setShowHistoryPanel(false);
+    setSourceModified(false);
+    setResultModified(false);
     setStatus(`Conversion restaurée depuis l'historique`);
   }, []);
 
@@ -1459,7 +1527,7 @@ function App() {
     } else if (targetFormat === 'asciidoc') {
       setAdocInput("");
     }
-    
+    setResultModified(false);
     setStatus("Résultat effacé");
     setShowClearResultModal(false);
   };
@@ -1541,6 +1609,7 @@ function App() {
     setImportedFiles([]);
     setFolderFiles([]);
     setSelectedFileIndex(-1);
+    setSourceModified(false);
     setShowClearSourceModal(false);
   }, [sourceFormat, getFormatTitle]);
 
@@ -1574,6 +1643,8 @@ function App() {
     setFolderFiles([]);
     setSelectedFileIndex(-1);
     
+    setSourceModified(false);
+    setResultModified(false);
     setStatus(`Source ${formatTitle} et résultat effacés`);
     setShowClearSourceModal(false);
   }, [sourceFormat, targetFormat, getFormatTitle]);
@@ -1648,6 +1719,18 @@ function App() {
       setStatus("Veuillez entrer du texte à convertir");
       setNotification({
         message: "Veuillez entrer du texte à convertir",
+        type: 'error',
+        visible: true
+      });
+      return;
+    }
+
+    const sourceSizeBytes = new Blob([sourceText]).size;
+    const MAX_SOURCE_SIZE_MB = 2;
+    if (sourceSizeBytes > MAX_SOURCE_SIZE_MB * 1024 * 1024) {
+      setStatus(`Document trop volumineux (max ${MAX_SOURCE_SIZE_MB} Mo)`);
+      setNotification({
+        message: `Le document dépasse la taille maximale (${MAX_SOURCE_SIZE_MB} Mo). Réduisez le contenu ou divisez le fichier.`,
         type: 'error',
         visible: true
       });
@@ -1738,12 +1821,6 @@ function App() {
     }
 
     let opts = conversionOptions;
-    if (userSettings.conversion.autoApplyUserToMetadata) {
-      const meta = { ...conversionOptions.metadata };
-      if (!meta?.author && userSettings.profile.displayName) meta.author = userSettings.profile.displayName;
-      if (!meta?.language && userSettings.profile.defaultLanguage) meta.language = userSettings.profile.defaultLanguage;
-      opts = { ...conversionOptions, metadata: meta };
-    }
     if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
       opts = { ...opts, rendering: { ...opts.rendering, tableOfContents: { ...opts.rendering.tableOfContents, enabled: true } } };
     } else if (userSettings.conversion.defaultTocEnabled) {
@@ -1839,8 +1916,8 @@ function App() {
         const sourceContent = sourceFormat === 'markdown' ? mdOutput : adocInput;
         const resultContent = targetFormat === 'asciidoc' ? adocInput : mdOutput;
 
-        // Save only if both contents are not empty
-        if (sourceContent.trim() && resultContent.trim()) {
+        // Save only if both contents are not empty and user allows history
+        if (userSettings.conversion.saveConversionHistory && sourceContent.trim() && resultContent.trim()) {
           const historyItem: ConversionHistoryItem = {
             id: Date.now().toString(),
             timestamp: Date.now(),
@@ -1863,6 +1940,9 @@ function App() {
           });
         }
 
+        // Reset modified flags after conversion
+        setSourceModified(false);
+        setResultModified(false);
         // Reset so the navigation window can reopen when conditions are met
         setJustConverted(false);
       }, 500);
@@ -1870,7 +1950,7 @@ function App() {
       // Clean up timer when component unmounts or when dependencies change
       return () => clearTimeout(timer);
     }
-  }, [loading, justConverted, sourceFormat, targetFormat, adocInput, mdOutput]);
+  }, [loading, justConverted, sourceFormat, targetFormat, adocInput, mdOutput, userSettings.conversion.saveConversionHistory]);
 
   // ==========================================================================
   // EFFECTS: KEYBOARD SHORTCUTS
@@ -2057,6 +2137,18 @@ function App() {
         return;
       }
 
+      const sourceSizeBytes = new Blob([sourceText]).size;
+      const MAX_SOURCE_SIZE_MB = 2;
+      if (sourceSizeBytes > MAX_SOURCE_SIZE_MB * 1024 * 1024) {
+        setStatus(`Document trop volumineux (max ${MAX_SOURCE_SIZE_MB} Mo)`);
+        setNotification({
+          message: `Le document dépasse la taille maximale (${MAX_SOURCE_SIZE_MB} Mo). Réduisez le contenu ou divisez le fichier.`,
+          type: 'error',
+          visible: true
+        });
+        return;
+      }
+
       if (sourceFormat === targetFormat) {
         setStatus("Les formats source et destination sont identiques");
         setNotification({
@@ -2080,12 +2172,6 @@ function App() {
       };
 
       let opts = conversionOptions;
-      if (userSettings.conversion.autoApplyUserToMetadata) {
-        const meta = { ...conversionOptions.metadata };
-        if (!meta?.author && userSettings.profile.displayName) meta.author = userSettings.profile.displayName;
-        if (!meta?.language && userSettings.profile.defaultLanguage) meta.language = userSettings.profile.defaultLanguage;
-        opts = { ...conversionOptions, metadata: meta };
-      }
       if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
         opts = { ...opts, rendering: { ...opts.rendering, tableOfContents: { ...opts.rendering.tableOfContents, enabled: true } } };
       } else if (userSettings.conversion.defaultTocEnabled) {
@@ -2270,7 +2356,8 @@ function App() {
     showHeadings: boolean = false,
     canConvert: boolean = true,
     onClear?: () => void,
-    isDeleting: boolean = false
+    isDeleting: boolean = false,
+    sourceModified: boolean = false
   ) => {
     const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value;
@@ -2290,7 +2377,7 @@ function App() {
       transition: "all 0.2s ease"
     }}>
       <div className="panel-header">
-        <h2>{title}</h2>
+        <h2>{title}{sourceModified && <span className="panel-modified-badge" title="Document modifié"> •</span>}</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <label className="file-input-label">
             <span>📄</span>
@@ -2555,15 +2642,17 @@ function App() {
       return renderSourcePanel(
       getFormatTitle(sourceFormat),
       sourceValue,
-      setSourceValue,
+      (v) => { setSourceValue(v); setSourceModified(true); },
       getFormatPlaceholder(sourceFormat),
       sourceRef,
       handleConvert,
       (sourceFormat === 'asciidoc' || sourceFormat === 'markdown'), // Show headings for AsciiDoc and Markdown
       sourceFormat !== targetFormat && isAllowedConversion, // Can convert if formats are different AND conversion is allowed
-      handleClearSource // Function to clear source content
+      handleClearSource, // Function to clear source content
+      false, // isDeleting
+      sourceModified
     );
-  }, [sourceFormat, adocInput, mdOutput, currentFileName, status, headings, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, adocTextAreaRef, navigationEnabled, getTextStats]);
+  }, [sourceFormat, adocInput, mdOutput, currentFileName, status, headings, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, adocTextAreaRef, navigationEnabled, getTextStats, sourceModified]);
 
   /**
    * ============================================================================
@@ -2636,7 +2725,7 @@ function App() {
       transition: "all 0.2s ease"
     }}>
       <div className="panel-header">
-        <h2>{getFormatTitle(targetFormat)}</h2>
+        <h2>{getFormatTitle(targetFormat)}{resultModified && <span className="panel-modified-badge" title="Document modifié"> •</span>}</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
           {resultValue && (
             <>
@@ -2804,7 +2893,7 @@ function App() {
       <textarea
         className="result-textarea"
         value={resultValue}
-        onChange={(e) => setResultValue(e.target.value)}
+        onChange={(e) => { setResultValue(e.target.value); if (isEditingResult) setResultModified(true); }}
         readOnly={!isEditingResult}
         placeholder={loading ? "Conversion en cours..." : `Résultat ${getFormatTitle(targetFormat)}...`}
         style={{
@@ -2814,7 +2903,7 @@ function App() {
       />
     </section>
     );
-  }, [targetFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, getFormatTitle, setMdOutput, setAdocInput, handleExport, getTextStats, isDeleting]);
+  }, [targetFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, resultModified, getFormatTitle, setMdOutput, setAdocInput, handleExport, getTextStats, isDeleting]);
 
   return (
     <div className="page">
@@ -2891,7 +2980,7 @@ function App() {
         <div className="header-main">
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
             <img
-              src="http://localhost:3003/public/logo.png"
+              src="/public/logo.png"
               alt="Logo"
               style={{
                 width: 130,
@@ -3005,6 +3094,34 @@ function App() {
             <div className="settings-panel-content">
               <div className="settings-param-list">
                 <div className="settings-param-section">
+                  <button type="button" className="settings-param-header" onClick={() => toggleSection('settingsGeneral')}>
+                    <span>Général</span>
+                    <span className="settings-param-arrow">{expandedSections.has('settingsGeneral') ? '▼' : '▶'}</span>
+                  </button>
+                  {expandedSections.has('settingsGeneral') && (
+                    <div className="settings-param-body">
+                      <div className="option-group">
+                        <label className="option-label">Version</label>
+                        <div style={{ fontSize: '0.875rem', color: '#64748b' }}>v{packageJson.version}</div>
+                      </div>
+                      <div className="option-group">
+                        <label className="option-label">À propos</label>
+                        <p style={{ margin: 0, fontSize: '0.8125rem', color: '#64748b', lineHeight: 1.5 }}>
+                          Ascend — Convertisseur de documents (AsciiDoc, Markdown, etc.). Thèmes Par défaut et Sombre, paramètres appliqués à la demande, historique et options d’interface.
+                        </p>
+                      </div>
+                      <div className="option-group">
+                        <label className="option-label">Nouveautés v0.0.1.4.2</label>
+                        <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8125rem', color: '#64748b', lineHeight: 1.6 }}>
+                          <li>Indicateur « document modifié » sur les panneaux source et résultat</li>
+                          <li>Validation avant conversion (source vide, max 2 Mo)</li>
+                          <li>Changelog et à propos dans Paramètres → Général</li>
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="settings-param-section">
                   <button type="button" className="settings-param-header" onClick={() => toggleSection('settingsProfil')}>
                     <span>Profil</span>
                     <span className="settings-param-arrow">{expandedSections.has('settingsProfil') ? '▼' : '▶'}</span>
@@ -3058,13 +3175,15 @@ function App() {
                         </select>
                       </div>
                       <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                        <input type="checkbox" checked={userSettings.conversion.autoApplyUserToMetadata} onChange={(e) => setUserSettings(s => ({ ...s, conversion: { ...s.conversion, autoApplyUserToMetadata: e.target.checked } }))} className="option-checkbox" />
-                        <span>Appliquer automatiquement au document</span>
-                      </label>
-                      <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
                         <input type="checkbox" checked={userSettings.conversion.defaultTocEnabled} onChange={(e) => setUserSettings(s => ({ ...s, conversion: { ...s.conversion, defaultTocEnabled: e.target.checked } }))} className="option-checkbox" />
                         <span>Table des matières par défaut</span>
                       </label>
+                      <div className="option-group">
+                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                          <input type="checkbox" checked={userSettings.conversion.saveConversionHistory} onChange={(e) => setUserSettings(s => ({ ...s, conversion: { ...s.conversion, saveConversionHistory: e.target.checked } }))} className="option-checkbox" />
+                          <span>Conserver l'historique des conversions</span>
+                        </label>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -3077,9 +3196,8 @@ function App() {
                     <div className="settings-param-body">
                       <div className="option-group">
                         <label className="option-label">Thème</label>
-                        <select value={userSettings.ui.theme} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, theme: e.target.value as 'system'|'light'|'dark' } }))} className="option-select">
-                          <option value="system">Système</option>
-                          <option value="light">Clair</option>
+                        <select value={userSettings.ui.theme} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, theme: e.target.value as 'default'|'dark' } }))} className="option-select">
+                          <option value="default">Par défaut</option>
                           <option value="dark">Sombre</option>
                         </select>
                       </div>
@@ -3087,16 +3205,93 @@ function App() {
                         <label className="option-label">Taille police éditeur</label>
                         <input type="number" min={8} max={32} value={userSettings.ui.editorFontSize} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, editorFontSize: Math.min(32, Math.max(8, parseInt(e.target.value, 10) || 14)) } }))} className="option-input" />
                       </div>
-                      <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                        <input type="checkbox" checked={userSettings.ui.compactMode} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, compactMode: e.target.checked } }))} className="option-checkbox" />
-                        <span>Mode compact</span>
-                      </label>
+                      <div className="option-group">
+                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                          <input type="checkbox" checked={userSettings.ui.compactMode} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, compactMode: e.target.checked } }))} className="option-checkbox" />
+                          <span>Mode compact</span>
+                        </label>
+                      </div>
+                      <div className="option-group">
+                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                          <input type="checkbox" checked={userSettings.ui.editorWordWrap} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, editorWordWrap: e.target.checked } }))} className="option-checkbox" />
+                          <span>Retour à la ligne dans les éditeurs</span>
+                        </label>
+                      </div>
+                      <div className="option-group">
+                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                          <input type="checkbox" checked={userSettings.ui.reduceMotion} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, reduceMotion: e.target.checked } }))} className="option-checkbox" />
+                          <span>Réduire les animations</span>
+                        </label>
+                      </div>
+                      <div className="option-group">
+                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                          <input type="checkbox" checked={userSettings.ui.showLineNumbers} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, showLineNumbers: e.target.checked } }))} className="option-checkbox" />
+                          <span>Afficher les numéros de ligne</span>
+                        </label>
+                      </div>
+                      <div className="option-group">
+                        <label className="option-label">Taille des tabulations</label>
+                        <select value={userSettings.ui.tabSize} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, tabSize: e.target.value === '2' ? 2 : 4 } }))} className="option-select">
+                          <option value={2}>2 espaces</option>
+                          <option value={4}>4 espaces</option>
+                        </select>
+                      </div>
+                      <div className="option-group">
+                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                          <input type="checkbox" checked={userSettings.ui.showTooltips} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, showTooltips: e.target.checked } }))} className="option-checkbox" />
+                          <span>Afficher les infobulles</span>
+                        </label>
+                      </div>
                     </div>
                   )}
                 </div>
-                <button type="button" className="settings-param-apply-btn" onClick={() => { if (!conversionOptions.metadata?.author && userSettings.profile.displayName) updateOption(['metadata', 'author'], userSettings.profile.displayName); if (!conversionOptions.metadata?.language) updateOption(['metadata', 'language'], userSettings.profile.defaultLanguage); }}>
-                  Appliquer au document
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="settings-param-apply-btn"
+                    onClick={() => {
+                      applyUiPreferencesToDocument(userSettings.ui);
+                      updateOption(['metadata', 'author'], userSettings.profile.displayName || null);
+                      updateOption(['metadata', 'language'], userSettings.profile.defaultLanguage || null);
+                      setStatus('Paramètres appliqués');
+                      setSettingsOpen(false);
+                    }}
+                  >
+                    Appliquer
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-param-reset-btn"
+                    onClick={() => {
+                      setUserSettings({
+                        profile: { displayName: '', organization: '', signature: '', defaultLanguage: 'fr' },
+                        conversion: {
+                          defaultOutputFormat: '',
+                          autoApplyUserToMetadata: false,
+                          defaultTocEnabled: false,
+                          saveConversionHistory: true
+                        },
+                        ui: {
+                          theme: 'default',
+                          editorFontSize: 14,
+                          compactMode: false,
+                          editorWordWrap: false,
+                          reduceMotion: false,
+                          showLineNumbers: false,
+                          tabSize: 4,
+                          showTooltips: true
+                        }
+                      });
+                      setSettingsErrors({});
+                      updateOption(['metadata', 'author'], null);
+                      updateOption(['metadata', 'language'], null);
+                      setStatus('Paramètres réinitialisés');
+                    }}
+                    title="Réinitialiser tous les paramètres"
+                  >
+                    Réinitialiser
+                  </button>
+                </div>
               </div>
             </div>
             <div
