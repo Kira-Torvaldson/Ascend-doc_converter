@@ -161,30 +161,30 @@ export async function convertText(
     // Determine endpoint according to formats
     if (sourceFormat === 'asciidoc' && targetFormat === 'markdown') {
       // AsciiDoc → Markdown: use downdoc
-      endpoint = `${API_BASE}/to-markdown`;
+      endpoint = `${API_BASE}/api/to-markdown`;
       // Include options if Parsedown is enabled
       if (conversionOptions?.formatSpecific?.markdown?.parsedown) {
         body = { text, options: conversionOptions };
       }
     } else if (sourceFormat === 'markdown' && targetFormat === 'asciidoc') {
       // Markdown → AsciiDoc: use Pandoc
-      endpoint = `${API_BASE}/to-asciidoc`;
+      endpoint = `${API_BASE}/api/to-asciidoc`;
     } else if (sourceFormat === 'txt' && targetFormat === 'markdown') {
       // Plain text → Markdown: use text2markdown
-      endpoint = `${API_BASE}/text-to-markdown`;
+      endpoint = `${API_BASE}/api/text-to-markdown`;
     } else if (sourceFormat === 'html') {
       // HTML → other formats: use from-html endpoint
-      endpoint = `${API_BASE}/from-html`;
+      endpoint = `${API_BASE}/api/from-html`;
       body = { text, to: targetFormat };
     } else {
-      // For all other conversions (TXT to others, PDF, YAML, JSON, etc.): use generic /convert endpoint
-      endpoint = `${API_BASE}/convert`;
-      body = { 
-        text, 
-        from: sourceFormat, 
-        to: targetFormat, 
+      // For all other conversions (TXT to others, PDF, YAML, JSON, etc.): use secured /api/convert endpoint
+      endpoint = `${API_BASE}/api/convert`;
+      body = {
+        content: text,
+        fromFormat: sourceFormat,
+        toFormat: targetFormat,
         options: conversionOptions,
-        confirmationToken: confirmationToken || null // Confirmation token REQUIRED
+        token: confirmationToken || null // Confirmation token REQUIRED
       };
       
       // Verify that token is present for /convert endpoint

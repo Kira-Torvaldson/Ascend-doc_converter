@@ -71,7 +71,7 @@ export function useFileHandling(
     
     setSourceFormat(format);
     setCurrentFileName(file.name);
-  }, [setAdocInput, setMdOutput, setSourceFormat, setTargetFormat]);
+  }, [setAdocInput, setMdOutput, setSourceFormat]);
 
   const handleFolderSelect = useCallback((files: File[]) => {
     setFolderFiles(files);

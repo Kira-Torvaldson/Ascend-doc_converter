@@ -594,67 +594,38 @@ async function convertAsciiDocWithPandoc(asciidoc) {
   }
 
   return new Promise((resolve, reject) => {
-    const tempInput = path.join(tmpdir(), `pandoc-input-${randomUUID()}.adoc`)
-    const tempOutput = path.join(tmpdir(), `pandoc-output-${randomUUID()}.md`)
+    const pandoc = spawn('pandoc', ['-f', 'asciidoc', '-t', 'markdown'])
+    let stdout = ''
+    let stderr = ''
 
-    try {
-      // Write input to temporary file
-      writeFileSync(tempInput, asciidoc, 'utf-8')
+    pandoc.stdout.on('data', (data) => {
+      stdout += data.toString()
+    })
 
-      // Run Pandoc: asciidoc -> markdown
-      const pandoc = spawn('pandoc', [
-        '-f', 'asciidoc',
-        '-t', 'markdown',
-        '-o', tempOutput,
-        tempInput
-      ])
+    pandoc.stderr.on('data', (data) => {
+      stderr += data.toString()
+    })
 
-      let stderr = ''
+    pandoc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Pandoc conversion failed with code ${code}: ${stderr}`))
+        return
+      }
 
-      pandoc.stderr.on('data', (data) => {
-        stderr += data.toString()
-      })
+      try {
+        const cleaned = basicCleanup(stdout)
+        resolve(cleaned)
+      } catch (error) {
+        reject(error)
+      }
+    })
 
-      pandoc.on('close', (code) => {
-        try {
-          if (code !== 0) {
-            // Clean up temp files
-            try { unlinkSync(tempInput) } catch {}
-            try { unlinkSync(tempOutput) } catch {}
-            reject(new Error(`Pandoc conversion failed with code ${code}: ${stderr}`))
-            return
-          }
+    pandoc.on('error', (error) => {
+      reject(new Error(`Failed to execute Pandoc: ${error.message}`))
+    })
 
-          // Read output
-          const markdown = readFileSync(tempOutput, 'utf-8')
-
-          // Clean up temp files
-          unlinkSync(tempInput)
-          unlinkSync(tempOutput)
-
-          // Apply basic cleanup
-          const cleaned = basicCleanup(markdown)
-          resolve(cleaned)
-        } catch (error) {
-          // Clean up temp files on error
-          try { unlinkSync(tempInput) } catch {}
-          try { unlinkSync(tempOutput) } catch {}
-          reject(error)
-        }
-      })
-
-      pandoc.on('error', (error) => {
-        // Clean up temp files on error
-        try { unlinkSync(tempInput) } catch {}
-        try { unlinkSync(tempOutput) } catch {}
-        reject(new Error(`Failed to execute Pandoc: ${error.message}`))
-      })
-    } catch (error) {
-      // Clean up temp files on error
-      try { unlinkSync(tempInput) } catch {}
-      try { unlinkSync(tempOutput) } catch {}
-      reject(error)
-    }
+    pandoc.stdin.write(asciidoc, 'utf-8')
+    pandoc.stdin.end()
   })
 }
 
@@ -671,67 +642,38 @@ async function convertMarkdownWithPandoc(markdown) {
   }
 
   return new Promise((resolve, reject) => {
-    const tempInput = path.join(tmpdir(), `pandoc-input-${randomUUID()}.md`)
-    const tempOutput = path.join(tmpdir(), `pandoc-output-${randomUUID()}.adoc`)
+    const pandoc = spawn('pandoc', ['-f', 'markdown', '-t', 'asciidoc'])
+    let stdout = ''
+    let stderr = ''
 
-    try {
-      // Write input to temporary file
-      writeFileSync(tempInput, markdown, 'utf-8')
+    pandoc.stdout.on('data', (data) => {
+      stdout += data.toString()
+    })
 
-      // Run Pandoc: markdown -> asciidoc
-      const pandoc = spawn('pandoc', [
-        '-f', 'markdown',
-        '-t', 'asciidoc',
-        '-o', tempOutput,
-        tempInput
-      ])
+    pandoc.stderr.on('data', (data) => {
+      stderr += data.toString()
+    })
 
-      let stderr = ''
+    pandoc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Pandoc conversion failed with code ${code}: ${stderr}`))
+        return
+      }
 
-      pandoc.stderr.on('data', (data) => {
-        stderr += data.toString()
-      })
+      try {
+        const cleaned = stdout.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
+        resolve(cleaned)
+      } catch (error) {
+        reject(error)
+      }
+    })
 
-      pandoc.on('close', (code) => {
-        try {
-          if (code !== 0) {
-            // Clean up temp files
-            try { unlinkSync(tempInput) } catch {}
-            try { unlinkSync(tempOutput) } catch {}
-            reject(new Error(`Pandoc conversion failed with code ${code}: ${stderr}`))
-            return
-          }
+    pandoc.on('error', (error) => {
+      reject(new Error(`Failed to execute Pandoc: ${error.message}`))
+    })
 
-          // Read output
-          const asciidoc = readFileSync(tempOutput, 'utf-8')
-
-          // Clean up temp files
-          unlinkSync(tempInput)
-          unlinkSync(tempOutput)
-
-          // Clean up excessive blank lines
-          const cleaned = asciidoc.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
-          resolve(cleaned)
-        } catch (error) {
-          // Clean up temp files on error
-          try { unlinkSync(tempInput) } catch {}
-          try { unlinkSync(tempOutput) } catch {}
-          reject(error)
-        }
-      })
-
-      pandoc.on('error', (error) => {
-        // Clean up temp files on error
-        try { unlinkSync(tempInput) } catch {}
-        try { unlinkSync(tempOutput) } catch {}
-        reject(new Error(`Failed to execute Pandoc: ${error.message}`))
-      })
-    } catch (error) {
-      // Clean up temp files on error
-      try { unlinkSync(tempInput) } catch {}
-      try { unlinkSync(tempOutput) } catch {}
-      reject(error)
-    }
+    pandoc.stdin.write(markdown, 'utf-8')
+    pandoc.stdin.end()
   })
 }
 
@@ -811,75 +753,43 @@ async function convertWithPandoc(text, fromFormat, toFormat) {
   }
 
   return new Promise((resolve, reject) => {
-    // Determine source file extension
-    const sourceExt = normalizedFrom === 'asciidoc' ? 'adoc' : (normalizedFrom === 'txt' ? 'txt' : normalizedFrom)
-    const targetExt = normalizedTo === 'asciidoc' ? 'adoc' : (normalizedTo === 'txt' ? 'txt' : normalizedTo)
-    
-    const tempInput = path.join(tmpdir(), `pandoc-input-${randomUUID()}.${sourceExt}`)
-    const tempOutput = path.join(tmpdir(), `pandoc-output-${randomUUID()}.${targetExt}`)
+    const pandoc = spawn('pandoc', ['-f', pandocFrom, '-t', pandocTo])
+    let stdout = ''
+    let stderr = ''
 
-    try {
-      // Write input to temporary file
-      writeFileSync(tempInput, text, 'utf-8')
+    pandoc.stdout.on('data', (data) => {
+      stdout += data.toString()
+    })
 
-      // Run Pandoc: fromFormat -> toFormat (use mapped Pandoc formats)
-      const pandoc = spawn('pandoc', [
-        '-f', pandocFrom,
-        '-t', pandocTo,
-        '-o', tempOutput,
-        tempInput
-      ])
+    pandoc.stderr.on('data', (data) => {
+      stderr += data.toString()
+    })
 
-      let stderr = ''
+    pandoc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Pandoc conversion failed with code ${code}: ${stderr}`))
+        return
+      }
 
-      pandoc.stderr.on('data', (data) => {
-        stderr += data.toString()
-      })
-
-      pandoc.on('close', (code) => {
-        try {
-          if (code !== 0) {
-            // Clean up temp files
-            try { unlinkSync(tempInput) } catch {}
-            try { unlinkSync(tempOutput) } catch {}
-            reject(new Error(`Pandoc conversion failed with code ${code}: ${stderr}`))
-            return
-          }
-
-          // Read output
-          const result = readFileSync(tempOutput, 'utf-8')
-
-          // Clean up temp files
-          unlinkSync(tempInput)
-          unlinkSync(tempOutput)
-
-          // Apply basic cleanup for text-based formats
-          if (['markdown', 'asciidoc', 'rst', 'txt'].includes(normalizedTo)) {
-            const cleaned = result.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
-            resolve(cleaned)
-          } else {
-            resolve(result)
-          }
-        } catch (error) {
-          // Clean up temp files on error
-          try { unlinkSync(tempInput) } catch {}
-          try { unlinkSync(tempOutput) } catch {}
-          reject(error)
+      try {
+        // Apply basic cleanup for text-based formats
+        if (['markdown', 'asciidoc', 'rst', 'txt'].includes(normalizedTo)) {
+          const cleaned = stdout.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
+          resolve(cleaned)
+        } else {
+          resolve(stdout)
         }
-      })
+      } catch (error) {
+        reject(error)
+      }
+    })
 
-      pandoc.on('error', (error) => {
-        // Clean up temp files on error
-        try { unlinkSync(tempInput) } catch {}
-        try { unlinkSync(tempOutput) } catch {}
-        reject(new Error(`Failed to execute Pandoc: ${error.message}`))
-      })
-    } catch (error) {
-      // Clean up temp files on error
-      try { unlinkSync(tempInput) } catch {}
-      try { unlinkSync(tempOutput) } catch {}
-      reject(error)
-    }
+    pandoc.on('error', (error) => {
+      reject(new Error(`Failed to execute Pandoc: ${error.message}`))
+    })
+
+    pandoc.stdin.write(text, 'utf-8')
+    pandoc.stdin.end()
   })
 }
 

@@ -129,7 +129,7 @@ body {
   display: flex;
   flex-direction: column;
   width: 100%;
-  /* Background image: /public/rafale.jpg (proxied to backend in dev and Docker) */
+  /* Background image served by backend (/public). */
   background-image: url("/public/rafale.jpg");
   background-size: cover;
   background-position: center;

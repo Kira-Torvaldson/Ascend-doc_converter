@@ -69,8 +69,8 @@ app.get('/', (req, res) => {
 })
 
 // Conversion routes
-app.use('/', conversionRoutes)
-
+// Primary routes under /api (standardized)
+app.use('/api', conversionRoutes)
 // API routes
 app.use('/api', apiRoutes)
 

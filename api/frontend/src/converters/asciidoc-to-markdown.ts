@@ -39,7 +39,7 @@ export async function convertAsciiDocToMarkdown(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 secondes de timeout
 
-    const res = await fetch(`${API_BASE}/to-markdown`, {
+    const res = await fetch(`${API_BASE}/api/to-markdown`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"

@@ -641,7 +641,7 @@ function App() {
   const [settingsErrors, setSettingsErrors] = useState<SettingsValidationErrors>({});
   useEffect(() => {
     setSettingsErrors(validateUserPrefs({ displayName: userSettings.profile.displayName, organization: userSettings.profile.organization, defaultLanguage: userSettings.profile.defaultLanguage }));
-  }, [userSettings.profile.displayName, userSettings.profile.organization]);
+  }, [userSettings.profile.displayName, userSettings.profile.organization, userSettings.profile.defaultLanguage]);
   useEffect(() => {
     try {
       localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(userSettings));
@@ -685,7 +685,7 @@ function App() {
 
   useEffect(() => {
     applyUiPreferencesToDocument(userSettings.ui);
-  }, []);
+  }, [applyUiPreferencesToDocument, userSettings.ui]);
 
   /**
    * Updates a conversion option at a specific path
@@ -949,6 +949,7 @@ function App() {
       console.log('Closing navigation window - navigation disabled or incorrect format');
       setNavigationWindowOpen(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigationEnabled, sourceFormat, targetFormat, adocInput, mdOutput, headings, justConverted, loading]);
 
   // ==========================================================================
@@ -2075,6 +2076,7 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     // Clean up on unmount or dependency change
     return () => window.removeEventListener('keydown', handleKeyDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditingResult, loading, targetFormat, adocInput, mdOutput, requestConversionConfirmation]);
 
   // ==========================================================================
@@ -2652,6 +2654,7 @@ function App() {
       false, // isDeleting
       sourceModified
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceFormat, adocInput, mdOutput, currentFileName, status, headings, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, adocTextAreaRef, navigationEnabled, getTextStats, sourceModified]);
 
   /**
@@ -2903,6 +2906,7 @@ function App() {
       />
     </section>
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, resultModified, getFormatTitle, setMdOutput, setAdocInput, handleExport, getTextStats, isDeleting]);
 
   return (
@@ -2981,7 +2985,7 @@ function App() {
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
             <img
               src="/public/logo.png"
-              alt="Logo"
+              alt="Logo Ascend"
               style={{
                 width: 130,
                 height: 130,
