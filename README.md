@@ -1,23 +1,22 @@
 
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.3_Rise-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.4.3-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Dernières modifications (0.0.1.3 Rise)
+## Dernières modifications (v0.0.1.4.3)
 
-- **UI (frontend)**
-  - Le header a été simplifié (logo seul) et sa hauteur stabilisée.
-  - Le logo a été agrandi (tests de rendu) tout en gardant un header compact.
-  - Le footer affiche la **version automatiquement** depuis `api/frontend/package.json` et inclut un **Copyleft**.
-- **Conversion AsciiDoc → Markdown**
-  - En cas d’échec de conversion (retour AsciiDoc au lieu de Markdown), une **fenêtre (modal)** s’affiche pour demander de **modifier la source** puis de **relancer** la conversion.
 - **Documentation**
-  - Tri du dossier `doc/` pour ne garder à la racine que l’essentiel (`README.md`, `changelog.md`).
-  - Fusion de `doc/DOCUMENTATION.md` dans `doc/README.md` (la doc complète est désormais dans `doc/README.md`).
-  - Déplacement du glossaire vers `doc/references/glossary.md`.
+  - Synchronisation des documents principaux (`README.md`, `README.en.md`, `DOCKER.md`, `doc/README.md`) sur l’état réel de la release.
+  - Ajout d’une description cohérente du mode Docker HTTPS-first (accès par IP + redirection HTTP vers HTTPS).
+  - Centralisation de la note sur l’image de fond optionnelle (`rafale.jpg`) dans la documentation principale.
+- **Docker / Déploiement**
+  - Clarification des ports et du fallback recommandé (`8080:80`, `8443:443`) lorsque `80/443` ne sont pas disponibles.
+  - Comportement de redémarrage aligné pour les services conteneurisés.
+- **Hygiène du dépôt**
+  - Renforcement des règles d’ignore pour limiter les artefacts générés (`node_modules`, `dist`) dans les diffs.
 
 ## Présentation
 
@@ -441,7 +440,15 @@ Lancer l'application avec Docker Compose : voir [DOCKER.md](DOCKER.md).
 docker compose up --build
 ```
 
-URL : http://localhost:8080
+URL (par défaut) : `https://<IP>`  
+HTTP (`http://<IP>`) est redirigé vers HTTPS.
+
+Si les ports 80/443 ne sont pas disponibles localement, utilisez par exemple `8080:80` et `8443:443` dans `docker-compose.yml`, puis accédez à `https://<IP>:8443`.
+
+### Ressource statique optionnelle
+
+Pour l'image de fond personnalisée, placez `rafale.jpg` dans `api/backend/public/`.  
+Elle sera servie à `/public/rafale.jpg`.
 
 ## Documentation
 

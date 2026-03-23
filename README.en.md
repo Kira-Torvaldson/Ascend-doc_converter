@@ -1,22 +1,21 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.3_Rise-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.4.3-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (0.0.1.3 Rise)
+## Latest changes (v0.0.1.4.3)
 
-- **UI (frontend)**
-  - Header simplified (logo only) with stable height.
-  - Logo enlarged (render tests) while keeping a compact header.
-  - Footer displays the **version automatically** from `api/frontend/package.json` and includes **Copyleft**.
-- **AsciiDoc → Markdown conversion**
-  - On conversion failure (AsciiDoc returned instead of Markdown), a **modal** appears asking to **edit the source** and **retry** the conversion.
 - **Documentation**
-  - Reorganized `doc/` so only essentials remain at root level (`README.md`, `changelog.md`).
-  - Merged `doc/DOCUMENTATION.md` into `doc/README.md` (full documentation is now in `doc/README.md`).
-  - Glossary moved to `doc/references/glossary.md`.
+  - Synchronized primary docs (`README.md`, `README.en.md`, `DOCKER.md`, `doc/README.md`) with the current release state.
+  - Added a consistent HTTPS-first Docker description (IP-based access + HTTP to HTTPS redirection).
+  - Centralized optional background image guidance (`rafale.jpg`) in main documentation.
+- **Docker / Deployment**
+  - Clarified ports and recommended fallback mapping (`8080:80`, `8443:443`) when `80/443` are unavailable.
+  - Aligned restart behavior for containerized services.
+- **Repository hygiene**
+  - Strengthened ignore rules to reduce generated artifact noise (`node_modules`, `dist`) in diffs.
 
 ## Overview
 
@@ -393,6 +392,24 @@ GET /api/logs/:conversionId
 ```
 
 Returns the structured JSON log for the conversion.
+
+## Docker
+
+Run the full application with Docker Compose (frontend + backend): see [DOCKER.md](DOCKER.md).
+
+```bash
+docker compose up --build
+```
+
+Default URL: `https://<IP>`  
+HTTP (`http://<IP>`) is redirected to HTTPS.
+
+If ports 80/443 are not available, map for example `8080:80` and `8443:443` in `docker-compose.yml`, then use `https://<IP>:8443`.
+
+### Optional static asset
+
+For a custom background image, place `rafale.jpg` in `api/backend/public/`.  
+It is served at `/public/rafale.jpg`.
 
 ## Documentation
 

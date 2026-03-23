@@ -1,7 +1,7 @@
 # Ascend Documentation
 
-**Version:** 0.0.1.3 Rise  
-**Last Updated:** 2026-01-27  
+**Version:** 0.0.1.4.3  
+**Last Updated:** 2026-03-23  
 **Status:** Alpha - Architecture in crystallization
 
 ## Purpose
@@ -137,7 +137,7 @@ Ascend is a local-first document conversion pipeline. It converts documents betw
 
 ### Current Status
 
-**Version:** 0.0.1.3 Rise  
+**Version:** 0.0.1.4.3  
 **Supported Conversions:** AsciiDoc ↔ Markdown, Plain Text → Markdown  
 **Future Formats:** HTML, PDF, YAML, JSON, TXT (planned)
 
@@ -1251,7 +1251,7 @@ Execution profiles define resource limits and execution parameters for different
 
 ### Current Status
 
-**Version:** 0.0.1.3 Rise  
+**Version:** 0.0.1.4.3  
 **Status:** Active development  
 **Focus:** Core functionality and stability
 
@@ -1465,6 +1465,30 @@ List of explicitly allowed values. Anything not in the whitelist is rejected.
 ---
 
 ## 14. Changelog
+
+### 0.0.1.4.3 (2026-03-23)
+
+#### Added
+- Release description and documentation alignment for the 0.0.1.4.3 documentation pass
+- Explicit release-level summary in French and English root README files
+- Consolidated guidance for optional static background asset (`/public/rafale.jpg`)
+
+#### Changed
+- Root documentation updated to reflect HTTPS-first Docker behavior and access patterns
+- Deployment notes clarified with recommended fallback port mapping (`8080:80`, `8443:443`)
+- Canonical version references updated to 0.0.1.4.3
+
+### 0.0.1.4.2 (2026-03-23)
+
+#### Added
+- Release documentation synchronization across root and canonical docs
+- Docker deployment guidance for HTTPS by IP, including port mapping fallback (`8080:80`, `8443:443`)
+- Static asset guidance for optional background image (`/public/rafale.jpg`)
+
+#### Changed
+- Frontend Docker runtime documentation aligned with HTTPS-first behavior
+- Main README and English README updated to reference Docker HTTPS access and redirection behavior
+- Canonical version references updated to 0.0.1.4.2
 
 ### 0.0.1.3 Rise (2026-01-27)
 
