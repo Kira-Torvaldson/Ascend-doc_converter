@@ -2984,7 +2984,7 @@ function App() {
         <div className="header-main">
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
             <img
-              src="/public/logo.png"
+              src="/public/ascend-logo.png"
               alt="Logo Ascend"
               style={{
                 width: 130,
