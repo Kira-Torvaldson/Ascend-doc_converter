@@ -67,6 +67,7 @@ type SettingsValidationErrors = { displayName?: string; organization?: string };
 const USER_PREFS_KEY = 'ascend_user_prefs';
 const MAX_DISPLAY_NAME = 100;
 const MAX_ORGANIZATION = 100;
+const MAX_SOURCE_SIZE_MB = 2;
 
 function validateUserPrefs(prefs: UserPreferences): SettingsValidationErrors {
   const err: SettingsValidationErrors = {};
@@ -652,8 +653,14 @@ function App() {
 
   const applyThemeToDocument = useCallback((theme: 'default' | 'dark') => {
     const root = document.documentElement;
-    root.setAttribute('data-theme', theme);
-    root.style.colorScheme = theme === 'default' ? 'dark' : theme;
+    if (theme === 'dark') {
+      root.setAttribute('data-theme', 'dark');
+      root.style.colorScheme = 'dark';
+      return;
+    }
+    // Default theme should not keep dark-only attribute.
+    root.removeAttribute('data-theme');
+    root.style.colorScheme = 'light';
   }, []);
 
   const applyUiPreferencesToDocument = useCallback((ui: UserSettings['ui']) => {
@@ -1449,6 +1456,7 @@ function App() {
     setSourceFormat(item.fromFormat);
     setTargetFormat(item.toFormat);
     setShowHistoryPanel(false);
+    setIsEditingResult(false);
     setSourceModified(false);
     setResultModified(false);
     setStatus(`Conversion restaurée depuis l'historique`);
@@ -1528,6 +1536,7 @@ function App() {
     } else if (targetFormat === 'asciidoc') {
       setAdocInput("");
     }
+    setIsEditingResult(false);
     setResultModified(false);
     setStatus("Résultat effacé");
     setShowClearResultModal(false);
@@ -1610,6 +1619,8 @@ function App() {
     setImportedFiles([]);
     setFolderFiles([]);
     setSelectedFileIndex(-1);
+    setIsEditingResult(false);
+    setResultModified(false);
     setSourceModified(false);
     setShowClearSourceModal(false);
   }, [sourceFormat, getFormatTitle]);
@@ -1644,6 +1655,7 @@ function App() {
     setFolderFiles([]);
     setSelectedFileIndex(-1);
     
+    setIsEditingResult(false);
     setSourceModified(false);
     setResultModified(false);
     setStatus(`Source ${formatTitle} et résultat effacés`);
@@ -1727,7 +1739,6 @@ function App() {
     }
 
     const sourceSizeBytes = new Blob([sourceText]).size;
-    const MAX_SOURCE_SIZE_MB = 2;
     if (sourceSizeBytes > MAX_SOURCE_SIZE_MB * 1024 * 1024) {
       setStatus(`Document trop volumineux (max ${MAX_SOURCE_SIZE_MB} Mo)`);
       setNotification({
@@ -2091,6 +2102,16 @@ function App() {
    * For complex conversions (via /convert), requests a confirmation token.
    */
   const handleConvert = useCallback(() => {
+    if (isEditingResult) {
+      setStatus("Sauvegardez ou annulez l'édition du résultat avant de convertir");
+      setNotification({
+        message: "Sauvegardez ou annulez l'édition du résultat avant de convertir",
+        type: 'error',
+        visible: true
+      });
+      return;
+    }
+
     // Only allow AsciiDoc ↔ Markdown conversions
     const isAllowedConversion = 
       (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
@@ -2140,7 +2161,6 @@ function App() {
       }
 
       const sourceSizeBytes = new Blob([sourceText]).size;
-      const MAX_SOURCE_SIZE_MB = 2;
       if (sourceSizeBytes > MAX_SOURCE_SIZE_MB * 1024 * 1024) {
         setStatus(`Document trop volumineux (max ${MAX_SOURCE_SIZE_MB} Mo)`);
         setNotification({
@@ -2194,7 +2214,7 @@ function App() {
         setConversionErrorMessage
       );
     }
-  }, [requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, setNotification]);
+  }, [requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, setNotification, isEditingResult]);
 
   // ==========================================================================
   // HELPERS: CONTENT MANAGEMENT BY FORMAT
@@ -2718,6 +2738,7 @@ function App() {
       setResultValue = setAdocInput;
     }
 
+    const sourceValueForCurrentFormat = sourceFormat === 'markdown' ? mdOutput : adocInput;
     const isLocked = !!resultValue && !isEditingResult;
     const isEditing = !!resultValue && isEditingResult;
 
@@ -2898,7 +2919,13 @@ function App() {
         value={resultValue}
         onChange={(e) => { setResultValue(e.target.value); if (isEditingResult) setResultModified(true); }}
         readOnly={!isEditingResult}
-        placeholder={loading ? "Conversion en cours..." : `Résultat ${getFormatTitle(targetFormat)}...`}
+        placeholder={
+          loading
+            ? "Conversion en cours..."
+            : !sourceValueForCurrentFormat.trim()
+              ? "Le résultat apparaîtra après conversion."
+              : `Résultat ${getFormatTitle(targetFormat)}...`
+        }
         style={{
           opacity: loading ? 0.6 : 1,
           transition: "opacity 0.2s"
@@ -2907,7 +2934,7 @@ function App() {
     </section>
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, resultModified, getFormatTitle, setMdOutput, setAdocInput, handleExport, getTextStats, isDeleting]);
+  }, [targetFormat, sourceFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, resultModified, getFormatTitle, setMdOutput, setAdocInput, handleExport, getTextStats, isDeleting]);
 
   return (
     <div className="page">
@@ -3115,11 +3142,11 @@ function App() {
                         </p>
                       </div>
                       <div className="option-group">
-                        <label className="option-label">Nouveautés v0.0.1.4.2</label>
+                        <label className="option-label">Nouveautés v0.0.1.4.4</label>
                         <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8125rem', color: '#64748b', lineHeight: 1.6 }}>
-                          <li>Indicateur « document modifié » sur les panneaux source et résultat</li>
-                          <li>Validation avant conversion (source vide, max 2 Mo)</li>
-                          <li>Changelog et à propos dans Paramètres → Général</li>
+                          <li>Stabilisation des états “document modifié” (conversion, restauration, effacement)</li>
+                          <li>Blocage de conversion pendant l'édition du résultat</li>
+                          <li>Messages de confirmation clarifiés et cohérence version Front/Back</li>
                         </ul>
                       </div>
                     </div>
@@ -3200,7 +3227,15 @@ function App() {
                     <div className="settings-param-body">
                       <div className="option-group">
                         <label className="option-label">Thème</label>
-                        <select value={userSettings.ui.theme} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, theme: e.target.value as 'default'|'dark' } }))} className="option-select">
+                        <select
+                          value={userSettings.ui.theme}
+                          onChange={(e) => {
+                            const nextTheme = e.target.value as 'default' | 'dark';
+                            applyThemeToDocument(nextTheme);
+                            setUserSettings(s => ({ ...s, ui: { ...s.ui, theme: nextTheme } }));
+                          }}
+                          className="option-select"
+                        >
                           <option value="default">Par défaut</option>
                           <option value="dark">Sombre</option>
                         </select>
@@ -4149,7 +4184,7 @@ function App() {
       <footer className="footer">
         <div className="footer-content">
           <div className="footer-author">
-            <span className="footer-author-text">Make by TBE</span>
+            <span className="footer-author-text">Made by TBE</span>
           </div>
           <div className="footer-copyright">
             <span className="footer-brand">© Ascend</span>
@@ -4550,8 +4585,8 @@ function App() {
       {showEditModal && (
         <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Enable edit mode</h3>
-            <p>Do you want to enable edit mode to modify the content?</p>
+            <h3>Activer l'édition</h3>
+            <p>Voulez-vous activer le mode édition pour modifier le contenu ?</p>
             <div className="modal-buttons">
               <button
                 onClick={() => {
@@ -4634,8 +4669,8 @@ function App() {
       {showCancelModal && (
         <div className="modal-overlay" onClick={() => setShowCancelModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Cancel editing</h3>
-            <p>Do you want to cancel editing? All unsaved modifications will be lost.</p>
+            <h3>Annuler l'édition</h3>
+            <p>Voulez-vous annuler l'édition ? Les modifications non sauvegardées seront perdues.</p>
             <div className="modal-buttons">
               <button
                 onClick={() => {
@@ -4647,7 +4682,7 @@ function App() {
                   }
                   setIsEditingResult(false);
                   setShowCancelModal(false);
-                  setStatus("Editing cancelled - unsaved modifications");
+                  setStatus("Édition annulée - modifications non sauvegardées");
                 }}
                 style={{ 
                   background: "#10b981",
@@ -4674,8 +4709,8 @@ function App() {
       {showClearResultModal && (
         <div className="modal-overlay" onClick={() => setShowClearResultModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Clear result</h3>
-            <p>Do you want to clear the result? This action is irreversible.</p>
+            <h3>Effacer le résultat</h3>
+            <p>Voulez-vous effacer le résultat ? Cette action est irréversible.</p>
             <div className="modal-buttons">
               <button
                 onClick={confirmClearResult}
@@ -4704,8 +4739,8 @@ function App() {
       {showClearSourceModal && (
         <div className="modal-overlay" onClick={() => setShowClearSourceModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Clear source</h3>
-            <p>What do you want to clear?</p>
+            <h3>Effacer la source</h3>
+            <p>Que souhaitez-vous effacer ?</p>
             <div className="modal-buttons" style={{ flexDirection: "column", gap: "0.5rem" }}>
               <button
                 onClick={confirmClearSource}
@@ -4714,7 +4749,7 @@ function App() {
                   width: "100%"
                 }}
               >
-                Yes - Source only
+                Oui - source uniquement
               </button>
               <button
                 onClick={confirmClearSourceAndResult}
@@ -4723,7 +4758,7 @@ function App() {
                   width: "100%"
                 }}
               >
-                Yes - Source and result
+                Oui - source et résultat
               </button>
               <button
                 onClick={() => setShowClearSourceModal(false)}
@@ -4782,16 +4817,16 @@ function App() {
           setPendingConversion(null);
         }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Confirm conversion</h3>
+            <h3>Confirmer la conversion</h3>
             {/* 
               Show source and target formats so the user knows
               exactly what will be converted
             */}
             <p>
-              Do you want to convert from <strong>{getFormatTitle(pendingConversion.fromFormat)}</strong> to <strong>{getFormatTitle(pendingConversion.toFormat)}</strong>?
+              Voulez-vous convertir de <strong>{getFormatTitle(pendingConversion.fromFormat)}</strong> vers <strong>{getFormatTitle(pendingConversion.toFormat)}</strong> ?
             </p>
             <p style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: "0.5rem" }}>
-              This action requires explicit confirmation.
+              Cette action nécessite une confirmation explicite.
             </p>
             <div className="modal-buttons">
               {/* 
@@ -4807,7 +4842,7 @@ function App() {
                   flex: 1
                 }}
               >
-                Yes
+                Oui
               </button>
               {/* 
                 "No" button: cancels the conversion
@@ -4827,7 +4862,7 @@ function App() {
                   flex: 1
                 }}
               >
-                No
+                Non
               </button>
             </div>
           </div>

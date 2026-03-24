@@ -13,6 +13,20 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.4.4 (2026-03-24)
+
+#### Changed
+- Stabilized frontend conversion states: reset of modified/editing markers after restore and clear actions.
+- Blocked conversion launch while result panel is in edit mode to avoid invalid mixed states.
+- Unified frontend pre-conversion validation messages for empty source and oversized source (2 MB).
+- Polished modal wording and button consistency for clearer user-facing behavior.
+- Aligned displayed app metadata and package versions to `0.0.1.4.4` (frontend/backend).
+
+#### Fixed
+- Fixed stale result editing state after source/result clear flows.
+- Fixed inconsistent “What’s New” section version label in settings.
+- Fixed footer author wording typo (`Made by TBE`).
+
 ### 0.0.1.4.3.1 (2026-03-23)
 
 #### Changed
