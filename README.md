@@ -1,21 +1,18 @@
 
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.4.3.1-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.4.4-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Dernières modifications (v0.0.1.4.3.1)
+## Dernières modifications (v0.0.1.4.4)
 
-- **Hygiène du dépôt**
-  - Désindexation des artefacts générés (`api/**/node_modules`, `api/frontend/dist`) pour garder un historique propre.
-  - Conservation des fichiers locaux (dépendances/build) tout en supprimant leur suivi Git.
-- **Documentation**
-  - Alignement du résumé de release avec le changelog canonique de `doc/README.md`.
-  - Harmonisation FR/EN des notes de release racine avec la release `v0.0.1.4.3.1`.
-- **Impact**
-  - Aucun changement fonctionnel runtime ; amélioration de la maintenabilité, des diffs et du workflow de contribution.
+- **Stabilisation & polish**
+  - Cohérence des états UI source/résultat (modifié, édition, restauration, effacement).
+  - Validation frontend consolidée avant conversion (source vide, taille max 2 Mo).
+  - Messages utilisateurs clarifiés sur les modales d'action.
+  - Alignement de version Frontend/Backend et métadonnées affichées.
 
 ## Présentation
 
@@ -179,7 +176,7 @@ Les règles suivantes sont non négociables :
 - Tous les types MIME sont validés
 - Toutes les tailles de fichiers sont plafonnées
 - Tous les formats sont validés contre une whitelist
-- Aucun accès réseau n'est autorisé pendant une conversion
+- Restriction réseau stricte: **planifiée** (non totalement imposée en v0.0.1.5)
 - Aucun accès au système en dehors des chemins fournis
 
 ## Formats actuellement supportés
