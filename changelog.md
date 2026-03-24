@@ -13,6 +13,47 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.4.3.1 (2026-03-23)
+
+#### Changed
+- Repository hygiene hotfix release after `0.0.1.4.3`
+- Untracked generated dependencies and frontend build artifacts from Git index
+- Preserved local development files while removing generated-file noise from version control
+
+#### Impact
+- No functional runtime change
+- Cleaner diffs and safer maintenance workflow
+
+### 0.0.1.4.3 (2026-03-23)
+
+#### Added
+- HTTPS-first Docker documentation by IP with fallback mapping guidance (`8080:80`, `8443:443`)
+- Optional static asset guidance for background image (`/public/rafale.jpg`)
+- Release synchronization across root and canonical documentation
+
+#### Changed
+- Root README files aligned with current Docker runtime behavior
+- Canonical documentation version references aligned to `0.0.1.4.3`
+
+### 0.0.1.4.2 (2026-03-23)
+
+#### Added
+- Validation and release-note updates for the general documentation flow
+
+#### Changed
+- Modified version badges and synchronized changelog entries across docs
+
+### 0.0.1.4.1 (2026-03-23)
+
+#### Changed
+- Version bump to `0.0.1.4.1`
+
+### 0.0.1.4 (2026-03-23)
+
+#### Added
+- Settings panel improvements (movable/resizable)
+- Docker workflow integration and section state defaults
+
 ### 0.0.1.3 Rise (2026-01-27)
 
 #### Added
