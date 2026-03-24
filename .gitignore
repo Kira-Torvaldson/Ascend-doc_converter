@@ -31,6 +31,7 @@ api/logs/*.log
 .env
 .env.local
 .env.*.local
+.envrc
 
 # Assets (logo and background images - not tracked)
 api/backend/public/*.png
@@ -39,3 +40,10 @@ api/backend/public/*.jpeg
 api/backend/public/*.gif
 api/backend/public/*.svg
 !api/backend/public/.gitkeep
+
+# Certificates and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
