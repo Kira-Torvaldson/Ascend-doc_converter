@@ -1,22 +1,21 @@
 
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.4.3-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.4.3.1-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Dernières modifications (v0.0.1.4.3)
+## Dernières modifications (v0.0.1.4.3.1)
 
-- **Documentation**
-  - Synchronisation des documents principaux (`README.md`, `README.en.md`, `DOCKER.md`, `doc/README.md`) sur l’état réel de la release.
-  - Ajout d’une description cohérente du mode Docker HTTPS-first (accès par IP + redirection HTTP vers HTTPS).
-  - Centralisation de la note sur l’image de fond optionnelle (`rafale.jpg`) dans la documentation principale.
-- **Docker / Déploiement**
-  - Clarification des ports et du fallback recommandé (`8080:80`, `8443:443`) lorsque `80/443` ne sont pas disponibles.
-  - Comportement de redémarrage aligné pour les services conteneurisés.
 - **Hygiène du dépôt**
-  - Renforcement des règles d’ignore pour limiter les artefacts générés (`node_modules`, `dist`) dans les diffs.
+  - Désindexation des artefacts générés (`api/**/node_modules`, `api/frontend/dist`) pour garder un historique propre.
+  - Conservation des fichiers locaux (dépendances/build) tout en supprimant leur suivi Git.
+- **Documentation**
+  - Alignement du résumé de release avec le changelog canonique de `doc/README.md`.
+  - Harmonisation FR/EN des notes de release racine avec la release `v0.0.1.4.3.1`.
+- **Impact**
+  - Aucun changement fonctionnel runtime ; amélioration de la maintenabilité, des diffs et du workflow de contribution.
 
 ## Présentation
 

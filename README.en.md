@@ -1,21 +1,20 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.4.3-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.4.3.1-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.4.3)
+## Latest changes (v0.0.1.4.3.1)
 
-- **Documentation**
-  - Synchronized primary docs (`README.md`, `README.en.md`, `DOCKER.md`, `doc/README.md`) with the current release state.
-  - Added a consistent HTTPS-first Docker description (IP-based access + HTTP to HTTPS redirection).
-  - Centralized optional background image guidance (`rafale.jpg`) in main documentation.
-- **Docker / Deployment**
-  - Clarified ports and recommended fallback mapping (`8080:80`, `8443:443`) when `80/443` are unavailable.
-  - Aligned restart behavior for containerized services.
 - **Repository hygiene**
-  - Strengthened ignore rules to reduce generated artifact noise (`node_modules`, `dist`) in diffs.
+  - Untracked generated artifacts (`api/**/node_modules`, `api/frontend/dist`) from Git index to keep history clean.
+  - Preserved local dependency/build files while removing generated-file noise from version control.
+- **Documentation**
+  - Aligned root release summary with canonical changelog in `doc/README.md`.
+  - Synchronized FR/EN root release notes for `v0.0.1.4.3.1`.
+- **Impact**
+  - No runtime functional change; improved maintainability, review clarity, and contribution workflow.
 
 ## Overview
 
