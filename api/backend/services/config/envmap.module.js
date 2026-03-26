@@ -132,6 +132,38 @@ const ENV_SCHEMA = {
     sensitive: false
   },
 
+  MAX_INPUT_SIZE_MB: {
+    type: 'number',
+    default: 5,
+    min: 1,
+    max: 100,
+    sensitive: false
+  },
+
+  CONVERSION_TIMEOUT_MS: {
+    type: 'number',
+    default: 30000,
+    min: 1000,
+    max: 600000,
+    sensitive: false
+  },
+
+  LOG_MAX_SIZE_MB: {
+    type: 'number',
+    default: 10,
+    min: 1,
+    max: 200,
+    sensitive: false
+  },
+
+  LOG_ROTATE_COUNT: {
+    type: 'number',
+    default: 5,
+    min: 1,
+    max: 50,
+    sensitive: false
+  },
+
   MAX_WALL_TIME_MS: {
     type: 'number',
     default: 60000, // 60 seconds

@@ -1,4 +1,3 @@
-
 # Ascend
 
 ![Version](https://img.shields.io/badge/version-0.0.1.4.4-orange)
@@ -6,312 +5,218 @@
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Dernières modifications (v0.0.1.4.4)
+## Latest changes (v0.0.1.4.4)
 
-- **Stabilisation & polish**
-  - Cohérence des états UI source/résultat (modifié, édition, restauration, effacement).
-  - Validation frontend consolidée avant conversion (source vide, taille max 2 Mo).
-  - Messages utilisateurs clarifiés sur les modales d'action.
-  - Alignement de version Frontend/Backend et métadonnées affichées.
+- **Stabilization & polish**
+  - Consistent source/result UI states (modified, editing, restore, clear).
+  - Consolidated frontend validation before conversion (empty source, max 2 MB).
+  - Clearer user-facing action modals.
+  - Frontend/backend version alignment and consistent displayed metadata.
 
-## Présentation
+## Overview
 
-Ascend est un système de conversion de documents en phase alpha. Il exécute des conversions entre formats déclarés via des modules isolés (wrappers) qui respectent un contrat d'interface strict. Chaque conversion s'exécute dans un environnement temporaire unique, avec validation explicite des entrées et journalisation structurée.
+Ascend is an alpha-stage document conversion system. It performs conversions between declared formats via isolated modules (wrappers) that follow a strict interface contract. Each conversion runs in a unique temporary environment, with explicit input validation and structured logging.
 
-Le projet privilégie la rigidité contractuelle, la sécurité passive et la cohérence interne plutôt que la commodité ou la tolérance aux comportements flous.
+The project prioritizes contractual strictness, passive security, and internal consistency over convenience or tolerance for ambiguous behavior.
 
-## Ce que ce projet est
+## What this project is
 
-Ascend est un pipeline de conversion qui :
+Ascend is a conversion pipeline that:
 
-- Exécute des conversions entre formats explicitement déclarés
-- Utilise des wrappers isolés (modules) qui respectent un contrat d'interface uniforme
-- Orchestre les conversions via un orchestrateur linéaire déterministe
-- Valide strictement toutes les entrées avant traitement
-- Génère des logs structurés pour chaque conversion
-- Gère la configuration via une couche centralisée (EnvMap, en cours d'intégration)
-- Échoue explicitement lorsque les conditions ne sont pas remplies
+- Executes conversions between explicitly declared formats
+- Uses isolated wrappers (modules) that follow a uniform interface contract
+- Orchestrates conversions via a deterministic, linear orchestrator
+- Strictly validates all inputs before processing
+- Produces structured logs for each conversion
+- Manages configuration through a centralized layer (EnvMap, being integrated)
+- Fails explicitly when conditions are not met
 
-## Ce que ce projet n'est pas
+## What this project is not
 
-Ascend n'est pas :
+Ascend is not:
 
-- Un convertisseur universel : seuls les formats explicitement déclarés sont supportés
-- Un système de détection magique : les formats doivent être explicitement fournis
-- Un système tolérant : tout comportement flou est rejeté
-- Un produit prêt pour la production : le projet est en alpha, l'architecture n'est pas figée
-- Un système user-friendly : l'échec explicite est préféré à la tolérance implicite
-- Un système avec API publique stable : l'API interne est instable et peut changer
+- A universal converter (only explicitly declared formats are supported)
+- A “magic detection” system (formats must be explicitly provided)
+- A tolerant system (ambiguous behavior is rejected)
+- Production-ready (the project is alpha; architecture is not frozen)
+- “User-friendly” by design (explicit failure is preferred to implicit tolerance)
+- A stable public API (internal endpoints may change)
 
-## Philosophie générale
+## General philosophy
 
-### Déterminisme
+### Determinism
 
-Chaque conversion suit un chemin explicite et prévisible. Aucune heuristique implicite, aucune détection automatique non déclarée.
+Each conversion follows an explicit and predictable path. No implicit heuristics, no undeclared automatic detection.
 
-### Échec explicite
+### Explicit failure
 
-Le système échoue immédiatement et explicitement lorsque :
-- Un format n'est pas déclaré
-- Une validation échoue
-- Un chemin de conversion n'existe pas
-- Une ressource est indisponible
+The system fails immediately and explicitly when:
 
-Aucune tentative de "récupération gracieuse" ou de "fallback silencieux".
+- A format is not declared
+- A validation fails
+- A conversion path does not exist
+- A resource is unavailable
 
-### Rigidité contractuelle
+No “graceful recovery” attempts and no “silent fallback”.
 
-Tous les modules respectent un contrat d'interface strict (`modules.interface.md`). Aucune déviation n'est tolérée. Un module qui ne respecte pas le contrat est rejeté.
+### Contractual strictness
 
-### Traçabilité
+All modules must follow a strict interface contract (`modules.interface.md`). No deviations are tolerated. A module that violates the contract is rejected.
 
-Chaque conversion génère :
-- Un identifiant unique
-- Un dossier temporaire dédié
-- Des logs structurés (JSON)
-- Des métriques de durée
-- Un statut final explicite (succès ou échec)
+### Traceability
 
-### Comportement prévisible
+Each conversion produces:
 
-Aucun comportement magique, aucune inférence implicite. Tous les chemins d'exécution sont explicites et documentés.
+- A unique identifier
+- A dedicated temporary folder
+- Structured logs (JSON)
+- Duration metrics
+- An explicit final status (success or failure)
 
-### Traitement hostile des entrées
+### Predictable behavior
 
-Toutes les entrées sont considérées comme potentiellement malveillantes jusqu'à validation explicite :
-- Validation des chemins (pas de `..`, pas de symlinks)
-- Validation des types MIME
-- Validation des tailles de fichiers
-- Validation des formats déclarés
-- Validation des encodages
+No “magic”, no implicit inference. All execution paths are explicit and documented.
+
+### Hostile input posture
+
+All inputs are considered potentially malicious until explicitly validated:
+
+- Path validation (no `..`, no symlinks)
+- MIME validation
+- File size limits
+- Declared format validation
+- Encoding validation
 
 ## Architecture
 
-### Vue simplifiée
+### Simplified view
 
 ```
-Requête utilisateur
+User request
     ↓
-Orchestrateur principal (main-orchestrator)
-    ├─ Validation initiale
-    ├─ Contrôle de charge
-    ├─ Détermination du chemin de conversion
-    └─ Délégation à l'orchestrateur d'exécution
+Main orchestrator (main-orchestrator)
+    ├─ Initial validation
+    ├─ Load control
+    ├─ Conversion path determination
+    └─ Delegation to the execution orchestrator
          ↓
-Orchestrateur d'exécution (execution-orchestrator)
-    ├─ Création du dossier temporaire unique
-    ├─ Exécution séquentielle des étapes
-    └─ Appel des wrappers via l'orchestrateur de converters
+Execution orchestrator (execution-orchestrator)
+    ├─ Create a unique temporary directory
+    ├─ Sequential step execution
+    └─ Wrapper calls via the converter orchestrator
          ↓
-Orchestrateur de converters (converter-orchestrator)
-    ├─ Identification du converter approprié
-    ├─ Chargement différé (lazy loading)
-    └─ Exécution du wrapper
+Converter orchestrator (converter-orchestrator)
+    ├─ Identify the appropriate converter
+    ├─ Lazy loading
+    └─ Execute the wrapper
          ↓
 Wrapper (downdoc, pandoc, text2markdown, etc.)
-    ├─ Validation des entrées
-    ├─ Conversion isolée
-    └─ Retour d'un objet standardisé
+    ├─ Input validation
+    ├─ Isolated conversion
+    └─ Standardized return object
 ```
 
-### Converters comme wrappers isolés
+### Converters as isolated wrappers
 
-Chaque converter est un module isolé qui :
-- Respecte le contrat `modules.interface.md`
-- Déclare explicitement ses formats supportés (`from` / `to`)
-- Expose une méthode `run(inputPath, outputPath, options)`
-- Retourne un objet standardisé : `{ success, logs, error, duration }`
-- S'exécute dans un contexte isolé (dossier temporaire unique)
+Each converter is an isolated module that:
 
-### Orchestrateur comme chef d'orchestre linéaire
+- Follows the `modules.interface.md` contract
+- Explicitly declares supported formats (`from` / `to`)
+- Exposes `run(inputPath, outputPath, options)`
+- Returns a standardized object: `{ success, logs, error, duration }`
+- Runs in an isolated context (unique temp folder)
 
-L'orchestrateur :
-- Détermine le chemin de conversion (direct ou via format intermédiaire)
-- Exécute les étapes séquentiellement
-- Gère les fichiers intermédiaires
-- Nettoie les ressources temporaires
-- Retourne un résultat standardisé
+### Orchestrator as a deterministic conductor
 
-### Couche de configuration contrôlée
+The orchestrator:
 
-EnvMap (en cours d'intégration) centralise et valide l'accès aux variables d'environnement :
-- Schéma statique des clés autorisées
-- Validation des types et bornes
-- Normalisation des chemins
-- Aucun accès direct à `process.env` autorisé
+- Determines the conversion path (direct or via intermediate format)
+- Executes steps sequentially
+- Manages intermediate files
+- Cleans up temp resources
+- Returns a standardized result
 
-## Contrats et invariants
+### Controlled configuration layer
 
-Les règles suivantes sont non négociables :
+EnvMap (being integrated) centralizes and validates access to environment variables:
 
-### Règles des converters
+- Static schema of allowed keys
+- Type/bounds validation
+- Path normalization
+- No direct access to `process.env` in hardened areas
 
-- Un converter ne modifie jamais le fichier d'entrée
-- Un converter n'écrit jamais hors du `outputPath` fourni
-- Un converter retourne toujours un objet standardisé : `{ success, logs, error, duration }`
-- Un converter ne lit jamais `process.env` directement (utilise EnvMap)
-- Un converter n'accède jamais au système en dehors des chemins fournis
-- Un converter ne tente jamais une conversion hors de ses formats déclarés
-- Un converter ne génère jamais de logs contenant des données brutes utilisateur
+## Contracts and invariants
 
-### Règles de l'orchestrateur
+The following rules are non-negotiable.
 
-- L'orchestrateur crée toujours un dossier temporaire unique par conversion
-- L'orchestrateur nettoie toujours les ressources temporaires, même en cas d'erreur
-- L'orchestrateur valide toujours les formats avant d'exécuter une conversion
-- L'orchestrateur rejette toujours une conversion si aucun chemin n'existe
-- L'orchestrateur ne tente jamais de "deviner" un format manquant
+### Converter rules
 
-### Règles de journalisation
+- A converter never modifies the input file
+- A converter never writes outside the provided `outputPath`
+- A converter always returns `{ success, logs, error, duration }`
+- A converter must not read `process.env` directly (use EnvMap / config layer)
+- A converter must not access the system outside provided paths
+- A converter must not attempt conversions outside declared formats
+- A converter must not emit logs containing raw user content
 
-- Chaque conversion génère un identifiant unique
-- Chaque conversion génère un fichier de log JSON structuré
-- Aucun log ne contient de données brutes utilisateur
-- Tous les logs sont écrits dans un dossier contrôlé (`api/logs`)
-- Les logs sont accessibles via l'API (`/api/logs/:conversionId`)
+### Orchestrator rules
 
-### Règles de sécurité
+- Always creates a unique temp folder per conversion
+- Always cleans up temporary resources, even on error
+- Always validates formats before executing conversion
+- Always rejects conversion when no path exists
+- Never “guesses” a missing format
 
-- Tous les chemins sont validés (pas de `..`, pas de symlinks)
-- Tous les types MIME sont validés
-- Toutes les tailles de fichiers sont plafonnées
-- Tous les formats sont validés contre une whitelist
-- Restriction réseau stricte: **planifiée** (non totalement imposée en v0.0.1.5)
-- Aucun accès au système en dehors des chemins fournis
+### Logging rules
 
-## Formats actuellement supportés
+- Each conversion generates a unique identifier
+- Each conversion generates a structured JSON log file
+- Logs must not contain raw user content
+- Logs are written to a controlled folder (`api/logs`)
+- Logs are accessible via the API (`/api/logs/:conversionId`)
 
-Seuls les couples suivants sont réellement fonctionnels :
+### Security rules
 
-- **AsciiDoc → Markdown** : Via le wrapper `downdoc`
-- **Markdown → AsciiDoc** : Via le wrapper `pandoc`
-- **Texte brut → Markdown** : Via le wrapper `text2markdown`
+- All paths are validated (no `..`, no symlinks)
+- All MIME types are validated
+- All file sizes are capped
+- All formats are validated against a whitelist
+- Strict network restriction: **planned** (not fully enforced in v0.0.1.5)
+- No access to the system outside provided paths
 
-### Limitations explicites
+## Currently supported formats
 
-- Seules les capacités déclarées sont autorisées
-- Aucune conversion implicite n'est tentée
-- Aucune détection automatique de format n'est effectuée
-- Les autres formats (HTML, PDF, YAML, JSON, etc.) ne sont pas supportés actuellement
+Only the following pairs are known to be functional:
 
-### Modules non fonctionnels
+- **AsciiDoc → Markdown**: via `downdoc`
+- **Markdown → AsciiDoc**: via `pandoc`
+- **Plain text → Markdown**: via `text2markdown`
 
-Les modules suivants sont des placeholders non fonctionnels :
-- `panwriter` : Retourne `success: false` avec message d'erreur
-- `docverter` : Retourne `success: false` avec message d'erreur
+### Explicit limitations
 
-Ces modules peuvent être ajoutés dans une version future, mais aucune promesse n'est faite.
+- Only declared capabilities are allowed
+- No implicit conversion is attempted
+- No automatic format detection is performed
+- Other formats (HTML, PDF, YAML, JSON, etc.) are currently not supported
 
-## Journalisation et traçabilité
+### Non-functional modules
 
-### Identifiant de conversion
+The following modules are placeholder stubs:
 
-Chaque conversion reçoit un identifiant unique (UUID) qui permet de :
-- Suivre la conversion dans les logs
-- Accéder aux logs structurés via l'API
-- Corréler les événements d'une même conversion
+- `panwriter`: returns `success: false` with an error message
+- `docverter`: returns `success: false` with an error message
 
-### Dossier temporaire unique
-
-Chaque conversion s'exécute dans un dossier temporaire unique :
-- Création au début de la conversion
-- Nettoyage systématique à la fin (même en cas d'erreur)
-- Isolation complète entre conversions
-
-### Logs structurés
-
-Chaque conversion génère un fichier JSON dans `api/logs/` contenant :
-- Identifiant de conversion
-- Horodatage de début et de fin
-- Ordre d'exécution des modules
-- Fichiers d'entrée et de sortie de chaque étape
-- Durée d'exécution de chaque module
-- Statut final (succès ou échec)
-- Messages de logs détaillés (sans données utilisateur)
-
-### Métriques de durée
-
-Chaque conversion enregistre :
-- Durée totale de la conversion
-- Durée d'exécution de chaque module
-- Durée de chaque étape du pipeline
-
-### Statut final explicite
-
-Chaque conversion se termine avec un statut explicite :
-- `success: true` : Conversion réussie
-- `success: false` : Conversion échouée (avec message d'erreur détaillé)
-
-Aucun statut ambigu ou partiel n'est retourné.
-
-## État actuel du projet
-
-### Alpha : signification concrète
-
-Le statut "alpha" signifie ici :
-
-- **Architecture en cours de cristallisation** : La structure interne peut changer sans préavis
-- **Contrats encore susceptibles d'évoluer** : L'interface des modules peut être modifiée
-- **Sécurité partielle mais intentionnelle** : Des mesures de sécurité sont en place, mais elles ne sont pas exhaustives
-- **API interne instable** : Les endpoints internes peuvent changer entre versions
-- **Documentation en cours de réorganisation** : La documentation est en train d'être structurée et traduite
-
-### Ce qui est stable
-
-- Le contrat d'interface des modules (`modules.interface.md`)
-- Le format de retour standardisé des modules
-- Le principe d'isolation par conversion
-- Le principe de validation stricte des entrées
-
-### Ce qui peut changer
-
-- La structure interne de l'orchestrateur
-- Les chemins d'API internes
-- La structure des logs
-- Les mécanismes de sécurité (ajouts, modifications)
-- La couche de configuration (EnvMap en cours d'intégration)
-
-## Avertissement honnête
-
-### Échec explicite par design
-
-Le système échoue explicitement par design. Il ne tente pas de "récupérer gracieusement" ou de "deviner" les intentions. Si une condition n'est pas remplie, la conversion échoue immédiatement avec un message d'erreur explicite.
-
-### Rejet des comportements flous
-
-Tout comportement flou est rejeté :
-- Format non déclaré → Échec
-- Validation échouée → Échec
-- Chemin de conversion inexistant → Échec
-- Ressource indisponible → Échec
-
-Aucune tentative de "fallback" ou de "récupération" n'est effectuée.
-
-### Aucune indulgence prévue
-
-Le système n'est pas conçu pour être "tolérant" ou "user-friendly". Il privilégie :
-- La cohérence interne à l'adoption
-- La rigidité à la commodité
-- L'échec explicite à la réussite vague
-- La traçabilité à la simplicité
-
-### Conséquences pour les utilisateurs
-
-Les utilisateurs doivent :
-- Fournir explicitement les formats source et cible
-- Respecter les contraintes de validation
-- Accepter que le système échoue explicitement lorsque les conditions ne sont pas remplies
-- Ne pas s'attendre à des comportements "magiques" ou "intelligents"
+They may be implemented in a future release; no promise is made.
 
 ## Installation
 
-### Prérequis
+### Prerequisites
 
 - Node.js >= 16.17.0
-- Pandoc installé et accessible dans le PATH
-- Permissions d'écriture pour `api/backend/tmp` et `api/logs`
+- Pandoc installed and available in PATH
+- Write permissions for `api/backend/tmp` and `api/logs`
 
-### Installation des dépendances
+### Install dependencies
 
 ```bash
 # Backend
@@ -323,57 +228,53 @@ cd api/frontend
 npm install
 ```
 
-### Vérification de l'environnement
+### Environment check
 
 ```bash
 cd api/backend
 node bin/check-env.js
 ```
 
-Ce script vérifie :
-- La version de Node.js
-- L'installation de Pandoc
-- Les permissions d'écriture
+This script checks:
 
-## Développement
+- Node.js version
+- Pandoc installation
+- Write permissions
 
-Lancement du frontend et du backend en une seule commande depuis la racine du dépôt.
+## Development
 
-### Prérequis
+Run frontend and backend in one command from the repository root.
+
+### Prerequisites
 
 - Node.js >= 16.17.0
 
-### Installation (racine)
+### Install (root)
 
 ```bash
 npm i
 ```
 
-Installe les dépendances à la racine (inclut `concurrently`). Les dépendances des sous-projets (`api/frontend`, `api/backend`) doivent être installées séparément (voir section Installation ci-dessus) avant la première utilisation.
+This installs root dependencies (including `concurrently`). Sub-project dependencies (`api/frontend`, `api/backend`) must still be installed separately (see Installation) before first use.
 
-### Lancement
+### Start
 
 ```bash
 npm run dev
-# ou
+# or
 npm run dev:all
 ```
 
-Lance le frontend (Vite) et le backend (Node) en parallèle.
+Starts frontend (Vite) and backend (Node) in parallel.
 
-### Commandes séparées
+### Separate commands
 
 ```bash
-npm run dev:front   # Frontend uniquement (api/frontend)
-npm run dev:back    # Backend uniquement (api/backend)
+npm run dev:front   # frontend only (api/frontend)
+npm run dev:back    # backend only (api/backend)
 ```
 
----
-- La version de Node.js
-- L'installation de Pandoc
-- Les permissions d'écriture
-
-## Démarrage
+## Running
 
 ### Backend
 
@@ -382,7 +283,7 @@ cd api/backend
 npm start
 ```
 
-Le serveur démarre sur `http://localhost:3003`.
+Backend listens on `http://localhost:3003`.
 
 ### Frontend
 
@@ -391,20 +292,20 @@ cd api/frontend
 npm run dev
 ```
 
-L'interface démarre sur `http://localhost:5173`.
+Frontend listens on `http://localhost:5173`.
 
-## Utilisation
+## Usage
 
-### Conversion via l'interface
+### Conversion via the UI
 
-1. Sélectionner le format source (AsciiDoc, Markdown)
-2. Sélectionner le format cible (Markdown ou AsciiDoc)
-3. Saisir ou coller le contenu à convertir
-4. Cliquer sur "Convertir"
+1. Select the source format (AsciiDoc, Markdown)
+2. Select the target format (Markdown or AsciiDoc)
+3. Type or paste content to convert
+4. Click “Convert”
 
-**Important** : Seules les conversions AsciiDoc ↔ Markdown sont fonctionnelles.
+**Important**: only AsciiDoc ↔ Markdown conversions are functional.
 
-### Conversion via l'API
+### Conversion via the API
 
 ```bash
 POST /api/convert
@@ -418,46 +319,46 @@ Content-Type: application/json
 }
 ```
 
-**Important** : L'API interne est instable et peut changer sans préavis.
+**Important**: the internal API is unstable and may change without notice.
 
-### Consultation des logs
+### Reading logs
 
 ```bash
 GET /api/logs/:conversionId
 ```
 
-Retourne le log JSON structuré de la conversion.
+Returns the structured JSON log for the conversion.
 
 ## Docker
 
-Lancer l'application avec Docker Compose : voir [DOCKER.md](DOCKER.md).
+Run the app with Docker Compose: see [DOCKER.md](DOCKER.md).
 
 ```bash
 docker compose up --build
 ```
 
-URL (par défaut) : `https://<IP>`  
-HTTP (`http://<IP>`) est redirigé vers HTTPS.
+Default URL: `https://<IP>`  
+HTTP (`http://<IP>`) is redirected to HTTPS.
 
-Si les ports 80/443 ne sont pas disponibles localement, utilisez par exemple `8080:80` et `8443:443` dans `docker-compose.yml`, puis accédez à `https://<IP>:8443`.
+If ports 80/443 are not available locally, use for example `8080:80` and `8443:443` in `docker-compose.yml`, then open `https://<IP>:8443`.
 
-### Ressource statique optionnelle
+### Optional static asset
 
-Pour l'image de fond personnalisée, placez `rafale.jpg` dans `api/backend/public/`.  
-Elle sera servie à `/public/rafale.jpg`.
+For the custom background image, place `rafale.jpg` in `api/backend/public/`.  
+It will be served at `/public/rafale.jpg`.
 
 ## Documentation
 
-La documentation est organisée dans le dossier `doc/` :
+Documentation lives under `doc/`:
 
-- **Spécifications** : Contrats d'interface, spécifications des modules
-- **Références** : Références canoniques (formats, configuration, sécurité)
-- **Guides** : Guides d'intégration et de sécurité
+- **Specifications**: interface contracts, module specifications
+- **References**: canonical references (formats, configuration, security)
+- **Guides**: integration and security guides
 
-## Licence
+## License
 
-Ascend est actuellement publié sous licence MIT pendant sa phase alpha (v0.x).
+Ascend is currently released under the MIT license during its alpha phase (v0.x).
 
-Le modèle de licence du projet peut évoluer dans les versions majeures futures (v1.x et au-delà), incluant la possibilité d'un cœur propriétaire ou d'une double licence.
+The licensing model may evolve in future major versions (v1.x and beyond), including the possibility of a proprietary core or dual licensing.
 
-Voir le fichier [LICENSE](LICENSE) pour le texte complet de la licence.
+See [LICENSE](LICENSE) for the full text.

@@ -2305,8 +2305,13 @@ textarea {
   background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(2px);
   color: #111827;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    "Liberation Mono", "Courier New", monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco,
+    "Cascadia Mono", "Cascadia Code",
+    "Segoe UI Mono",
+    Consolas,
+    "Lucida Console",
+    "Courier New",
+    monospace;
   font-size: 0.9rem;
   line-height: 1.6;
   transition: all 0.2s ease;

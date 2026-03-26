@@ -13,7 +13,7 @@
 // CONVERSION WRAPPERS (Modules de conversion)
 // ============================================================================
 
-const downdocModule = require('./downdoc.module.js')
+const downdocModule = require('./adoc-to-md.converter.js')
 const text2markdownModule = require('./text2markdown.module.js')
 const panwriterModule = require('./panwriter.module.js')
 const docverterModule = require('./docverter.module.js')

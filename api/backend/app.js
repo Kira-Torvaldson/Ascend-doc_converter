@@ -10,6 +10,9 @@ const express = require('express')
 const path = require('path')
 const fs = require('fs')
 const corsMiddleware = require('./middleware/cors.middleware.js')
+const helmetMiddleware = require('./middleware/security/helmet.middleware.js')
+const rateLimitMiddleware = require('./middleware/security/rate-limit.middleware.js')
+const apiKeyMiddleware = require('./middleware/security/api-key.middleware.js')
 const errorHandler = require('./middleware/error-handler.middleware.js')
 
 // Import routes
@@ -32,6 +35,9 @@ const app = express()
 
 // CORS
 app.use(corsMiddleware)
+
+// Security headers
+app.use(helmetMiddleware)
 
 // Body parsing
 app.use(express.json({ limit: '50mb' }))
@@ -70,6 +76,8 @@ app.get('/', (req, res) => {
 
 // Conversion routes
 // Primary routes under /api (standardized)
+app.use('/api', apiKeyMiddleware)
+app.use('/api', rateLimitMiddleware)
 app.use('/api', conversionRoutes)
 // API routes
 app.use('/api', apiRoutes)

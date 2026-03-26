@@ -31,7 +31,7 @@ Engine identifiers must:
 - Fast in-memory conversion
 - Supports BookStack/Parsedown compatibility mode
 
-**Module Reference:** `api/backend/services/modules/downdoc.module.js`
+**Module Reference:** `api/backend/services/modules/adoc-to-md.converter.js`
 
 ### pandoc
 

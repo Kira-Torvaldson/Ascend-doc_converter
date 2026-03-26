@@ -1,3 +1,16 @@
+# Keep Docker build contexts small and deterministic
+.git
+.github
+.cursor
+**/node_modules
+**/dist
+**/.vite
+**/coverage
+/reports
+**/logs
+**/tmp
+**/.DS_Store
+
 # Ignore when building backend (context is root)
 api/backend/node_modules
 api/frontend/node_modules

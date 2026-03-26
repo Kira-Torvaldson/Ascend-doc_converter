@@ -18,7 +18,6 @@
  * - Normalized error handling and secure logging
  */
 
-const { spawn } = require('child_process')
 const { 
   writeFileSync, 
   readFileSync, 
@@ -29,6 +28,8 @@ const {
 const { tmpdir } = require('os')
 const path = require('path')
 const { randomBytes, randomUUID } = require('crypto')
+const { safeSpawn } = require('../../../../lib/security/safe-spawn.js')
+const { isSecurityError, SECURITY_ERROR_CODES } = require('../../../../lib/errors/security-errors.js')
 
 // Import pipeline security module (PIPELINE.md)
 const {
@@ -240,7 +241,7 @@ const SECURITY_CONFIG = {
   
   // Absolute paths to binaries (adapt according to installation)
   BINARY_PATHS: (() => {
-    // Use EnvMap if available, fallback to process.env for backward compatibility
+    // Use EnvMap if available, fallback to a safe default.
     try {
       const { envMap } = require('../config/envmap.module.js')
       return {
@@ -248,7 +249,7 @@ const SECURITY_CONFIG = {
       }
     } catch (e) {
       return {
-        pandoc: process.env.PANDOC_PATH || '/usr/bin/pandoc'
+        pandoc: '/usr/bin/pandoc'
       }
     }
   })(),
@@ -532,67 +533,15 @@ class SecureCommandExecutor {
         return
       }
 
-      // Execute Pandoc with spawn (never exec or execSync)
-      const pandoc = spawn(pandocPath, args, {
+      safeSpawn(pandocPath, args, {
         cwd: path.dirname(inputFile), // Working directory = isolated directory
-        stdio: ['ignore', 'pipe', 'pipe'] // Ignore stdin, capture stdout/stderr
-      })
-
-      let stdout = ''
-      let stderr = ''
-      let timeoutId = null
-      let processKilled = false
-
-      // Capture standard output
-      pandoc.stdout.on('data', (data) => {
-        stdout += data.toString()
-      })
-
-      // Capture errors
-      pandoc.stderr.on('data', (data) => {
-        stderr += data.toString()
-      })
-
-      // Timeout handling
-      timeoutId = setTimeout(() => {
-        if (!pandoc.killed) {
-          processKilled = true
-          logConversion(conversionId, 'TIMEOUT', `Process timeout after ${timeout}ms`)
-          
-          // Kill process: SIGTERM first, then SIGKILL if necessary
-          pandoc.kill('SIGTERM')
-          
-          // Force kill after 5 additional seconds
-          setTimeout(() => {
-            if (!pandoc.killed) {
-              pandoc.kill('SIGKILL')
-            }
-          }, 5000)
-          
-          reject(new ConversionError(
-            'TIMEOUT',
-            `Conversion timeout after ${timeout}ms`,
-            conversionId
-          ))
-        }
-      }, timeout)
-
-      // Process end handling
-      pandoc.on('close', (code) => {
-        clearTimeout(timeoutId)
-
-        if (processKilled) {
-          // Process was killed by timeout, error already rejected
-          return
-        }
-
-        if (code !== 0) {
-          // Pandoc failed
-          const errorMessage = stderr || stdout || `Pandoc exited with code ${code}`
-          logConversion(conversionId, 'CONVERSION_FAILED', errorMessage)
+        timeoutMs: timeout
+      }).then((result) => {
+        if (result.code !== 0) {
+          logConversion(conversionId, 'CONVERSION_FAILED', `Pandoc exited with code ${result.code}`)
           reject(new ConversionError(
             'CONVERSION_FAILED',
-            `Pandoc conversion failed: ${errorMessage}`,
+            'Pandoc conversion failed',
             conversionId
           ))
           return
@@ -612,15 +561,20 @@ class SecureCommandExecutor {
         // Conversion successful
         logConversion(conversionId, 'SUCCESS', 'Conversion completed successfully')
         resolve()
-      })
-
-      // Execution error handling
-      pandoc.on('error', (error) => {
-        clearTimeout(timeoutId)
-        logConversion(conversionId, 'EXECUTION_ERROR', error.message)
+      }).catch((error) => {
+        if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
+          logConversion(conversionId, 'TIMEOUT', `Process timeout after ${timeout}ms`)
+          reject(new ConversionError(
+            'TIMEOUT',
+            'Conversion timeout',
+            conversionId
+          ))
+          return
+        }
+        logConversion(conversionId, 'EXECUTION_ERROR', 'Pandoc execution failed')
         reject(new ConversionError(
           'EXECUTION_ERROR',
-          `Failed to execute Pandoc: ${error.message}`,
+          'Failed to execute Pandoc',
           conversionId
         ))
       })
