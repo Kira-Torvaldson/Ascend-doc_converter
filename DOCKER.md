@@ -1,31 +1,31 @@
 # Ascend - Docker
 
-Lancement de l'application complète (frontend + backend) avec Docker Compose, en **HTTPS** accessible par IP.
+Run the full application (frontend + backend) with Docker Compose, accessible over **HTTPS** by IP.
 
-## Prérequis
+## Prerequisites
 
 - Docker
 - Docker Compose v2
 
-## Lancement
+## Start
 
 ```bash
 docker compose up --build
 ```
 
-## Accès
+## Access
 
-- **HTTPS (recommandé)** : **https://&lt;IP&gt;** (ex. https://192.168.1.10)
-  - Port 443 mappé sur la machine hôte.
-  - Utilise un certificat **auto-signé** généré au premier démarrage (le navigateur affichera un avertissement de sécurité : accepter / « Avancé » → « Accéder au site »).
-- **HTTP** : les requêtes sur le port 80 sont redirigées vers HTTPS.
+- **HTTPS (recommended)**: **`https://<IP>`** (e.g. `https://192.168.1.10`)
+  - Port 443 is mapped on the host machine.
+  - Uses a **self-signed** certificate generated on first start (your browser will show a security warning: accept it / “Advanced” → “Proceed”).
+- **HTTP**: requests on port 80 are redirected to HTTPS.
 
-Pour connaître l’IP de la machine :
+To find your machine IP:
 
-- Linux/Mac : `hostname -I` ou `ip addr`
-- Windows : `ipconfig`
+- Linux/macOS: `hostname -I` or `ip addr`
+- Windows: `ipconfig`
 
-Si les ports 80/443 ne sont pas utilisables (ex. déjà pris ou droits insuffisants), modifiez dans `docker-compose.yml` par exemple :
+If ports 80/443 are not available (already in use or insufficient rights), edit `docker-compose.yml` for example:
 
 ```yaml
 ports:
@@ -33,15 +33,15 @@ ports:
   - "8443:443"
 ```
 
-Puis accédez à **https://&lt;IP&gt;:8443**.
+Then open **`https://<IP>:8443`**.
 
-## Arrêt
+## Stop
 
 ```bash
 docker compose down
 ```
 
-Pour supprimer aussi les volumes (logs, fichiers temporaires) :
+To remove volumes too (logs, temporary files):
 
 ```bash
 docker compose down -v
@@ -49,51 +49,51 @@ docker compose down -v
 
 ## Architecture
 
-- **Frontend** : SPA React/Vite servie par Nginx en **HTTPS** (ports 80 et 443).
-- **Backend** : Node.js Express sur le port 3003 (réseau Docker interne).
-- Les requêtes `/api/*`, `/public/*` et les endpoints de conversion sont proxyfiées vers le backend par Nginx.
+- **Frontend**: React/Vite SPA served by Nginx over **HTTPS** (ports 80 and 443).
+- **Backend**: Node.js Express on port 3003 (internal Docker network).
+- Requests to `/api/*`, `/public/*`, and conversion endpoints are proxied to the backend by Nginx.
 
-## Certificat
+## Certificate
 
-Un certificat auto-signé est créé automatiquement au premier démarrage du conteneur frontend. Pour utiliser **votre propre certificat** (Let's Encrypt, CA interne, etc.) :
+A self-signed certificate is automatically created on the first frontend container start. To use **your own certificate** (Let’s Encrypt, internal CA, etc.):
 
-1. Montez les fichiers dans le conteneur via `docker-compose.yml` :
+1. Mount the files into the container via `docker-compose.yml`:
 
    ```yaml
    frontend:
      volumes:
-       - /chemin/vers/cert.pem:/etc/nginx/ssl/cert.pem:ro
-       - /chemin/vers/key.pem:/etc/nginx/ssl/key.pem:ro
+       - /path/to/cert.pem:/etc/nginx/ssl/cert.pem:ro
+       - /path/to/key.pem:/etc/nginx/ssl/key.pem:ro
    ```
 
-2. Redémarrez : `docker compose up -d --build`.
+2. Restart: `docker compose up -d --build`.
 
-## Ressources statiques
+## Static assets
 
-Pour utiliser l'image de fond personnalisée de l'application :
+To use the app’s custom background image:
 
-- placez le fichier `rafale.jpg` dans `api/backend/public/`
-- l'image sera servie à l'URL `/public/rafale.jpg` (en dev via Vite, en Docker via Nginx)
-- sans ce fichier, l'application utilise uniquement la couleur de fond par défaut
+- place `rafale.jpg` in `api/backend/public/`
+- it will be served at `/public/rafale.jpg` (dev via Vite, Docker via Nginx)
+- without this file, the app falls back to the default background color only
 
-## Volumes persistants
+## Persistent volumes
 
-- **ascend-logs** : logs des conversions (backend).
-- **ascend-tmp** : fichiers temporaires des conversions (backend).
+- **ascend-logs**: conversion logs (backend)
+- **ascend-tmp**: conversion temporary files (backend)
 
-Pour inspecter les volumes :
+Inspect volumes:
 
 ```bash
 docker volume ls
 docker volume inspect ascend-ascend-logs
 ```
 
-## Commandes utiles
+## Useful commands
 
-| Commande | Description |
-|----------|-------------|
-| `docker compose up -d --build` | Lance en arrière-plan |
-| `docker compose logs -f` | Affiche les logs en continu |
-| `docker compose logs -f frontend` | Logs frontend (Nginx) |
-| `docker compose logs -f backend` | Logs backend |
-| `docker compose ps` | État des conteneurs |
+| Command | Description |
+|--------|-------------|
+| `docker compose up -d --build` | Start in the background |
+| `docker compose logs -f` | Follow logs |
+| `docker compose logs -f frontend` | Frontend logs (Nginx) |
+| `docker compose logs -f backend` | Backend logs |
+| `docker compose ps` | Container status |

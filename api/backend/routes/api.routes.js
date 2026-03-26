@@ -8,6 +8,8 @@
 
 const express = require('express')
 const router = express.Router()
+const { z } = require('zod')
+const { validate } = require('../middleware/security/validate.middleware.js')
 const {
   generateConfirmationToken,
   validateAndConsumeToken,
@@ -23,15 +25,18 @@ const {
 } = require('../services/logging/structured-logger.js')
 
 // Confirmation token request endpoint
-router.post('/confirmation/request', (req, res) => {
+router.post(
+  '/confirmation/request',
+  validate({
+    body: z.object({
+      fromFormat: z.string().min(1),
+      toFormat: z.string().min(1),
+      contentSize: z.number().int().nonnegative().optional()
+    })
+  }),
+  (req, res) => {
   try {
     const { fromFormat, toFormat, contentSize } = req.body
-
-    if (!fromFormat || !toFormat) {
-      return res.status(400).json({
-        error: 'fromFormat and toFormat are required'
-      })
-    }
 
     // Generate confirmation token with metadata
     const tokenData = generateConfirmationToken({
@@ -69,27 +74,23 @@ router.get('/confirmation/stats', (req, res) => {
 })
 
 // Generic conversion endpoint with token confirmation
-router.post('/convert', async (req, res) => {
+router.post(
+  '/convert',
+  validate({
+    body: z.object({
+      content: z.string().min(1),
+      fromFormat: z.string().min(1),
+      toFormat: z.string().min(1),
+      token: z.string().min(1),
+      options: z.any().optional()
+    })
+  }),
+  async (req, res) => {
   try {
     const { content, fromFormat, toFormat, token, options } = req.body
 
-    // Validate required fields
-    if (!content || typeof content !== 'string' || !content.trim()) {
-      return res.status(400).json({
-        error: 'Content is required and must be a non-empty string'
-      })
-    }
-
-    if (!fromFormat || !toFormat) {
-      return res.status(400).json({
-        error: 'fromFormat and toFormat are required'
-      })
-    }
-
-    if (!token) {
-      return res.status(400).json({
-        error: 'Confirmation token is required'
-      })
+    if (!content.trim()) {
+      return res.status(400).json({ error: 'Content is required and must be a non-empty string' })
     }
 
     // Merge and validate options
@@ -149,15 +150,14 @@ router.post('/convert', async (req, res) => {
 })
 
 // Logs endpoints
-router.get('/logs/:conversionId', (req, res) => {
+router.get(
+  '/logs/:conversionId',
+  validate({
+    params: z.object({ conversionId: z.string().min(1) })
+  }),
+  (req, res) => {
   try {
     const { conversionId } = req.params
-
-    if (!conversionId) {
-      return res.status(400).json({
-        error: 'conversionId is required'
-      })
-    }
 
     const log = readLog(conversionId)
 

@@ -14,9 +14,19 @@ const { randomUUID } = require('crypto')
 const path = require('path')
 const { runConverter } = require('../services/modules/lazyload.module.js')
 const { convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown, removeExperimentalTag, normalizeAsciiDocInput } = require('../services/conversion/convert.js')
+const { z } = require('zod')
+const { validate } = require('../middleware/security/validate.middleware.js')
 
 // Endpoint: AsciiDoc → Markdown (utilise lazy loader avec downdoc)
-router.post('/to-markdown', async (req, res) => {
+router.post(
+  '/to-markdown',
+  validate({
+    body: z.object({
+      text: z.string().min(1),
+      options: z.any().optional()
+    })
+  }),
+  async (req, res) => {
   const conversionId = randomUUID()
   const tempDir = path.join(tmpdir(), `ascend-temp-${conversionId}`)
   let inputFile = null
@@ -25,7 +35,7 @@ router.post('/to-markdown', async (req, res) => {
   try {
     const { text, options } = req.body
 
-    if (!text || typeof text !== 'string' || !text.trim()) {
+    if (!text.trim()) {
       return res.status(400).json({
         detail: "Le texte à convertir est vide"
       })
@@ -123,11 +133,18 @@ router.post('/to-markdown', async (req, res) => {
 })
 
 // Endpoint: Markdown → AsciiDoc (uses Pandoc by default)
-router.post('/to-asciidoc', async (req, res) => {
+router.post(
+  '/to-asciidoc',
+  validate({
+    body: z.object({
+      text: z.string().min(1)
+    })
+  }),
+  async (req, res) => {
   try {
     const { text } = req.body
 
-    if (!text || typeof text !== 'string' || !text.trim()) {
+    if (!text.trim()) {
       return res.status(400).json({
         detail: "The text to convert is empty"
       })
@@ -150,19 +167,21 @@ router.post('/to-asciidoc', async (req, res) => {
 })
 
 // Endpoint: HTML → Other formats (uses Pandoc)
-router.post('/from-html', async (req, res) => {
+router.post(
+  '/from-html',
+  validate({
+    body: z.object({
+      text: z.string().min(1),
+      to: z.string().min(1)
+    })
+  }),
+  async (req, res) => {
   try {
     const { text, to } = req.body
 
-    if (!text || typeof text !== 'string' || !text.trim()) {
+    if (!text.trim()) {
       return res.status(400).json({
         detail: "The HTML text to convert is empty"
-      })
-    }
-
-    if (!to || typeof to !== 'string') {
-      return res.status(400).json({
-        detail: "Target format 'to' is required"
       })
     }
 
@@ -183,11 +202,18 @@ router.post('/from-html', async (req, res) => {
 })
 
 // Endpoint: Text → Markdown (uses text2markdown)
-router.post('/text-to-markdown', async (req, res) => {
+router.post(
+  '/text-to-markdown',
+  validate({
+    body: z.object({
+      text: z.string().min(1)
+    })
+  }),
+  async (req, res) => {
   try {
     const { text } = req.body
 
-    if (!text || typeof text !== 'string' || !text.trim()) {
+    if (!text.trim()) {
       return res.status(400).json({
         detail: "The text to convert is empty"
       })

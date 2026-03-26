@@ -1,0 +1,41 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: container/backend/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      API_KEY: ${API_KEY:-}
+      # Keep paths inside app tree (matches existing backend conventions / validation).
+      LOGS_DIR: ${LOGS_DIR:-/app/api/logs}
+      TMPDIR: ${TMPDIR:-/app/api/backend/tmp}
+    volumes:
+      - ascend-backend-logs:${LOGS_DIR:-/app/api/logs}
+      - ascend-backend-tmp:${TMPDIR:-/app/api/backend/tmp}
+    expose:
+      - "3003"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: container/frontend/Dockerfile
+      args:
+        # Frontend code already prefixes endpoints with `/api/...`.
+        # We set base to empty so requests become `/api/...` (not `/api/api/...`).
+        VITE_API_BASE: ""
+    environment:
+      # Used by nginx template (optional), kept generic.
+      NGINX_CLIENT_MAX_BODY_SIZE: ${NGINX_CLIENT_MAX_BODY_SIZE:-10m}
+      API_KEY: ${API_KEY:-}
+    ports:
+      - "${FRONTEND_HTTP_PORT:-8080}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  ascend-backend-logs:
+  ascend-backend-tmp:
+

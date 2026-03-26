@@ -42,3 +42,9 @@ jobs:
         fi
     - name: Run tests with coverage
       run: npm run coverage
+    - name: Run backend lint (existing backend scope)
+      run: npm --prefix api/backend run lint
+    - name: Run security scoped lint
+      run: npm run lint:security:scope
+    - name: Run security regression tests
+      run: npm run test:security

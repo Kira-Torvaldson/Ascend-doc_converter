@@ -16,8 +16,18 @@
 
 const path = require('path')
 const { runConverter } = require('./lazyload.module.js')
-const { spawn } = require('child_process')
-const { existsSync, statSync } = require('fs')
+const { existsSync, statSync, readFileSync } = require('fs')
+const { createHash } = require('crypto')
+const {
+  assertSafeExistingPath
+} = require('../../../../lib/security/path-guard.js')
+const {
+  isSecurityError,
+  SECURITY_ERROR_CODES
+} = require('../../../../lib/errors/security-errors.js')
+const { validateConversionRequest } = require('../../../../lib/security/validate-conversion-request.js')
+const { safeSpawn } = require('../../../../lib/security/safe-spawn.js')
+const { writeConversionAuditLog } = require('../../../../lib/logging/conversion-audit-log.js')
 
 // Import pipeline security for load control (only for external calls)
 const {
@@ -44,7 +54,7 @@ const CONVERTER_REGISTRY = {
       to: ['markdown']
     },
     executionType: 'lazy-load', // Utilise le lazy loading
-    modulePath: path.join(MODULES_DIR, 'downdoc.module.js')
+    modulePath: path.join(MODULES_DIR, 'adoc-to-md.converter.js')
   },
   'pandoc': {
     name: 'pandoc',
@@ -54,12 +64,12 @@ const CONVERTER_REGISTRY = {
     },
     executionType: 'command', // Uses child_process.spawn directly
     binaryPath: (() => {
-      // Use EnvMap if available, fallback to process.env for backward compatibility
+      // Use EnvMap if available, fallback to a safe default path.
       try {
         const { envMap } = require('../config/envmap.module.js')
         return envMap.get('PANDOC_PATH')
       } catch (e) {
-        return process.env.PANDOC_PATH || '/usr/bin/pandoc'
+        return '/usr/bin/pandoc'
       }
     })()
   },
@@ -146,6 +156,19 @@ class ConverterOrchestrator {
     const conversionId = options.conversionId || 'unknown'
     const startTime = Date.now()
     const logs = []
+    const audit = {
+      conversionId,
+      startTimestamp: new Date(startTime).toISOString(),
+      endTimestamp: null,
+      fromFormat,
+      toFormat,
+      inputHash: null,
+      inputSize: null,
+      success: false,
+      errorCode: null,
+      durationMs: null,
+      processExitCode: null
+    }
     
     // Check if this is an internal call (from linear orchestrator)
     // Internal calls don't need load control as it's managed by the linear orchestrator
@@ -165,6 +188,7 @@ class ConverterOrchestrator {
           const duration = (Date.now() - startTime) / 1000
           const error = `System overloaded: ${canAccept.message || 'System is temporarily overloaded'}`
           logs.push(`[${conversionId}] ${error}`)
+          audit.errorCode = 'RESOURCE_LIMIT_EXCEEDED'
           
           return {
             success: false,
@@ -181,6 +205,7 @@ class ConverterOrchestrator {
           const duration = (Date.now() - startTime) / 1000
           const error = `Concurrency limit reached: ${slotAcquisition.message || 'Maximum concurrent conversions reached'}`
           logs.push(`[${conversionId}] ${error}`)
+          audit.errorCode = 'RESOURCE_LIMIT_EXCEEDED'
           
           return {
             success: false,
@@ -199,20 +224,25 @@ class ConverterOrchestrator {
         logs.push(`[${conversionId}] Internal call - load control managed by linear orchestrator`)
       }
 
-      // Step 1: Find the appropriate converter
-      const converter = this.findConverter(fromFormat, toFormat)
-
-      if (!converter) {
-        const duration = (Date.now() - startTime) / 1000
-        const error = `No converter found for conversion ${fromFormat} → ${toFormat}. Available converters: ${Object.keys(this.converters).join(', ')}`
-        logs.push(`[${conversionId}] ${error}`)
-        
-        return {
-          success: false,
-          logs: logs,
-          error: error,
-          duration: duration
-        }
+      // Step 0: Fast-fail security validation on input path
+      const allowedPrefix = options.allowedPrefix || options.workDir || path.dirname(inputPath)
+      assertSafeExistingPath(inputPath, allowedPrefix)
+      const inputBuffer = readFileSync(inputPath)
+      audit.inputSize = inputBuffer.length
+      audit.inputHash = createHash('sha256').update(inputBuffer).digest('hex')
+      // Step 1: Validation pipeline v1 (sequential short-circuit)
+      const validationResult = validateConversionRequest({
+        inputPath,
+        outputPath,
+        fromFormat,
+        toFormat,
+        converterRegistry: this.converters,
+        allowedPrefix,
+        maxInputSizeBytes: options.maxInputSizeBytes
+      })
+      const converter = {
+        name: validationResult.converterName,
+        config: validationResult.converterConfig
       }
 
       logs.push(`[${conversionId}] Converter found: ${converter.name}`)
@@ -271,6 +301,7 @@ class ConverterOrchestrator {
         const duration = (Date.now() - startTime) / 1000
         const error = `Unknown execution type: ${converter.config.executionType}`
         logs.push(`[${conversionId}] ${error}`)
+        audit.errorCode = 'FORMAT_UNSUPPORTED'
         
         return {
           success: false,
@@ -301,6 +332,9 @@ class ConverterOrchestrator {
           gracefulDegradationManager.recordFailure(conversionId)
         }
       }
+      audit.success = result.success !== false
+      audit.errorCode = result.errorCode || (result.success === false ? 'CONVERSION_FAILED' : null)
+      audit.processExitCode = Number.isFinite(result.processExitCode) ? result.processExitCode : null
 
       return {
         success: result.success !== false, // Ensure success is a boolean
@@ -312,7 +346,21 @@ class ConverterOrchestrator {
     } catch (error) {
       // Secure error handling: exhaustive capture
       const duration = (Date.now() - startTime) / 1000
+
+      if (isSecurityError(error)) {
+        logs.push(`[${conversionId}] Security validation failed: ${error.code}`)
+        audit.errorCode = error.code
+        return {
+          success: false,
+          logs: logs,
+          error: error.message,
+          errorCode: error.code,
+          duration: duration
+        }
+      }
+
       logs.push(`[${conversionId}] Unexpected error in orchestrator: ${error.message}`)
+      audit.errorCode = 'ORCHESTRATOR_ERROR'
 
       // Record failure for graceful degradation (only for external calls)
       if (!isInternalCall) {
@@ -326,6 +374,9 @@ class ConverterOrchestrator {
         duration: duration
       }
     } finally {
+      audit.endTimestamp = new Date().toISOString()
+      audit.durationMs = Date.now() - startTime
+      writeConversionAuditLog(audit)
       // Release concurrency slot (only for external calls)
       if (!isInternalCall && slotAcquired) {
         logs.push(`[${conversionId}] Releasing concurrency slot...`)
@@ -429,87 +480,31 @@ class ConverterOrchestrator {
         logs.push(`[${conversionId}] Command: ${pandocPath} ${args.join(' ')}`)
 
         // Execute Pandoc with spawn (never exec or execSync)
-        const pandoc = spawn(pandocPath, args, {
-          cwd: path.dirname(inputPath),
-          stdio: ['ignore', 'pipe', 'pipe']
-        })
-
-        let stdout = ''
-        let stderr = ''
         const timeout = options.timeout || 30000
-        let timeoutId = null
-        let processKilled = false
-
-        // Capture stdout and stderr
-        pandoc.stdout.on('data', (data) => {
-          stdout += data.toString()
+        const processResult = await safeSpawn(pandocPath, args, {
+          cwd: path.dirname(inputPath),
+          timeoutMs: timeout
         })
 
-        pandoc.stderr.on('data', (data) => {
-          stderr += data.toString()
-        })
+        if (processResult.code !== 0) {
+          logs.push(`[${conversionId}] Pandoc exited with code ${processResult.code}`)
+          throw new Error('Pandoc conversion failed')
+        }
 
-        // Timeout handling
-        timeoutId = setTimeout(() => {
-          if (!pandoc.killed) {
-            processKilled = true
-            logs.push(`[${conversionId}] Process timeout after ${timeout}ms`)
-            pandoc.kill('SIGTERM')
-            
-            setTimeout(() => {
-              if (!pandoc.killed) {
-                pandoc.kill('SIGKILL')
-              }
-            }, 5000)
-          }
-        }, timeout)
-
-        // Wait for process completion
-        await new Promise((resolve, reject) => {
-          pandoc.on('close', (code) => {
-            clearTimeout(timeoutId)
-
-            if (processKilled) {
-              const duration = (Date.now() - startTime) / 1000
-              reject(new Error(`Pandoc timeout after ${timeout}ms`))
-              return
-            }
-
-            if (code !== 0) {
-              const errorMessage = stderr || stdout || `Pandoc exited with code ${code}`
-              logs.push(`[${conversionId}] Pandoc error: ${errorMessage}`)
-              reject(new Error(errorMessage))
-              return
-            }
-
-            // Check that output file exists
-            if (!existsSync(outputPath)) {
-              logs.push(`[${conversionId}] Output file was not created`)
-              reject(new Error('Output file was not created by Pandoc'))
-              return
-            }
-
-            resolve()
-          })
-
-          pandoc.on('error', (error) => {
-            clearTimeout(timeoutId)
-            logs.push(`[${conversionId}] Pandoc execution error: ${error.message}`)
-            reject(error)
-          })
-        })
+        // Check that output file exists
+        if (!existsSync(outputPath)) {
+          logs.push(`[${conversionId}] Output file was not created`)
+          throw new Error('Output file was not created by Pandoc')
+        }
 
         const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Pandoc conversion successful`)
-        if (stderr) {
-          logs.push(`[${conversionId}] Pandoc stderr: ${stderr}`)
-        }
-        
         return {
           success: true,
           logs: logs,
           error: null,
-          duration: duration
+          duration: duration,
+          processExitCode: processResult.code
         }
       } else {
         // Other command-type converters (to be implemented if necessary)
@@ -527,12 +522,23 @@ class ConverterOrchestrator {
     } catch (error) {
       // Secure error handling
       const duration = (Date.now() - startTime) / 1000
-      logs.push(`[${conversionId}] Command execution failed: ${error.message}`)
+      if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
+        logs.push(`[${conversionId}] Command timeout`)
+        return {
+          success: false,
+          logs: logs,
+          error: 'Command execution timeout',
+          errorCode: SECURITY_ERROR_CODES.CONVERSION_TIMEOUT,
+          duration: duration,
+          processExitCode: null
+        }
+      }
+      logs.push(`[${conversionId}] Command execution failed`)
 
       return {
         success: false,
         logs: logs,
-        error: `Command execution error: ${error.message}`,
+        error: 'Command execution error',
         duration: duration
       }
     }

@@ -44,7 +44,7 @@ const moduleRegistry = new Map()
  */
 const AVAILABLE_MODULES = {
   'downdoc': {
-    path: path.join(MODULES_DIR, 'downdoc.module.js'),
+    path: path.join(MODULES_DIR, 'adoc-to-md.converter.js'),
     name: 'downdoc'
   },
   'text2markdown': {
@@ -464,7 +464,23 @@ class LazyLoadManager {
         allLogs.push(moduleResult.logs)
       }
 
-      // Return result with merged logs
+      // If module already returns a standardized ConversionResult, preserve it.
+      // Keep a legacy `duration` (seconds) field for backward compatibility.
+      if (
+        Object.prototype.hasOwnProperty.call(moduleResult, 'conversionId') &&
+        Object.prototype.hasOwnProperty.call(moduleResult, 'durationMs') &&
+        Object.prototype.hasOwnProperty.call(moduleResult, 'inputFile') &&
+        Object.prototype.hasOwnProperty.call(moduleResult, 'outputFile') &&
+        Object.prototype.hasOwnProperty.call(moduleResult, 'meta')
+      ) {
+        const ret = { ...moduleResult, logs: allLogs }
+        if (typeof ret.duration !== 'number') {
+          ret.duration = typeof ret.durationMs === 'number' ? (ret.durationMs / 1000) : ((Date.now() - startTime) / 1000)
+        }
+        return ret
+      }
+
+      // Return legacy module result shape with merged logs
       return {
         success: moduleResult.success !== false, // Ensure success is a boolean
         logs: allLogs,

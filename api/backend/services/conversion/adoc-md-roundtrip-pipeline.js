@@ -13,10 +13,11 @@
  */
 
 const path = require('path')
-const { spawn } = require('child_process')
 const { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync } = require('fs')
 const { tmpdir } = require('os')
 const { randomUUID, createHash } = require('crypto')
+const { safeSpawn } = require('../../../../lib/security/safe-spawn.js')
+const { isSecurityError, SECURITY_ERROR_CODES } = require('../../../../lib/errors/security-errors.js')
 
 const { validateInputFile, STATE_INPUT_INVALID, normalizeText, extractAsciiDocImagePaths, extractMarkdownImagePaths } = require('../validation/input-validation.js')
 
@@ -26,7 +27,7 @@ function getPandocPath() {
     const { envMap } = require('../config/envmap.module.js')
     return envMap.get('PANDOC_PATH')
   } catch (e) {
-    return process.env.PANDOC_PATH || 'pandoc'
+    return 'pandoc'
   }
 }
 
@@ -196,29 +197,19 @@ function validateConversionOutput(filePath, format, options = {}) {
  * @returns {Promise<{ success: boolean, stderr: string, error?: string }>}
  */
 function runPandoc(pandocPath, args, cwd, timeoutMs = 30000) {
-  return new Promise((resolve) => {
-    const proc = spawn(pandocPath, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-    let stderr = ''
-    proc.stderr.on('data', (d) => { stderr += d.toString() })
-    const tid = setTimeout(() => {
-      if (!proc.killed) {
-        proc.kill('SIGTERM')
-        resolve({ success: false, stderr, error: `Pandoc timeout after ${timeoutMs}ms` })
+  return safeSpawn(pandocPath, args, { cwd, timeoutMs })
+    .then((result) => {
+      if (result.code !== 0) {
+        return { success: false, stderr: result.stderr, error: 'Pandoc process failed' }
       }
-    }, timeoutMs)
-    proc.on('close', (code) => {
-      clearTimeout(tid)
-      if (code !== 0) {
-        resolve({ success: false, stderr, error: stderr || `Pandoc exited with code ${code}` })
-      } else {
-        resolve({ success: true, stderr })
+      return { success: true, stderr: result.stderr }
+    })
+    .catch((error) => {
+      if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
+        return { success: false, stderr: '', error: 'Pandoc timeout' }
       }
+      return { success: false, stderr: '', error: 'Pandoc execution error' }
     })
-    proc.on('error', (err) => {
-      clearTimeout(tid)
-      resolve({ success: false, stderr: err.message, error: err.message })
-    })
-  })
 }
 
 /**

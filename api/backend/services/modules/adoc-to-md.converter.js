@@ -1,14 +1,17 @@
 'use strict'
 
 /**
- * DOWNDOC MODULE
- * 
- * Wrapper for the downdoc library conforming to the interface defined in
+ * AsciiDoc -> Markdown converter (Ascend)
+ *
+ * Role-based converter wrapper for Ascend’s module interface, using the
+ * underlying "downdoc" engine when available (with Pandoc fallback per current logic).
+ *
+ * Conforms to the interface defined in
  * doc/specifications/modules.interface.md
- * 
+ *
  * This module converts AsciiDoc files to Markdown according to the specification
  * defined in doc/specifications/modules/downdoc.module.md
- * 
+ *
  * References:
  * - modules.interface.md: Module interface contract
  * - downdoc.module.md: Downdoc module specification
@@ -18,18 +21,22 @@ const { readFileSync, writeFileSync, statSync, existsSync, unlinkSync } = requir
 const path = require('path')
 const { adaptForBookStack } = require('../../../shared/adapters/bookstack-adapter.js')
 const { convertAsciiDocWithPandoc } = require('../conversion/convert.js')
+const { createSuccessResult, createFailureResult } = require('../../src/utils/conversion-result.js')
 
 // Load downdoc library with absolute path resolution
 const libPath = path.resolve(__dirname, '../../../../lib/index.js')
 let downdoc
+let downdocLoadError = null
 try {
   downdoc = require(libPath)
   if (typeof downdoc !== 'function') {
-    throw new Error(`downdoc library at ${libPath} is not a function (type: ${typeof downdoc})`)
+    downdocLoadError = new Error(`downdoc library at ${libPath} is not a function (type: ${typeof downdoc})`)
+    downdoc = null
   }
 } catch (error) {
   console.error(`[downdoc.module] Failed to load downdoc library from ${libPath}:`, error.message)
-  throw error
+  downdocLoadError = error
+  downdoc = null
 }
 
 // ============================================================================
@@ -42,6 +49,107 @@ const MODULE_CONFIG = {
   
   // Accepted AsciiDoc extensions
   ALLOWED_EXTENSIONS: ['.adoc', '.asciidoc']
+}
+
+function inferMimeTypeFromPath(filePath) {
+  const ext = path.extname(filePath || '').toLowerCase()
+  if (ext === '.adoc' || ext === '.asciidoc') return 'text/asciidoc'
+  if (ext === '.md' || ext === '.markdown') return 'text/markdown'
+  return null
+}
+
+function buildInputFileBlock(filePath) {
+  let size = 0
+  try {
+    if (filePath && existsSync(filePath)) size = statSync(filePath).size
+  } catch (_) {
+    // Best-effort; size remains 0 when not available.
+  }
+  return {
+    originalName: path.basename(filePath || ''),
+    storedPath: filePath,
+    size,
+    mimeType: inferMimeTypeFromPath(filePath),
+  }
+}
+
+function buildOutputFileBlock(filePath) {
+  let size = 0
+  try {
+    if (filePath && existsSync(filePath)) size = statSync(filePath).size
+  } catch (_) {
+    // Best-effort; size remains 0 when not available.
+  }
+  return {
+    path: filePath,
+    size,
+    mimeType: inferMimeTypeFromPath(filePath),
+  }
+}
+
+function makeErrorObject({ code, message, details, recoverable }) {
+  const err = { code, message, details: details ?? null, recoverable: Boolean(recoverable) }
+  // Keep readable behavior in existing string interpolation/log contexts.
+  Object.defineProperty(err, 'toString', {
+    value: function toString() {
+      return this.message
+    },
+    enumerable: false,
+  })
+  return err
+}
+
+function validationErrorToCode(message) {
+  const m = String(message || '').toLowerCase()
+  if (m.includes('not found')) return 'INVALID_INPUT'
+  if (m.includes('exceeds maximum')) return 'FILE_TOO_LARGE'
+  if (m.includes('is empty')) return 'EMPTY_INPUT'
+  if (m.includes('extension')) return 'MIME_MISMATCH'
+  return 'INVALID_INPUT'
+}
+
+function createDowndocFailure({
+  conversionId,
+  startTime,
+  logs,
+  inputPath,
+  outputPath,
+  errorCode,
+  message,
+  details,
+  recoverable,
+  meta,
+  outputFile,
+}) {
+  const endTime = Date.now()
+  const durationSeconds = (endTime - startTime) / 1000
+  const finishedAt = new Date().toISOString()
+
+  const result = createFailureResult({
+    conversionId,
+    converter: 'downdoc',
+    pipeline: ['asciidoc->markdown'],
+    inputFormat: 'asciidoc',
+    outputFormat: 'markdown',
+    inputFile: buildInputFileBlock(inputPath),
+    startedAt: new Date(startTime).toISOString(),
+    finishedAt,
+    durationMs: endTime - startTime,
+    error: makeErrorObject({
+      code: errorCode,
+      message,
+      details,
+      recoverable,
+    }),
+    outputFile: outputFile ?? (outputPath && existsSync(outputPath) ? buildOutputFileBlock(outputPath) : null),
+    warnings: [],
+    logs: Array.isArray(logs) ? logs : [],
+    meta: meta && typeof meta === 'object' ? meta : {},
+  })
+
+  // Keep backward compatibility for code paths expecting ModuleResult.duration (seconds).
+  result.duration = durationSeconds
+  return result
 }
 
 // ============================================================================
@@ -232,14 +340,19 @@ const downdocModule = {
       logs.push(`[${conversionId}] Validating input file...`)
       const validation = validateInput(inputPath)
       if (!validation.valid) {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Validation failed: ${validation.error}`)
-        return {
-          success: false,
-          logs: logs,
-          error: validation.error,
-          duration: duration
-        }
+        return createDowndocFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: validationErrorToCode(validation.error),
+          message: validation.error,
+          details: null,
+          recoverable: true,
+          meta: { stage: 'input_validation' },
+        })
       }
       logs.push(`[${conversionId}] Input file validated`)
 
@@ -249,26 +362,36 @@ const downdocModule = {
       try {
         asciidocContent = readFileSync(inputPath, 'utf8')
       } catch (error) {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Failed to read input file: ${error.message}`)
-        return {
-          success: false,
-          logs: logs,
-          error: `Failed to read input file: ${error.message}`,
-          duration: duration
-        }
+        return createDowndocFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: 'INVALID_INPUT',
+          message: `Failed to read input file: ${error.message}`,
+          details: error && error.stack ? error.stack : null,
+          recoverable: true,
+          meta: { stage: 'read_input' },
+        })
       }
 
       // Validate that content is not empty
       if (!asciidocContent || typeof asciidocContent !== 'string' || asciidocContent.trim().length === 0) {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Input file is empty or invalid`)
-        return {
-          success: false,
-          logs: logs,
-          error: 'Input file content is empty or invalid',
-          duration: duration
-        }
+        return createDowndocFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: 'EMPTY_INPUT',
+          message: 'Input file content is empty or invalid',
+          details: null,
+          recoverable: true,
+          meta: { stage: 'read_input' },
+        })
       }
       logs.push(`[${conversionId}] Input file read successfully (${asciidocContent.length} characters)`)
 
@@ -285,14 +408,19 @@ const downdocModule = {
 
       // Validate content is still not empty
       if (!asciidocContent || typeof asciidocContent !== 'string' || asciidocContent.trim().length === 0) {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Input file is empty after normalization`)
-        return {
-          success: false,
-          logs: logs,
-          error: 'Input file content is empty after normalization',
-          duration: duration
-        }
+        return createDowndocFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: 'EMPTY_INPUT',
+          message: 'Input file content is empty after normalization',
+          details: null,
+          recoverable: true,
+          meta: { stage: 'normalize_input' },
+        })
       }
 
       // Step 3: Try downdoc first; on failure fallback to Pandoc
@@ -307,6 +435,9 @@ const downdocModule = {
         if (mode === 'bookstack') {
           downdocOptions.extensions = ['parsedown']
           logs.push(`[${conversionId}] Using BookStack/Parsedown mode`)
+        }
+        if (downdocLoadError) {
+          throw new Error(`downdoc unavailable: ${downdocLoadError.message}`)
         }
         if (typeof downdoc !== 'function') {
           throw new Error(`downdoc is not a function (type: ${typeof downdoc})`)
@@ -334,15 +465,20 @@ const downdocModule = {
           engineUsed = 'pandoc'
           logs.push(`[${conversionId}] Pandoc fallback succeeded (${markdown.length} chars)`)
         } catch (pandocError) {
-          const duration = (Date.now() - startTime) / 1000
           const msg = pandocError && pandocError.message ? pandocError.message : 'Pandoc fallback failed'
           logs.push(`[${conversionId}] Pandoc fallback failed: ${msg}`)
-          return {
-            success: false,
-            logs: logs,
-            error: `Conversion failed (downdoc: ${fallbackReason}; pandoc: ${msg})`,
-            duration: duration
-          }
+          return createDowndocFailure({
+            conversionId,
+            startTime,
+            logs,
+            inputPath,
+            outputPath,
+            errorCode: 'CONVERSION_FAILED',
+            message: `Conversion failed (downdoc: ${fallbackReason}; pandoc: ${msg})`,
+            details: null,
+            recoverable: false,
+            meta: { stage: 'convert', engineUsed, fallbackReason },
+          })
         }
       }
 
@@ -361,14 +497,19 @@ const downdocModule = {
       
       // Verify markdown is still different from input after cleanup
       if (markdown === asciidocContent) {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] ERROR: After cleanup, markdown is identical to input - conversion failed!`)
-        return {
-          success: false,
-          logs: logs,
-          error: 'Conversion failed: output is identical to input after post-processing.',
-          duration: duration
-        }
+        return createDowndocFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: 'CONVERSION_FAILED',
+          message: 'Conversion failed: output is identical to input after post-processing.',
+          details: null,
+          recoverable: false,
+          meta: { stage: 'post_processing' },
+        })
       }
 
       // Apply BookStack adapter if necessary
@@ -400,13 +541,18 @@ const downdocModule = {
       // Verify markdown is different from input (sanity check)
       if (markdown === asciidocContent) {
         logs.push(`[${conversionId}] ERROR: Markdown output is identical to AsciiDoc input - conversion failed!`)
-        const duration = (Date.now() - startTime) / 1000
-        return {
-          success: false,
-          logs: logs,
-          error: 'Conversion failed: output is identical to input. The downdoc library may not be working correctly.',
-          duration: duration
-        }
+        return createDowndocFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: 'CONVERSION_FAILED',
+          message: 'Conversion failed: output is identical to input. The downdoc library may not be working correctly.',
+          details: null,
+          recoverable: false,
+          meta: { stage: 'write_output_sanity' },
+        })
       }
       
       try {
@@ -414,14 +560,19 @@ const downdocModule = {
         
         // Verify file was written correctly
         if (!existsSync(outputPath)) {
-          const duration = (Date.now() - startTime) / 1000
           logs.push(`[${conversionId}] ERROR: Output file was not created`)
-          return {
-            success: false,
-            logs: logs,
-            error: 'Output file was not created',
-            duration: duration
-          }
+          return createDowndocFailure({
+            conversionId,
+            startTime,
+            logs,
+            inputPath,
+            outputPath,
+            errorCode: 'OUTPUT_NOT_CREATED',
+            message: 'Output file was not created',
+            details: null,
+            recoverable: false,
+            meta: { stage: 'write_output' },
+          })
         }
         
         // Verify file content matches what we wrote
@@ -433,7 +584,6 @@ const downdocModule = {
         
         // Final verification: ensure output is Markdown, not AsciiDoc
         if (writtenContent === asciidocContent) {
-          const duration = (Date.now() - startTime) / 1000
           logs.push(`[${conversionId}] CRITICAL ERROR: Written file content is identical to input AsciiDoc!`)
           logs.push(`[${conversionId}] This means the conversion did not happen or the wrong file was written`)
           
@@ -445,12 +595,18 @@ const downdocModule = {
             logs.push(`[${conversionId}] Warning: Failed to remove incorrect output file`)
           }
           
-          return {
-            success: false,
-            logs: logs,
-            error: 'Conversion failed: output file contains AsciiDoc instead of Markdown. The conversion did not occur.',
-            duration: duration
-          }
+          return createDowndocFailure({
+            conversionId,
+            startTime,
+            logs,
+            inputPath,
+            outputPath,
+            errorCode: 'CONVERSION_FAILED',
+            message: 'Conversion failed: output file contains AsciiDoc instead of Markdown. The conversion did not occur.',
+            details: null,
+            recoverable: false,
+            meta: { stage: 'verify_output' },
+          })
         }
         
         // Verify output looks like Markdown (basic check: should have # for headers, not =)
@@ -461,7 +617,6 @@ const downdocModule = {
         const hasMarkdownTitle = /^#+\s+\w+/m.test(writtenContent.trim())
         
         if ((hasAsciiDocAttributes || hasAsciiDocTitle) && !hasMarkdownTitle) {
-          const duration = (Date.now() - startTime) / 1000
           logs.push(`[${conversionId}] CRITICAL ERROR: Output file contains AsciiDoc syntax instead of Markdown!`)
           logs.push(`[${conversionId}] Has AsciiDoc attributes: ${hasAsciiDocAttributes}, Has AsciiDoc title: ${hasAsciiDocTitle}, Has Markdown title: ${hasMarkdownTitle}`)
           logs.push(`[${conversionId}] First 200 chars: ${writtenContent.substring(0, 200)}`)
@@ -474,12 +629,18 @@ const downdocModule = {
             logs.push(`[${conversionId}] Warning: Failed to remove incorrect output file`)
           }
           
-          return {
-            success: false,
-            logs: logs,
-            error: 'Conversion failed: output file contains AsciiDoc instead of Markdown. The conversion did not occur.',
-            duration: duration
-          }
+          return createDowndocFailure({
+            conversionId,
+            startTime,
+            logs,
+            inputPath,
+            outputPath,
+            errorCode: 'CONVERSION_FAILED',
+            message: 'Conversion failed: output file contains AsciiDoc instead of Markdown. The conversion did not occur.',
+            details: null,
+            recoverable: false,
+            meta: { stage: 'verify_output' },
+          })
         }
         
         logs.push(`[${conversionId}] Output file written successfully`)
@@ -498,14 +659,19 @@ const downdocModule = {
           }
         }
 
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Failed to write output file: ${error.message}`)
-        return {
-          success: false,
-          logs: logs,
-          error: `Failed to write output file: ${error.message}`,
-          duration: duration
-        }
+        return createDowndocFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: 'OUTPUT_NOT_CREATED',
+          message: `Failed to write output file: ${error.message}`,
+          details: error && error.stack ? error.stack : null,
+          recoverable: false,
+          meta: { stage: 'write_output' },
+        })
       }
 
       // Step 6: Return result (downdoc.module.md)
@@ -515,21 +681,31 @@ const downdocModule = {
       logs.push(`[${conversionId}] engineUsed: ${engineUsed}`)
       if (fallbackReason) logs.push(`[${conversionId}] fallbackReason: ${fallbackReason}`)
       logs.push(`[${conversionId}] Duration: ${duration.toFixed(3)}s`)
-      logs.push(`[${conversionId}] Finished at ${new Date().toISOString()}`)
+      const finishedAt = new Date().toISOString()
+      logs.push(`[${conversionId}] Finished at ${finishedAt}`)
 
-      return {
-        success: true,
-        logs: logs,
-        error: null,
-        duration: duration,
-        engineUsed,
-        fallbackReason: fallbackReason || undefined
-      }
+      return createSuccessResult({
+        conversionId,
+        converter: 'downdoc',
+        pipeline: ['asciidoc->markdown'],
+        inputFormat: 'asciidoc',
+        outputFormat: 'markdown',
+        inputFile: buildInputFileBlock(inputPath),
+        outputFile: buildOutputFileBlock(outputPath),
+        startedAt: new Date(startTime).toISOString(),
+        finishedAt,
+        durationMs: endTime - startTime,
+        warnings: [],
+        logs,
+        meta: {
+          engineUsed,
+          fallbackReason: fallbackReason || null
+        }
+      })
 
     } catch (error) {
       // Obligation 3 - Secure error handling: exhaustive capture
       // Any unexpected error must be captured and transformed into ModuleResult
-      const duration = (Date.now() - startTime) / 1000
       logs.push(`[${conversionId}] Unexpected error: ${error.message}`)
 
       // Ensure no partial output file is left behind
@@ -542,12 +718,18 @@ const downdocModule = {
         }
       }
 
-      return {
-        success: false,
-        logs: logs,
-        error: `Unexpected error: ${error.message}`,
-        duration: duration
-      }
+      return createDowndocFailure({
+        conversionId,
+        startTime,
+        logs,
+        inputPath,
+        outputPath,
+        errorCode: 'INTERNAL_ERROR',
+        message: `Unexpected error: ${error.message}`,
+        details: error && error.stack ? error.stack : null,
+        recoverable: false,
+        meta: { stage: 'unexpected' },
+      })
     }
   }
 }

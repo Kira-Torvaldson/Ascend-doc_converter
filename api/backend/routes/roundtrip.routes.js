@@ -12,6 +12,8 @@ const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
 const express = require('express')
 const router = express.Router()
+const { z } = require('zod')
+const { validate } = require('../middleware/security/validate.middleware.js')
 const {
   runRoundTrip,
   STATE_SUCCESS,
@@ -47,7 +49,14 @@ function persistHistoryAndDashboard(reportsDir, entry) {
  * Réponse: { success, state, markdownContent?, asciidocContent?, logs, errors? }
  * Chaque conversion est enregistrée dans history.json et dashboard.html.
  */
-router.post('/roundtrip', async (req, res) => {
+router.post(
+  '/roundtrip',
+  validate({
+    body: z.object({
+      content: z.string()
+    })
+  }),
+  async (req, res) => {
   const conversionId = randomUUID()
   let workDir
   const reportsDir = getReportsDir()

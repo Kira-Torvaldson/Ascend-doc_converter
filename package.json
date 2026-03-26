@@ -26,6 +26,8 @@
     "build": "npm test && npm run lint",
     "format": "node npm/format.js lib,test,npm",
     "lint": "eslint \"{lib,test,npm}/**/*.js\"",
+    "lint:security:scope": "eslint --no-eslintrc --env node,es2021 --rule \"no-process-env:error\" \"api/backend/services/conversion/**/*.js\" \"api/backend/services/modules/**/*.js\"",
+    "test:security": "_mocha --grep \"conversion audit log sanitization|wrapper hardening|validation pipeline v1|security foundations\"",
     "postpublish": "downdoc --postpublish",
     "prepublishOnly": "downdoc --prepublish",
     "test": "_mocha",
