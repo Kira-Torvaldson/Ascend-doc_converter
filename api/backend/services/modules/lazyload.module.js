@@ -14,6 +14,7 @@
 
 const path = require('path')
 const fs = require('fs')
+const { createFailureResult } = require('../../src/utils/conversion-result.js')
 
 // ============================================================================
 // CONFIGURATION
@@ -365,6 +366,60 @@ class LazyLoadManager {
     const startTime = Date.now()
     const logs = []
 
+    const toIso = (ts) => new Date(ts).toISOString()
+    const inferFormats = () => {
+      if (options.fromFormat && options.toFormat) {
+        return { inputFormat: String(options.fromFormat), outputFormat: String(options.toFormat) }
+      }
+      if (moduleName === 'downdoc') {
+        return { inputFormat: 'asciidoc', outputFormat: 'markdown' }
+      }
+      return { inputFormat: 'unknown', outputFormat: 'unknown' }
+    }
+    const buildInputFile = () => {
+      let size = 0
+      try {
+        if (inputPath && fs.existsSync(inputPath)) size = fs.statSync(inputPath).size
+      } catch (_) {
+        // best effort
+      }
+      return {
+        originalName: inputPath ? path.basename(inputPath) : null,
+        storedPath: inputPath || null,
+        size,
+        mimeType: null,
+      }
+    }
+    const buildInternalFailure = (errorCode, message, details, meta = {}) => {
+      const endTime = Date.now()
+      const { inputFormat, outputFormat } = inferFormats()
+      const failure = createFailureResult({
+        conversionId,
+        converter: moduleName,
+        pipeline: [`${inputFormat}->${outputFormat}`],
+        inputFormat,
+        outputFormat,
+        inputFile: buildInputFile(),
+        startedAt: toIso(startTime),
+        finishedAt: toIso(endTime),
+        durationMs: endTime - startTime,
+        error: {
+          code: errorCode,
+          message,
+          details: details || null,
+          recoverable: errorCode !== 'INTERNAL_ERROR'
+        },
+        outputFile: null,
+        warnings: [],
+        logs: logs,
+        meta: meta && typeof meta === 'object' ? meta : {}
+      })
+      if (typeof failure.duration !== 'number') {
+        failure.duration = failure.durationMs / 1000
+      }
+      return failure
+    }
+
     try {
       // Minimal logging: loading attempt
       logs.push(`[${conversionId}] Requesting module '${moduleName}'`)
@@ -373,31 +428,28 @@ class LazyLoadManager {
       // Path validation before module loading
       const pathValidation = this.validatePaths(inputPath, outputPath)
       if (!pathValidation.valid) {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Path validation failed: ${pathValidation.error}`)
-        
-        return {
-          success: false,
-          logs: logs,
-          error: `Path validation failed: ${pathValidation.error}`,
-          duration: duration
-        }
+        return buildInternalFailure(
+          'INVALID_INPUT',
+          `Path validation failed: ${pathValidation.error}`,
+          pathValidation.error,
+          { stage: 'lazyload_path_validation' }
+        )
       }
 
       // Load module (lazy loading)
       const loadResult = this.loadModule(moduleName)
 
       if (!loadResult.success) {
-        // Secure error handling for loading
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Failed to load module '${moduleName}': ${loadResult.error}`)
-        
-        return {
-          success: false,
-          logs: logs,
-          error: `Module loading failed: ${loadResult.error}`,
-          duration: duration
-        }
+        const loadErrorMessage = String(loadResult.error || '')
+        const errorCode = loadErrorMessage.includes('not registered') ? 'CONVERTER_NOT_FOUND' : 'INTERNAL_ERROR'
+        return buildInternalFailure(
+          errorCode,
+          `Module loading failed: ${loadErrorMessage}`,
+          loadErrorMessage,
+          { stage: 'lazyload_module_loading' }
+        )
       }
 
       // Minimal logging: module loaded
@@ -415,27 +467,23 @@ class LazyLoadManager {
         const requestedTo = options.toFormat.toLowerCase()
 
         if (!supportedFrom.includes(requestedFrom)) {
-          const duration = (Date.now() - startTime) / 1000
           logs.push(`[${conversionId}] Module '${moduleName}' does not support input format '${requestedFrom}'`)
-          
-          return {
-            success: false,
-            logs: logs,
-            error: `Module '${moduleName}' does not support input format '${requestedFrom}'. Supported: ${supportedFrom.join(', ')}`,
-            duration: duration
-          }
+          return buildInternalFailure(
+            'UNSUPPORTED_FORMAT',
+            `Module '${moduleName}' does not support input format '${requestedFrom}'. Supported: ${supportedFrom.join(', ')}`,
+            null,
+            { stage: 'lazyload_format_check' }
+          )
         }
 
         if (!supportedTo.includes(requestedTo)) {
-          const duration = (Date.now() - startTime) / 1000
           logs.push(`[${conversionId}] Module '${moduleName}' does not support output format '${requestedTo}'`)
-          
-          return {
-            success: false,
-            logs: logs,
-            error: `Module '${moduleName}' does not support output format '${requestedTo}'. Supported: ${supportedTo.join(', ')}`,
-            duration: duration
-          }
+          return buildInternalFailure(
+            'UNSUPPORTED_FORMAT',
+            `Module '${moduleName}' does not support output format '${requestedTo}'. Supported: ${supportedTo.join(', ')}`,
+            null,
+            { stage: 'lazyload_format_check' }
+          )
         }
       }
 
@@ -445,15 +493,13 @@ class LazyLoadManager {
 
       // Validate that result is conformant
       if (!moduleResult || typeof moduleResult !== 'object') {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Module '${moduleName}' returned invalid result`)
-        
-        return {
-          success: false,
-          logs: logs,
-          error: `Module '${moduleName}' returned invalid result`,
-          duration: duration
-        }
+        return buildInternalFailure(
+          'INTERNAL_ERROR',
+          `Module '${moduleName}' returned invalid result`,
+          null,
+          { stage: 'lazyload_module_result_validation' }
+        )
       }
 
       // Merge module logs with loading logs
@@ -464,16 +510,36 @@ class LazyLoadManager {
         allLogs.push(moduleResult.logs)
       }
 
-      // If module already returns a standardized ConversionResult, preserve it.
+      // Preserve standardized success/failure ConversionResult from migrated paths.
       // Keep a legacy `duration` (seconds) field for backward compatibility.
-      if (
+      const looksLikeStandardizedSuccess =
+        moduleResult &&
+        moduleResult.success === true &&
+        moduleResult.error === null &&
         Object.prototype.hasOwnProperty.call(moduleResult, 'conversionId') &&
         Object.prototype.hasOwnProperty.call(moduleResult, 'durationMs') &&
         Object.prototype.hasOwnProperty.call(moduleResult, 'inputFile') &&
-        Object.prototype.hasOwnProperty.call(moduleResult, 'outputFile') &&
-        Object.prototype.hasOwnProperty.call(moduleResult, 'meta')
-      ) {
-        const ret = { ...moduleResult, logs: allLogs }
+        Object.prototype.hasOwnProperty.call(moduleResult, 'outputFile')
+
+      const looksLikeStandardizedFailure =
+        moduleResult &&
+        moduleResult.success === false &&
+        moduleResult.error &&
+        typeof moduleResult.error === 'object' &&
+        typeof moduleResult.error.code === 'string' &&
+        Object.prototype.hasOwnProperty.call(moduleResult, 'conversionId') &&
+        Object.prototype.hasOwnProperty.call(moduleResult, 'durationMs') &&
+        Object.prototype.hasOwnProperty.call(moduleResult, 'inputFile')
+
+      if (looksLikeStandardizedSuccess || looksLikeStandardizedFailure) {
+        const ret = {
+          ...moduleResult,
+          logs: allLogs,
+          warnings: Array.isArray(moduleResult.warnings) ? moduleResult.warnings : [],
+          meta: (moduleResult.meta && typeof moduleResult.meta === 'object' && !Array.isArray(moduleResult.meta))
+            ? moduleResult.meta
+            : {}
+        }
         if (typeof ret.duration !== 'number') {
           ret.duration = typeof ret.durationMs === 'number' ? (ret.durationMs / 1000) : ((Date.now() - startTime) / 1000)
         }
@@ -490,15 +556,13 @@ class LazyLoadManager {
 
     } catch (error) {
       // Secure error handling: exhaustive capture
-      const duration = (Date.now() - startTime) / 1000
       logs.push(`[${conversionId}] Unexpected error in lazy loading: ${error.message}`)
-
-      return {
-        success: false,
-        logs: logs,
-        error: `Lazy loading error: ${error.message}`,
-        duration: duration
-      }
+      return buildInternalFailure(
+        'INTERNAL_ERROR',
+        `Lazy loading error: ${error.message}`,
+        error && error.stack ? error.stack : null,
+        { stage: 'lazyload_unexpected_error' }
+      )
     }
   }
 
