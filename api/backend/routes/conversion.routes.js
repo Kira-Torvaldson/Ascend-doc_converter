@@ -69,10 +69,12 @@ router.post(
     })
 
     if (!result.success) {
-      console.error(`[ERROR] Conversion failed: ${result.error}`)
-      return res.status(500).json({
-        detail: `Conversion error: ${result.error}`
-      })
+      const errorMessage =
+        result && result.error && typeof result.error === 'object'
+          ? result.error.message
+          : String(result && result.error ? result.error : 'unknown conversion failure')
+      console.error(`[ERROR] Conversion failed: ${errorMessage}`)
+      return res.status(500).json(result)
     }
 
     // Lire le résultat

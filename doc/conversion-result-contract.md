@@ -1358,3 +1358,393 @@ Step 1 closure does not mean that:
 ### E) Transition note
 
 Next work should build on the Step 1 baseline (contract + helpers + first migration reference) rather than reopening contract design or first-migration questions.
+
+## Step 2 Preparation (Release 0.0.1.4.6)
+
+### Step 2.1.1 — Plausible backend entry points for the real AsciiDoc -> Markdown flow
+
+Step 2 starts by identifying the backend entry points and orchestration layers that are actually involved in the already migrated AsciiDoc -> Markdown path, before selecting the exact Step 2 alignment target.
+
+The following components are plausibly involved in the real flow (based on current backend wiring and call sites):
+
+- **`api/backend/app.js`**: Express application entry where `/api` middleware and route stacks are mounted.
+- **`api/backend/routes/conversion.routes.js`**: Route entry for `POST /api/to-markdown` (direct AsciiDoc -> Markdown endpoint) which writes temp files and dispatches to the lazy-loaded `downdoc` module.
+- **`api/backend/routes/api.routes.js`**: Route entry for `POST /api/convert` (generic conversion endpoint guarded by confirmation token) which calls `secureConvertWithToken(...)`.
+- **`api/backend/middleware/security/validate.middleware.js`**: Zod-based request validation used by the route handlers before conversion is executed.
+- **`api/backend/services/conversion/secure-converter.js`**: Secure conversion service:
+  - `secureConvertWithToken(...)` validates and consumes the confirmation token, then delegates to `secureConvert(...)`.
+  - `secureConvert(...)` handles isolation + file creation and (for `asciidoc -> markdown`) dispatches to the lazy-loaded `downdoc` converter.
+- **`api/backend/services/modules/lazyload.module.js`**: Lazy-load dispatch layer:
+  - owns `AVAILABLE_MODULES` mapping (`downdoc` -> `adoc-to-md.converter.js`)
+  - loads the module on demand and calls `moduleInstance.run(...)`
+  - preserves a full `ConversionResult` if the module already returns one.
+- **`api/backend/services/modules/adoc-to-md.converter.js`**: The migrated converter module (AsciiDoc -> Markdown) returning a standardized `ConversionResult` via centralized helpers.
+
+The exact Step 2 alignment target will be selected in sub-step 2.1.2 based on this concrete entry-point mapping.
+
+### Step 2.1.2 — Primary backend/orchestrator entry point (AsciiDoc -> Markdown)
+
+Sub-step 2.1.2 identifies the single primary backend/orchestrator entry point to focus Step 2 alignment work for the migrated AsciiDoc -> Markdown flow.
+
+**Selected primary entry point:** `api/backend/services/modules/lazyload.module.js`
+
+**Why this is the primary entry point (grounded):**
+
+- It is the **shared dispatch layer** that ultimately loads and invokes the migrated converter via `runConverter('downdoc', ...)` / `runModule(...)`.
+- It is the **first backend coordination component above the converter** that can still **preserve, enrich, or accidentally reshape** the converter’s returned object.
+- It already contains the contract-sensitive decision: **preserve a full `ConversionResult`** when the module returns one (instead of reconstructing a legacy `{ success, logs, error, duration }` shape).
+
+**Primary vs. secondary (in the current real flow):**
+
+- **Primary**: `lazyload.module.js` (converter dispatch + boundary where result shape is mediated)
+- **Secondary (callers / surrounding layers)**:
+  - `api/backend/routes/conversion.routes.js` (direct HTTP endpoint `POST /api/to-markdown` that writes temp files and calls the dispatcher)
+  - `api/backend/services/conversion/secure-converter.js` (secure conversion service that also dispatches to the same lazy loader for `asciidoc -> markdown`)
+  - `api/backend/routes/api.routes.js` (generic token-guarded conversion route that calls `secureConvertWithToken(...)`)
+  - `api/backend/middleware/security/validate.middleware.js` (request validation before invoking conversion)
+  - `api/backend/services/modules/adoc-to-md.converter.js` (the migrated converter implementation itself)
+
+The official Step 2 alignment target will be confirmed in sub-step 2.1.3.
+
+### Step 2.1.3 — Confirmed Step 2 alignment target
+
+Sub-step 2.1.3 formally confirms the backend component that Step 2 will focus on for orchestrator-level alignment of the already migrated AsciiDoc -> Markdown flow.
+
+**Confirmed Step 2 alignment target:** `api/backend/services/modules/lazyload.module.js`
+
+**Why this is the correct Step 2 focus:**
+
+- It is the central coordination boundary where the migrated converter is dispatched and where the returned result can be preserved or reshaped.
+- It is the most direct place above the migrated converter where standardized `ConversionResult` propagation can be enforced consistently for both success and failure paths.
+- It prevents regression into legacy ad hoc result formats when modules evolve at different adoption speeds.
+
+**What Step 2 will align at this level (intent):**
+
+- Standardized success propagation (preserve the full contract when available).
+- Standardized failure propagation (avoid partial/legacy reconstructions that drop contract fields).
+- Avoidance of ad hoc result reshaping across dispatch paths.
+- Safer internal error handling at the dispatch/coordination layer so unexpected errors do not bypass the standardized result model.
+
+Detailed flow mapping of this component and its interactions will begin in sub-step 2.2.1.
+
+### Step 2.2.2 — Failure-oriented backend flow mapping (AsciiDoc -> Markdown)
+
+Sub-step 2.2.2 maps the failure-oriented backend flow for the already migrated **AsciiDoc -> Markdown** path, specifically through the confirmed Step 2 alignment target.
+
+- **Migrated path**: AsciiDoc -> Markdown via `downdoc` (`api/backend/services/modules/adoc-to-md.converter.js`)
+- **Confirmed Step 2 alignment target**: `api/backend/services/modules/lazyload.module.js`
+
+#### Failure-oriented flow (end-to-end, grounded)
+
+1. **Incoming backend entry point (one of the real callers)**:
+   - `POST /api/to-markdown` (`api/backend/routes/conversion.routes.js`) calls `runConverter('downdoc', inputFile, outputFile, { conversionId, mode })`, **or**
+   - `POST /api/convert` (`api/backend/routes/api.routes.js`) calls `secureConvertWithToken(...)` → `secureConvert(...)` (`api/backend/services/conversion/secure-converter.js`), which then calls `runConverter('downdoc', inputFile, outputFile, { conversionId, mode })` for `asciidoc -> markdown`.
+2. **Dispatcher / coordination boundary**:
+   - `runConverter(...)` delegates to `LazyLoadManager.runModule(...)` in `api/backend/services/modules/lazyload.module.js`.
+3. **Lazy-load + registry resolution** (inside `lazyload.module.js`):
+   - validates input/output paths (absolute paths, input exists, output directory exists)
+   - loads the registered module `downdoc` from the `AVAILABLE_MODULES` mapping (`downdoc` → `adoc-to-md.converter.js`)
+   - invokes `moduleInstance.run(inputPath, outputPath, options)`.
+4. **Converter invocation and failure creation (first standardized failure result)**:
+   - `api/backend/services/modules/adoc-to-md.converter.js` detects a failure condition (e.g., input validation failure, empty input, engine failure, unexpected error).
+   - It builds a standardized failure `ConversionResult` via `createDowndocFailure(...)`, which internally calls **`createFailureResult(payload)`** (centralized helper) and returns the contract-compliant object.
+5. **Failure propagation through the alignment target**:
+   - `lazyload.module.js` receives the module’s failure `ConversionResult`.
+   - It merges logs and **preserves the full `ConversionResult` shape** (instead of rebuilding a legacy `{ success, logs, error, duration }` object), while ensuring a legacy `duration` (seconds) field exists for backward compatibility.
+6. **Final backend-level failure return path (caller-dependent)**:
+   - In `conversion.routes.js` (`POST /api/to-markdown`), the handler checks `if (!result.success)` and returns `500` with a legacy JSON body (currently `detail: "Conversion error: ..."`).
+   - In `secure-converter.js`, the handler throws a `ConversionError('CONVERSION_FAILED', ...)` when `result.success` is false, which is then translated into an HTTP error response by its route/controller layer.
+
+#### Where the standardized failure `ConversionResult` is first created
+
+- **First created in**: `api/backend/services/modules/adoc-to-md.converter.js`
+- **Mechanism**: `createDowndocFailure(...)` → `createFailureResult(payload)`
+
+#### How the standardized failure result propagates upward
+
+- `adoc-to-md.converter.js` returns a full failure `ConversionResult` to `lazyload.module.js`.
+- `lazyload.module.js` preserves it and returns it to its caller (`conversion.routes.js` or `secure-converter.js`).
+- Higher layers may still choose to **wrap or translate** the error into route-specific HTTP response shapes.
+
+#### Grounded observation (potential reshaping/mishandling points)
+
+- Failures that occur **inside `lazyload.module.js` before module invocation** (path validation failure, module load failure, interface mismatch, internal lazy-load exception) currently return a **legacy ModuleResult-like object** rather than a full `ConversionResult`.
+- Some HTTP routes still **return legacy response bodies** that do not expose the full standardized `ConversionResult` object even when it exists.
+
+Sub-step 2.2.3 will identify the exact points where the standardized contract can be altered or broken across this failure-oriented path.
+
+### Step 2.2.3 — Contract-risk points (AsciiDoc -> Markdown)
+
+Sub-step 2.2.3 identifies the exact backend points in the already mapped AsciiDoc -> Markdown flow where the standardized `ConversionResult` contract may still be altered, partially rebuilt, stripped, wrapped, or bypassed.
+
+- **Migrated path**: AsciiDoc -> Markdown via `downdoc` (`api/backend/services/modules/adoc-to-md.converter.js`)
+- **Confirmed Step 2 alignment target**: `api/backend/services/modules/lazyload.module.js`
+
+#### Exact contract-risk points (grounded)
+
+- **`api/backend/services/modules/lazyload.module.js` — pre-module failures return legacy shape**
+  - **Why risk exists**: failures occurring before `moduleInstance.run(...)` (path validation failure, module registry/load failures, interface validation failures, internal lazy-load exceptions) return a legacy `{ success, logs, error, duration }`-style object.
+  - **Risk type**: reshaping/partial rebuild (contract fields missing), inconsistent success/failure envelopes, bypass of standardized error codes.
+
+- **`api/backend/services/modules/lazyload.module.js` — legacy fallback branch for non-ConversionResult modules**
+  - **Why risk exists**: when a module does not return a standardized `ConversionResult`, lazyload intentionally rebuilds the legacy result shape.
+  - **Risk type**: stripping required fields (no `conversionId`, `inputFile`, `outputFile`, `meta`, etc.), inconsistent wrapping between modules depending on adoption state.
+
+- **`api/backend/routes/conversion.routes.js` (`POST /api/to-markdown`) — route-level response reshaping**
+  - **Why risk exists**: the route handler translates failures into a legacy HTTP response body (e.g., `status(500).json({ detail: "Conversion error: ..." })`) instead of returning/preserving the full standardized `ConversionResult`.
+  - **Risk type**: wrapping/translation into incompatible response shape; loss of contract fields for clients.
+
+- **`api/backend/services/conversion/secure-converter.js` — throw-based propagation above converter results**
+  - **Why risk exists**: in the `asciidoc -> markdown` branch, if `runConverter(...)` returns `success: false`, the service throws a `ConversionError('CONVERSION_FAILED', ...)` rather than returning the failure `ConversionResult` upward.
+  - **Risk type**: bypass of standardized failure propagation via throw; conversion of structured failure into exception-driven path.
+
+- **`api/backend/routes/api.routes.js` (`POST /api/convert`) — wrapper envelope around conversion result**
+  - **Why risk exists**: this endpoint returns `{ success: true, result: <conversion output>, format }` (i.e., wraps the conversion output rather than exposing a standardized `ConversionResult` as the primary response contract).
+  - **Risk type**: incompatible wrapping; potential loss of standardized result semantics at the HTTP boundary.
+
+- **`api/backend/middleware/security/validate.middleware.js` — early 400 response not shaped as ConversionResult**
+  - **Why risk exists**: invalid requests are short-circuited with `{ error: "Invalid request", issues: [...] }` which does not follow the `ConversionResult` contract.
+  - **Risk type**: inconsistent error envelope at route boundary (expected for validation, but still a contract divergence for API consumers).
+
+- **`api/backend/middleware/error-handler.middleware.js` — global error response is generic in production**
+  - **Why risk exists**: unexpected thrown errors are turned into `{ error: "Internal server error" }` in production, losing structured conversion context.
+  - **Risk type**: stripping/wrapping at the global error boundary for throw-based paths.
+
+#### Already-safe vs. still-needs-alignment (current state)
+
+- **Already safe (contract-preserving)**:
+  - `api/backend/services/modules/adoc-to-md.converter.js` creates standardized failure results via `createFailureResult(...)`.
+  - `api/backend/services/modules/lazyload.module.js` preserves full `ConversionResult` objects returned by the migrated module (merging logs and keeping a legacy `duration` field).
+
+- **Still needs Step 2 alignment**:
+  - `lazyload.module.js` failure paths that occur before module invocation (currently legacy-shaped).
+  - HTTP route/service layers that wrap, translate, or throw instead of propagating a full standardized `ConversionResult` consistently.
+
+Target behavior and alignment decisions will be defined in sub-step 2.3.1 and following.
+
+### Step 2.2.4 — Current flow inconsistencies and Step 2 alignment observations (AsciiDoc -> Markdown)
+
+Sub-step 2.2.4 consolidates the grounded inconsistencies and Step 2 alignment-relevant observations for the already migrated AsciiDoc -> Markdown backend flow, before defining target behavior.
+
+- **Migrated path**: AsciiDoc -> Markdown via `downdoc` (`api/backend/services/modules/adoc-to-md.converter.js`)
+- **Confirmed Step 2 alignment target**: `api/backend/services/modules/lazyload.module.js`
+
+#### Key current inconsistencies / alignment-relevant observations (grounded)
+
+- **Mixed result envelopes depending on failure stage**:
+  - When the migrated converter runs, it returns a full standardized `ConversionResult` failure.
+  - When failure occurs *before* converter invocation inside `lazyload.module.js` (path validation, module load/interface issues, internal lazy-load exception), the returned object is legacy-shaped.
+
+- **Success/failure handling is asymmetric above the converter**:
+  - `lazyload.module.js` preserves full `ConversionResult` objects from migrated modules, but still uses legacy reconstruction for other cases.
+  - `secure-converter.js` converts a `success:false` module result into a thrown `ConversionError(...)`, switching from result-return to exception flow.
+
+- **HTTP boundaries still expose legacy response shapes**:
+  - `POST /api/to-markdown` returns legacy `{ detail: ... }` errors rather than exposing the full standardized `ConversionResult`, even when available.
+  - `POST /api/convert` wraps the conversion output in `{ success: true, result: ..., format }` rather than using `ConversionResult` as the primary response contract.
+  - Request validation failures (`validate.middleware.js`) return a distinct non-ConversionResult 400 shape, creating multiple client-visible error envelopes.
+
+- **Result-shaping responsibility is still split across multiple coordination layers**:
+  - The converter is now clean and contract-compliant.
+  - The dispatcher (`lazyload.module.js`), secure service (`secure-converter.js`), and routes still each apply their own wrapping/translation rules.
+
+#### What is already aligned and safe
+
+- The migrated converter (`adoc-to-md.converter.js`) constructs contract-compliant success and failure results via centralized helpers.
+- `lazyload.module.js` preserves and returns full `ConversionResult` objects when modules already provide them.
+
+#### What still needs Step 2 behavior alignment
+
+- Normalize the dispatcher boundary so that *all* failure modes (including pre-module failures) can be expressed without falling back to legacy shapes.
+- Reduce or standardize route/service-level wrapping and throw-based propagation so the standardized result model is not bypassed or stripped.
+
+#### Prioritization note (most important to address first)
+
+- The highest-leverage inconsistency is **legacy-shaped failures inside `lazyload.module.js` before module invocation**, because it is the confirmed Step 2 alignment target and the narrowest shared boundary that can prevent contract stripping across multiple callers.
+
+Target behavior definition begins in sub-step 2.3.1.
+
+### Step 2.3.1 — Target success-path behavior at the Step 2 alignment target
+
+Sub-step 2.3.1 defines the **target success-path behavior** for Step 2 alignment at the confirmed backend/orchestrator coordination boundary, for the already migrated AsciiDoc -> Markdown flow.
+
+- **Migrated path**: AsciiDoc -> Markdown via `downdoc` (`api/backend/services/modules/adoc-to-md.converter.js`)
+- **Confirmed Step 2 alignment target**: `api/backend/services/modules/lazyload.module.js`
+
+#### Target success-path expectations (when the migrated converter succeeds)
+
+When the migrated converter returns a standardized **success** `ConversionResult`, the Step 2 alignment target is expected to:
+
+- **Accept** the standardized success `ConversionResult` object as the primary return shape from the module invocation.
+- **Preserve the root-level contract structure** without dropping or renaming fields:
+  - `success`, `conversionId`, `converter`, `pipeline`, `inputFormat`, `outputFormat`,
+    `inputFile`, `outputFile`, `durationMs`, `startedAt`, `finishedAt`, `warnings`,
+    `logs`, `error`, `meta`
+- **Preserve success semantics**:
+  - `success: true`
+  - `error: null`
+  - `outputFile` present and complete (as defined by the contract)
+- **Avoid legacy reconstruction**:
+  - do not rebuild or replace the standardized success result with a legacy `{ success, logs, error, duration }` object when a full `ConversionResult` is already available.
+- **Keep propagation predictable**:
+  - return the preserved standardized success result to callers consistently, regardless of which backend entry point invoked the lazy loader (routes or services).
+
+#### Acceptable minimal enrichment (must remain contract-compliant)
+
+Minimal enrichment is acceptable only if it does not change the contract shape or semantics, for example:
+
+- **Logs**: merge/append dispatcher-level logs to `logs` (preserving `logs` as an array).
+- **Metadata**: merge non-conflicting dispatcher-level metadata into `meta` (preserving `meta` as an object).
+- **Pipeline context**: append pipeline context only if it remains an array of strings and does not contradict the converter’s reported pipeline.
+- **Legacy compatibility fields**: add a legacy `duration` (seconds) field only if required by existing callers, without modifying `durationMs`.
+
+#### Unacceptable success-path behaviors at this layer
+
+- **Stripping fields** from the standardized success result (e.g., dropping `inputFile`, `outputFile`, timestamps, `meta`, or `pipeline`).
+- **Renaming or reshaping** the standardized success result into another envelope (e.g., `{ success: true, result: ... }` or legacy module result formats).
+- **Mutating success semantics**, such as setting `error` to a non-null value on success, or making `warnings/logs/meta/pipeline` optional/omitted.
+- **Inventing business data** that should come from the converter or caller (e.g., fabricating `conversionId`, `inputFile`, or `outputFile` values).
+
+Failure-path target behavior will be defined in sub-step 2.3.2.
+
+### Step 2.3.2 — Target failure-path behavior at the Step 2 alignment target
+
+Sub-step 2.3.2 defines the **target failure-path behavior** for Step 2 alignment at the confirmed backend/orchestrator coordination boundary, for the already migrated AsciiDoc -> Markdown flow.
+
+- **Migrated path**: AsciiDoc -> Markdown via `downdoc` (`api/backend/services/modules/adoc-to-md.converter.js`)
+- **Confirmed Step 2 alignment target**: `api/backend/services/modules/lazyload.module.js`
+
+#### Target failure-path expectations (when the migrated converter fails)
+
+When the migrated converter returns a standardized **failure** `ConversionResult`, the Step 2 alignment target is expected to:
+
+- **Accept** the standardized failure `ConversionResult` object as the primary failure return shape from module invocation.
+- **Preserve the root-level contract structure** without dropping or renaming fields:
+  - `success`, `conversionId`, `converter`, `pipeline`, `inputFormat`, `outputFormat`,
+    `inputFile`, `outputFile`, `durationMs`, `startedAt`, `finishedAt`, `warnings`,
+    `logs`, `error`, `meta`
+- **Preserve failure semantics**:
+  - `success: false`
+  - `error` non-null and structured
+  - `outputFile` consistent with contract semantics (nullable on failure, populated only when grounded)
+- **Preserve structured error information**:
+  - keep `error.code`, `error.message`, `error.details`, and `error.recoverable` intact unless a justified, contract-safe normalization is required
+  - preserve documented `error.code` semantics (do not weaken specific codes into generic ones without grounded reason)
+- **Avoid legacy reconstruction**:
+  - do not rebuild or replace the standardized failure result with a legacy `{ success, logs, error, duration }` object when a full `ConversionResult` is already available.
+- **Avoid unnecessary generic replacement**:
+  - do not replace a meaningful converter-originated structured failure with `INTERNAL_ERROR` unless the original failure shape is unusable or genuinely unavailable.
+- **Keep failure propagation predictable**:
+  - return the preserved standardized failure result to callers consistently, regardless of which backend entry point invoked the lazy loader.
+
+#### Acceptable minimal enrichment (must remain contract-compliant)
+
+Minimal enrichment is acceptable only if it does not change contract shape, semantics, or primary failure classification, for example:
+
+- **Logs**: merge/append dispatcher-level logs into `logs` (preserving `logs` as an array).
+- **Metadata**: merge non-conflicting dispatcher-level metadata into `meta` (preserving `meta` as an object).
+- **Pipeline failure context**: append contextual failure-stage information only if it does not overwrite or dilute the primary `error.code` classification.
+- **Legacy compatibility fields**: add a legacy `duration` (seconds) field only if required by existing callers, without modifying `durationMs`.
+
+#### Unacceptable failure-path behaviors at this layer
+
+- **Wrapping** standardized failure results into incompatible envelopes that hide contract fields.
+- **Dropping or mutating** `error.code` in a way that breaks documented error-code semantics.
+- **Flattening structured errors** into generic strings that lose `error` object structure.
+- **Replacing grounded converter failures** with unjustified generic `INTERNAL_ERROR`.
+- **Stripping required failure fields** (`conversionId`, `pipeline`, `inputFile`, timestamps, `logs`, `meta`, or structured `error`).
+- **Throwing raw errors upward** when a structured standardized failure result already exists and can be propagated.
+
+Internal error behavior at the alignment target will be defined in sub-step 2.3.3.
+
+### Step 2.3.3 — Target internal-error behavior at the Step 2 alignment target
+
+Sub-step 2.3.3 defines the **target internal-error behavior** for Step 2 alignment when the coordination layer itself fails during the already migrated AsciiDoc -> Markdown flow.
+
+- **Migrated path**: AsciiDoc -> Markdown via `downdoc` (`api/backend/services/modules/adoc-to-md.converter.js`)
+- **Confirmed Step 2 alignment target**: `api/backend/services/modules/lazyload.module.js`
+
+#### Target internal-error expectations (coordination-layer failures)
+
+For internal coordination-layer failures (for example: module registry inconsistency, module resolution/load failure, lazy-load exception, dispatcher-level orchestration exception), the Step 2 alignment target is expected to:
+
+- **Avoid raw throw-based escapes** whenever a structured failure result can be returned in contract-compliant form.
+- **Convert internal coordination failures** into a standardized failure `ConversionResult` when no valid downstream standardized failure object is already available.
+- **Preserve downstream structured failures** when they already exist, rather than overwriting them with generic internal failures.
+- **Use `INTERNAL_ERROR` only when grounded**:
+  - apply `INTERNAL_ERROR` only for genuine internal coordination-layer failures
+  - do not use it when a more specific documented error code clearly applies
+- **Preserve structured error semantics**:
+  - keep `error` as an object (`code`, `message`, `details`, `recoverable`)
+  - keep primary error classification stable unless justified by the actual failure source
+- **Preserve contract completeness under internal failure**:
+  - keep required root fields present
+  - keep `warnings`, `logs`, `pipeline` as arrays and `meta` as an object
+- **Preserve useful debugging context safely**:
+  - include meaningful internal context in `error.details`, `logs`, and/or `meta`
+  - avoid opaque string-only failures that lose source-stage information
+- **Keep propagation predictable**:
+  - return a contract-compliant failure object consistently to upstream callers, regardless of entry path.
+
+#### Acceptable internal-error handling at this layer
+
+- Structured conversion of dispatcher/orchestration internal failures into failure `ConversionResult` objects.
+- Limited logs/metadata enrichment that preserves contract shape and primary failure semantics.
+- Preservation of a downstream standardized failure result when one already exists.
+
+#### Unacceptable internal-error behavior at this layer
+
+- Raw throw propagation that bypasses standardized result propagation without strong necessity.
+- Replacing a valid downstream structured failure with an unjustified generic internal failure.
+- Dropping or mutating `error.code` in a way that breaks documented semantics.
+- Flattening structured internal failures into string-only or opaque error outputs.
+- Returning partial objects that do not match the documented `ConversionResult` structure.
+
+Implementation/remediation work begins in sub-step 2.4.1.
+
+### Step 2.3.4 — Enrichment and normalization boundary at the Step 2 alignment target
+
+Sub-step 2.3.4 defines what the Step 2 alignment target may enrich, append, or normalize without breaking the standardized `ConversionResult` contract.
+
+- **Migrated path**: AsciiDoc -> Markdown via `downdoc` (`api/backend/services/modules/adoc-to-md.converter.js`)
+- **Confirmed Step 2 alignment target**: `api/backend/services/modules/lazyload.module.js`
+
+#### Acceptable enrichment categories (contract-safe)
+
+At this coordination layer, enrichment is acceptable only when it preserves the converter’s primary result meaning and full contract shape:
+
+- **Additional logs**:
+  - append coordination-layer logs to `logs`
+  - do not remove or rewrite existing converter logs
+- **Additional metadata**:
+  - append non-conflicting coordination metadata under `meta`
+  - preserve existing converter-provided metadata
+- **Contextual pipeline information**:
+  - append bounded pipeline context when it remains consistent with the converter-reported flow
+  - do not replace the converter’s pipeline identity with unrelated orchestration semantics
+- **Coordination context**:
+  - add traceable dispatch/lazy-load context only if it does not alter primary success/failure semantics
+
+#### Acceptable minimal normalization behaviors
+
+Minimal normalization is acceptable only to keep contract compliance stable:
+
+- Ensure collection fields remain arrays (`pipeline`, `warnings`, `logs`).
+- Ensure `meta` remains an object; append keys instead of replacing the whole object.
+- Append logs without destroying existing log history order.
+- Preserve structured failure identity (`error.code`, `error.message`, `error.details`, `error.recoverable`) while adding coordination context.
+- Keep `success/error` semantic coherence intact (`success:true -> error:null`, `success:false -> error` present).
+
+#### Unacceptable reshaping or override behaviors
+
+The alignment target must not:
+
+- Replace the primary `error.code` classification with a different code without grounded reason.
+- Flatten or replace the structured `error` object with a generic string-only error.
+- Rebuild a standardized result into a legacy ad hoc shape.
+- Remove required root-level contract fields.
+- Replace converter result identity with unrelated wrapper/orchestration semantics.
+- Turn enrichment into ownership of full result construction when a standardized result already exists.
+- Overwrite converter-originated success/failure meaning with generic dispatcher semantics.
+
+Runtime implementation/remediation begins in sub-step 2.4.1.
