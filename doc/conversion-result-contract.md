@@ -1748,3 +1748,93 @@ The alignment target must not:
 - Overwrite converter-originated success/failure meaning with generic dispatcher semantics.
 
 Runtime implementation/remediation begins in sub-step 2.4.1.
+
+### Step 2.5.4 — Backend HTTP output boundary (`POST /api/to-markdown`)
+
+For the migrated AsciiDoc → Markdown path (`downdoc`), the effective backend output boundary for JSON consumers is **`POST /api/to-markdown`** in `api/backend/routes/conversion.routes.js`.
+
+- **Success (HTTP 200)**: the response body includes `markdown` (primary payload for existing clients) and **`conversionResult`**, the full standardized `ConversionResult` returned by `runConverter` for that request.
+- **Failure (HTTP 500)**: the response body is the standardized failure `ConversionResult` with structured `error` (including `error.code`), plus a legacy-compatible **`detail`** string aligned with `error.message` for clients that still read `detail`.
+
+Verification: `api/backend/scripts/verify-e2e-to-markdown-output-boundary.js` (and the existing failure-contract script) exercise this HTTP boundary in-process.
+
+### Step 2.6.1 — Step 2 Alignment Summary (Migrated AsciiDoc → Markdown)
+
+This sub-step summarizes the concrete backend/orchestrator alignment outcomes completed in Step 2 for the already migrated AsciiDoc → Markdown path (`downdoc`).
+
+Aligned in Step 2 (backend/orchestrator technical outcomes):
+- Confirmed `api/backend/services/modules/lazyload.module.js` as the Step 2 coordination target for standardized `ConversionResult` propagation in the migrated path.
+- Preserved standardized `ConversionResult` success results at the coordination layer (no field stripping or success/error envelope reshaping when a standardized result already exists).
+- Preserved standardized `ConversionResult` failure results at the coordination layer (including structured `error.code` and required root-level fields).
+- Aligned internal coordination failures (coordination-layer issues around lazy-load / dispatch) to avoid bypassing standardized failure propagation and to keep a contract-compliant failure shape.
+- Reduced/removed legacy ad hoc reshaping on the migrated AsciiDoc → Markdown path when a standardized result is available.
+- Verified that the standardized contract survives through the real migrated backend flow by backend verification scripts.
+- Verified preservation to the effective HTTP output boundary (`POST /api/to-markdown`) for both success and failure payloads.
+- Covered representative end-to-end scenarios for the migrated path (nominal success and multiple representative failure modes).
+
+Backend/orchestrator alignment vs. remaining out of scope:
+- Aligned: coordination-layer propagation and final HTTP boundary behavior for the migrated `downdoc` path.
+- Not in scope (for this sub-step): global harmonization across unrelated endpoints (e.g. different wrappers or request-validation 400 shapes), and any migration/alignment work for other converters/pipelines.
+
+Next: sub-step 2.6.2 will document the reusable alignment pattern derived from these confirmed outcomes for future backend flows.
+
+### Step 2.6.2 — Reusable Backend/Orchestrator Alignment Pattern (Migrated AsciiDoc → Markdown)
+
+This sub-step documents the reusable Step 2 alignment pattern validated on the already migrated AsciiDoc → Markdown path (`downdoc`).
+
+Reusable sequence (practical pattern):
+- Identify the real backend/orchestrator coordination target for the migrated path (the narrow layer where standardized results can be preserved or reshaped).
+- Map the nominal success flow and all failure-oriented flows that can bypass/alter the contract (including failure stages before module invocation).
+- Identify contract-risk points in each layer (dispatcher, service wrappers, routes, and any throw-based propagation).
+- Define target behaviors for success, failure, internal errors, and enrichment/normalization rules that are explicitly contract-safe.
+- Remediate success-path preservation so standardized success results are propagated without rebuilding legacy envelopes.
+- Remediate failure-path preservation so standardized failure results (including structured `error.code`) keep their required root fields and error structure.
+- Remediate internal coordination-layer error handling so internal faults do not bypass standardized result propagation.
+- Verify at the alignment target (local layer verification).
+- Verify end-to-end success and failure behavior for the migrated path.
+- Broaden representative end-to-end scenario coverage to reduce “green on one case” risk.
+- Verify preservation of the standardized contract at the effective backend output boundary (actual HTTP response/return edge for JSON consumers).
+
+Why this pattern matters:
+- It keeps Step 2 localized and testable by focusing alignment on a confirmed coordination target instead of broad refactors.
+- It preserves the standardized contract through surrounding layers (coordination and transport), not only inside converters.
+- It reduces the risk of legacy ad hoc reshaping hiding behind partial success/failure coverage.
+
+How future flows should use this pattern:
+- Align one path at a time to keep contract scope clear and verification focused.
+- Document alignment decisions before broader implementation to prevent drift.
+- Preserve standardized downstream results rather than rebuilding them in wrapper layers.
+- Verify both local (alignment target) and end-to-end (effective output boundary) behavior before expanding scope.
+
+Next: sub-step 2.6.3 will formalize the Definition of Done for Step 2, based on these confirmed outcomes.
+
+### Step 2.6.4 — Step 2 Completion Summary
+
+Step 2 closure note (release `0.0.1.4.6`): Step 2 successfully established contract-aligned backend/orchestrator behavior for the already migrated AsciiDoc -> Markdown runtime path (`downdoc`).
+
+#### A. What Step 2 achieved
+- Preserved standardized `ConversionResult` success/failure outputs through the backend/orchestrator coordination layer for the migrated runtime path.
+- Reduced/removed legacy ad hoc result reshaping on the migrated AsciiDoc -> Markdown path when a standardized result is available.
+- Aligned success-path, failure-path, and internal-target error behavior at the confirmed backend coordination target.
+- Performed end-to-end validation that the standardized contract survives through the real backend flow.
+
+#### B. What concrete runtime adoption was achieved
+- The AsciiDoc -> Markdown conversion path is preserved end-to-end not only inside the converter, but also through the surrounding backend coordination layer.
+- Success and failure remain standardized through the real backend flow for this migrated path.
+- The effective backend output boundary for JSON consumers now preserves the standardized contract for the migrated path.
+- Representative end-to-end verification was completed for both success and failure.
+
+#### C. What Step 2 now provides to the project
+- A validated backend-layer preservation baseline for standardized `ConversionResult` objects on the first migrated runtime path.
+- A reusable backend/orchestrator alignment pattern (documented in Step 2.6.2) for future conversion flows.
+- A stronger reference path for subsequent converter/backend standardization work.
+- A cleaner foundation that prevents reopening already validated contract-alignment questions for the migrated AsciiDoc -> Markdown path.
+
+#### D. What remains outside Step 2
+- Step 2 completion does not imply that all backend flows are aligned.
+- Step 2 completion does not imply that all converters are migrated.
+- Step 2 completion does not imply that frontend UX work is completed.
+- Step 2 completion does not imply broader pipeline redesign or architecture-wide orchestrator refactoring is complete.
+
+#### E. Transition note
+- Future work should build on the Step 1 + Step 2 baseline and use the documented pattern as the starting point, avoiding re-litigation of the same contract-alignment and first-path coordination questions for the already migrated AsciiDoc -> Markdown path.

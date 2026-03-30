@@ -63,6 +63,8 @@ async function main() {
     assert.strictEqual(response.status, 500)
     const body = await response.json()
     assertFailureConversionResult(body)
+    assert.strictEqual(typeof body.detail, 'string')
+    assert.strictEqual(body.detail, body.error.message)
 
     console.log('[OK] e2e /api/to-markdown failure returns standardized ConversionResult with structured error.code')
   } finally {
@@ -70,9 +72,13 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('[FAIL] e2e failure-flow contract verification failed')
-  console.error(err && err.stack ? err.stack : String(err))
-  process.exitCode = 1
-})
+main()
+  .then(() => {
+    setTimeout(() => process.exit(0), 50)
+  })
+  .catch((err) => {
+    console.error('[FAIL] e2e failure-flow contract verification failed')
+    console.error(err && err.stack ? err.stack : String(err))
+    setTimeout(() => process.exit(1), 50)
+  })
 
