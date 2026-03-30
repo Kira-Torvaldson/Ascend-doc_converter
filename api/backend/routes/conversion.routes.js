@@ -16,6 +16,11 @@ const { runConverter } = require('../services/modules/lazyload.module.js')
 const { convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown, removeExperimentalTag, normalizeAsciiDocInput } = require('../services/conversion/convert.js')
 const { z } = require('zod')
 const { validate } = require('../middleware/security/validate.middleware.js')
+const { createFailureResult } = require('../src/utils/conversion-result.js')
+
+function routeFailureError(code, message) {
+  return { code, message, details: null, recoverable: false }
+}
 
 // Endpoint: AsciiDoc → Markdown (utilise lazy loader avec downdoc)
 router.post(
@@ -31,6 +36,7 @@ router.post(
   const tempDir = path.join(tmpdir(), `ascend-temp-${conversionId}`)
   let inputFile = null
   let outputFile = null
+  let result = null
 
   try {
     const { text, options } = req.body
@@ -63,7 +69,7 @@ router.post(
     console.log(`[INFO] Written normalized content to temp file (${processedText.length} chars)`)
 
     // Utiliser le lazy loader pour exécuter la conversion (downdoc with Pandoc fallback)
-    const result = await runConverter('downdoc', inputFile, outputFile, {
+    result = await runConverter('downdoc', inputFile, outputFile, {
       conversionId: conversionId,
       mode: mode
     })
@@ -74,7 +80,10 @@ router.post(
           ? result.error.message
           : String(result && result.error ? result.error : 'unknown conversion failure')
       console.error(`[ERROR] Conversion failed: ${errorMessage}`)
-      return res.status(500).json(result)
+      return res.status(500).json({
+        ...result,
+        detail: errorMessage,
+      })
     }
 
     // Lire le résultat
@@ -86,9 +95,25 @@ router.post(
       console.error(`[ERROR] Processed input length: ${processedText.length}, Output length: ${markdown.length}`)
       console.error(`[ERROR] First 100 chars of processed input: ${processedText.substring(0, 100)}`)
       console.error(`[ERROR] First 100 chars of output: ${markdown.substring(0, 100)}`)
-      return res.status(500).json({
-        detail: 'Conversion error: output is identical to processed input. The conversion did not occur.'
+      const msg =
+        'Conversion error: output is identical to processed input. The conversion did not occur.'
+      const failure = createFailureResult({
+        conversionId: result.conversionId,
+        converter: result.converter,
+        pipeline: result.pipeline,
+        inputFormat: result.inputFormat,
+        outputFormat: result.outputFormat,
+        inputFile: result.inputFile,
+        outputFile: result.outputFile,
+        durationMs: result.durationMs,
+        startedAt: result.startedAt,
+        finishedAt: new Date().toISOString(),
+        warnings: result.warnings,
+        logs: result.logs,
+        error: routeFailureError('CONVERSION_FAILED', msg),
+        meta: result.meta,
       })
+      return res.status(500).json({ ...failure, detail: msg })
     }
 
     // Vérifier que le résultat contient du Markdown et non de l'AsciiDoc
@@ -102,20 +127,80 @@ router.post(
       console.error(`[ERROR] Output appears to be AsciiDoc instead of Markdown!`)
       console.error(`[ERROR] First 200 chars: ${markdown.substring(0, 200)}`)
       console.error(`[ERROR] Has AsciiDoc attributes: ${hasAsciiDocAttributes}, Has AsciiDoc title: ${hasAsciiDocTitle}, Has Markdown title: ${hasMarkdownTitle}`)
-      return res.status(500).json({
-        detail: 'Conversion error: output appears to be AsciiDoc instead of Markdown. The conversion did not occur.'
+      const msg =
+        'Conversion error: output appears to be AsciiDoc instead of Markdown. The conversion did not occur.'
+      const failure = createFailureResult({
+        conversionId: result.conversionId,
+        converter: result.converter,
+        pipeline: result.pipeline,
+        inputFormat: result.inputFormat,
+        outputFormat: result.outputFormat,
+        inputFile: result.inputFile,
+        outputFile: result.outputFile,
+        durationMs: result.durationMs,
+        startedAt: result.startedAt,
+        finishedAt: new Date().toISOString(),
+        warnings: result.warnings,
+        logs: result.logs,
+        error: routeFailureError('CONVERSION_FAILED', msg),
+        meta: result.meta,
       })
+      return res.status(500).json({ ...failure, detail: msg })
     }
 
     console.log(`[INFO] Conversion successful: ${markdown.length} Markdown characters generated`)
     console.log(`[INFO] First 100 chars of output: ${markdown.substring(0, 100)}`)
 
-    return res.json({ markdown })
+    return res.json({ markdown, conversionResult: result })
   } catch (error) {
     console.error('[ERROR] Error during AsciiDoc → Markdown conversion:', error)
-    return res.status(500).json({
-      detail: `Conversion error: ${error.message || String(error)}`
+    const errMsg = error.message || String(error)
+    if (result && result.success && typeof result.conversionId === 'string') {
+      const failure = createFailureResult({
+        conversionId: result.conversionId,
+        converter: result.converter,
+        pipeline: result.pipeline,
+        inputFormat: result.inputFormat,
+        outputFormat: result.outputFormat,
+        inputFile: result.inputFile,
+        outputFile: result.outputFile,
+        durationMs: result.durationMs,
+        startedAt: result.startedAt,
+        finishedAt: new Date().toISOString(),
+        warnings: result.warnings,
+        logs: result.logs,
+        error: routeFailureError('INTERNAL_ERROR', `Conversion error: ${errMsg}`),
+        meta: result.meta,
+      })
+      return res.status(500).json({ ...failure, detail: failure.error.message })
+    }
+    const end = new Date().toISOString()
+    const failure = createFailureResult({
+      conversionId,
+      converter: 'downdoc',
+      pipeline: ['asciidoc->markdown'],
+      inputFormat: 'asciidoc',
+      outputFormat: 'markdown',
+      inputFile: inputFile
+        ? {
+            originalName: path.basename(inputFile),
+            storedPath: inputFile,
+            size: 0,
+            mimeType: 'text/x-asciidoc',
+          }
+        : { originalName: '', storedPath: '', size: 0, mimeType: '' },
+      outputFile: outputFile
+        ? { path: outputFile, size: 0, mimeType: 'text/markdown' }
+        : null,
+      durationMs: 0,
+      startedAt: end,
+      finishedAt: end,
+      warnings: [],
+      logs: [],
+      error: routeFailureError('INTERNAL_ERROR', `Conversion error: ${errMsg}`),
+      meta: {},
     })
+    return res.status(500).json({ ...failure, detail: failure.error.message })
   } finally {
     // Nettoyer les fichiers temporaires
     try {
