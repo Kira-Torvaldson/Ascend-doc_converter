@@ -219,6 +219,15 @@ function App() {
   /** Indicates if a conversion is in progress (disables buttons) */
   const [loading, setLoading] = useState<boolean>(false);
   
+  /** Normalized conversion UI state for current attempt lifecycle. */
+  const [conversionUiState, setConversionUiState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+
+  /**
+   * Last standardized backend ConversionResult received (when provided by backend).
+   * Used as the Step 3 success-path source of truth for the migrated path.
+   */
+  const [lastBackendConversionResult, setLastBackendConversionResult] = useState<any | null>(null);
+
   /** Flag to prevent certain actions immediately after conversion */
   const [justConverted, setJustConverted] = useState<boolean>(false);
 
@@ -1850,7 +1859,9 @@ function App() {
       opts,
       confirmationToken,
       setShowConversionErrorModal,
-      setConversionErrorMessage
+      setConversionErrorMessage,
+      setLastBackendConversionResult,
+      setConversionUiState
     );
     setTimeout(() => {
       setJustConverted(false);
@@ -2115,7 +2126,8 @@ function App() {
     // Only allow AsciiDoc ↔ Markdown conversions
     const isAllowedConversion = 
       (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
-      (sourceFormat === 'markdown' && targetFormat === 'asciidoc');
+      (sourceFormat === 'markdown' && targetFormat === 'asciidoc') ||
+      (sourceFormat === 'txt' && targetFormat === 'markdown');
 
     if (!isAllowedConversion) {
       setStatus("Seules les conversions AsciiDoc ↔ Markdown sont disponibles pour le moment");
@@ -2131,7 +2143,8 @@ function App() {
     // Simple conversions don't need one
     const needsToken = !(
       (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
-      (sourceFormat === 'markdown' && targetFormat === 'asciidoc')
+      (sourceFormat === 'markdown' && targetFormat === 'asciidoc') ||
+      (sourceFormat === 'txt' && targetFormat === 'markdown')
     );
 
     if (needsToken) {
@@ -2211,7 +2224,9 @@ function App() {
         opts,
         null,
         setShowConversionErrorModal,
-        setConversionErrorMessage
+        setConversionErrorMessage,
+        setLastBackendConversionResult,
+        setConversionUiState
       );
     }
   }, [requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, setNotification, isEditingResult]);

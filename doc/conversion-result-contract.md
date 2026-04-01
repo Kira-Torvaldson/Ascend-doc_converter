@@ -1838,3 +1838,2778 @@ Step 2 closure note (release `0.0.1.4.6`): Step 2 successfully established contr
 
 #### E. Transition note
 - Future work should build on the Step 1 + Step 2 baseline and use the documented pattern as the starting point, avoiding re-litigation of the same contract-alignment and first-path coordination questions for the already migrated AsciiDoc -> Markdown path.
+
+### Step 3.1.1 — Frontend Entry Points (Migrated AsciiDoc -> Markdown)
+
+Step 3 begins by identifying the concrete frontend/UI layers that consume or react to the backend conversion result for the already migrated AsciiDoc -> Markdown flow (`POST /api/to-markdown`).
+
+Plausible frontend entry points/components involved in consuming the conversion result (grounded):
+
+| Component / module | Role in the AsciiDoc -> Markdown flow |
+|---|---|
+| `api/frontend/src/App.tsx` | Primary UI container and orchestration layer: triggers conversion, owns `status`/`loading`/notifications state, and writes the conversion output into the destination panel state. |
+| `api/frontend/src/converters/generic-converter.ts` (`convertText`) | API-call layer used by `App.tsx` for AsciiDoc -> Markdown: calls `POST /api/to-markdown`, parses JSON, extracts `data.markdown`, and routes errors into either notification or the conversion-error modal pathway. |
+| `api/frontend/src/converters/asciidoc-to-markdown.ts` (`convertAsciiDocToMarkdown`) | Dedicated AsciiDoc -> Markdown API-call helper (also calls `POST /api/to-markdown` and consumes `data.markdown`). Present as a plausible entry point, even if the current `App.tsx` path primarily uses `convertText`. |
+| `api/frontend/src/converters/api.ts` (`API_BASE`) | Backend base URL resolution used by the converter call sites. |
+| `api/frontend/src/components/Panel.tsx` | Source/destination text panel component: displays user input and shows the converted Markdown output (read-only/edit gating is controlled by `App.tsx` state). |
+| `api/frontend/src/components/FormatSelector.tsx` | Format selection component that drives the AsciiDoc -> Markdown path selection in `App.tsx`. |
+| `api/frontend/src/App.tsx` (notification toast) | Success/error notification rendering driven by conversion outcomes (`setNotification`). |
+| `api/frontend/src/App.tsx` (conversion error modal) | Error display surface for specific conversion failures (triggered via `setShowConversionErrorModal` / `setConversionErrorMessage`). |
+
+Note: the exact primary frontend alignment target (the narrowest layer where `ConversionResult`-aware handling should be introduced) will be selected in sub-step 3.1.2.
+
+### Step 3.1.2 — Primary Frontend Entry Point (Migrated AsciiDoc -> Markdown)
+
+This sub-step identifies the primary frontend/UI entry point for Step 3 work: the single place in the current frontend flow where the AsciiDoc -> Markdown conversion result is most meaningfully coordinated above the raw API response.
+
+Primary entry point (selected):
+- `api/frontend/src/App.tsx` (specifically the conversion orchestration in `handleConvert`)
+
+Why this is the primary entry point (grounded):
+- It is where conversion success/failure is coordinated into UI state (`loading`, `status`, notifications, and the conversion error modal).
+- It decides where the conversion output is written (e.g. `setMdOutput(...)` for Markdown destination), which directly controls what the user sees in the result panel.
+- It is the narrowest “above the API” coordination layer where standardized backend result fields could be preserved, ignored, or mishandled in future Step 3 alignment (without refactoring the API call implementation yet).
+
+Secondary (involved but not primary):
+- `api/frontend/src/converters/generic-converter.ts` (`convertText`): first consumer of the HTTP JSON payload (parses the response and extracts `data.markdown`), but does not own the main UI coordination decisions.
+- `api/frontend/src/converters/asciidoc-to-markdown.ts` (`convertAsciiDocToMarkdown`): plausible helper, but the current `App.tsx` AsciiDoc -> Markdown path primarily flows through `convertText`.
+- UI presentation components: `api/frontend/src/components/Panel.tsx`, `api/frontend/src/components/FormatSelector.tsx`, plus the notification toast and conversion-error modal rendering inside `App.tsx`.
+
+Note: the official Step 3 alignment target will be confirmed in sub-step 3.1.3.
+
+### Step 3.1.3 — Confirmed Step 3 Frontend/UI Alignment Target (Migrated AsciiDoc -> Markdown)
+
+This sub-step formally confirms the official Step 3 frontend/UI alignment target for the already migrated AsciiDoc -> Markdown conversion-result flow.
+
+Confirmed Step 3 alignment target:
+- `api/frontend/src/App.tsx` (conversion orchestration in `handleConvert`)
+
+Why this is the correct Step 3 focus:
+- It is the primary “above the API” coordination point where conversion outcomes are translated into user-visible UI state and result display behavior.
+- It is where standardized backend success/failure information can be preserved and normalized into UI state without prematurely refactoring lower-level fetch code or UI components.
+
+What Step 3 will seek to align at this level:
+- Standardized success result consumption (including preserving meaningful metadata when available, without breaking the current `markdown` payload flow).
+- Standardized failure result consumption (prefer structured failure context over ad hoc message heuristics where feasible).
+- Clean UI state transitions for the conversion lifecycle (loading/status/notification/modal behavior derived from standardized outcomes).
+- Avoidance of legacy/ad hoc frontend result/error interpretation paths that obscure structured backend semantics.
+
+Next: detailed UI-flow mapping begins in sub-step 3.2.1.
+
+### Step 3.2.1 — Nominal Frontend/UI Flow Mapping (AsciiDoc -> Markdown)
+
+This sub-step maps the nominal (success-oriented) frontend/UI flow for the already migrated AsciiDoc -> Markdown conversion-result path.
+
+- Migrated path: **AsciiDoc -> Markdown** (`POST /api/to-markdown`, `downdoc`)
+- Confirmed Step 3 alignment target: `api/frontend/src/App.tsx` (`handleConvert`)
+
+Nominal success flow (grounded, step-by-step):
+1. The user triggers conversion from the UI (Convert action handled by `handleConvert` in `api/frontend/src/App.tsx`).
+2. `App.tsx` determines the source text for the current source format and performs basic preflight checks (non-empty, size limit, source/target compatibility).
+3. `App.tsx` derives the destination write-path (`setOutput` callback) so that Markdown results are written into `mdOutput` (via `setMdOutput`).
+4. `App.tsx` calls `convertText(...)` from `api/frontend/src/converters/generic-converter.ts` with:
+   - the source text,
+   - `sourceFormat='asciidoc'`, `targetFormat='markdown'`,
+   - UI state setters (`setStatus`, `setLoading`, `setNotification`),
+   - and the output setter (which ultimately updates `mdOutput` for Markdown results).
+5. `convertText` sets `status` to “conversion in progress” and sets `loading=true`, then issues `fetch` to `POST /api/to-markdown`.
+6. On HTTP 200, `convertText` parses the response JSON and extracts the primary payload (`data.markdown`), then calls `setOutput(result)`.
+7. The `setOutput` callback in `App.tsx` updates state (`setMdOutput(result)` for Markdown destination).
+8. The UI renders the updated destination panel with the new Markdown content (via state-driven rendering; the panel is displayed through `App.tsx` and the `Panel` component).
+9. `convertText` updates visible “success” UI feedback (`status` and notification) and finally sets `loading=false`.
+
+Where the standardized backend `ConversionResult` is first consumed in the frontend:
+- The first frontend consumption point is `api/frontend/src/converters/generic-converter.ts` (`convertText`) at **HTTP JSON parsing** (`const data = await res.json()`).
+- In the current nominal flow, the frontend consumes only `data.markdown` for success; any additional standardized result fields returned alongside it are not yet used in Step 3.2.1.
+
+How the nominal result propagates through frontend state/display layers:
+- `convertText` -> `setOutput(result)` -> `App.tsx` state (`mdOutput`) -> destination panel render (`Panel`), plus `status/loading/notification` state updates for user feedback.
+
+Note: the failure-oriented UI flow will be mapped in sub-step 3.2.2.
+
+### Step 3.2.2 — Failure-Oriented Frontend/UI Flow Mapping (AsciiDoc -> Markdown)
+
+This sub-step maps the failure-oriented frontend/UI flow for the already migrated AsciiDoc -> Markdown conversion-result path.
+
+- Migrated path: **AsciiDoc -> Markdown** (`POST /api/to-markdown`, `downdoc`)
+- Confirmed Step 3 alignment target: `api/frontend/src/App.tsx` (`handleConvert`)
+
+Failure-oriented flow (grounded, step-by-step):
+1. The user triggers conversion from the UI (Convert action handled by `handleConvert` in `api/frontend/src/App.tsx`).
+2. `App.tsx` calls `convertText(...)` from `api/frontend/src/converters/generic-converter.ts` with UI state setters and the output setter for the destination format.
+3. `convertText` sets `status` to “conversion in progress” and sets `loading=true`, then issues `fetch` to `POST /api/to-markdown`.
+4. The backend responds with a non-2xx status (e.g. HTTP 500 for conversion failure). `convertText` enters the `!res.ok` branch.
+5. `convertText` attempts to parse the failure body as JSON (`await res.json()`) and extracts only the legacy-compatible `detail` string when present (`errorJson.detail`), otherwise it falls back to response text.
+6. `convertText` classifies certain conversion failures using string heuristics on `detail`/text (e.g. “output appears to be AsciiDoc”, “output is identical…”). For those cases it:
+   - opens the conversion error modal (`setShowErrorModal(true)`),
+   - sets an error message (`setErrorMessage(...)`),
+   - sets a failure status and error notification,
+   - and returns early (no exception thrown).
+7. For other HTTP failures, `convertText` throws an `Error(...)` with a composed message (HTTP status + `detail`/text). The `catch` branch then converts that into a generic notification/status update.
+8. Result panel behavior on failure: because `setOutput(...)` is not called on failure, the destination panel content remains unchanged (it continues to display the previous successful result, if any, or stays empty).
+9. `convertText` finally sets `loading=false` (in `finally`), restoring the UI from the “in progress” state.
+
+Where the standardized backend failure `ConversionResult` is first consumed in the frontend:
+- The first consumption point is `api/frontend/src/converters/generic-converter.ts` (`convertText`) during failure-body parsing (`await res.json()`).
+- However, the current frontend logic consumes only `detail` (string) and does not read structured failure fields such as `error.code` (even when present in the backend response).
+
+How the structured failure currently propagates through frontend state/display layers:
+- Structured backend failure -> (flattened to `detail` string) -> `App.tsx` UI state via `setStatus` / `setNotification`, and for specific conversion-failure messages, `showConversionErrorModal` + `conversionErrorMessage`.
+
+Grounded observation (where failure semantics can be flattened/ignored/mishandled later):
+- Failure classification is currently based on message substring heuristics from `detail`, not on standardized `error.code`. This is a primary point where structured failure semantics can be lost even if the backend returns a full standardized failure `ConversionResult`.
+
+Note: sub-step 3.2.3 will identify the exact frontend points where contract-aware handling can be altered or broken.
+
+### Step 3.2.3 — Frontend/UI Contract-Risk Points (AsciiDoc -> Markdown)
+
+This sub-step identifies the exact frontend/UI points in the already mapped flow where standardized backend `ConversionResult` handling can still be altered, flattened, ignored, partially rebuilt, or mishandled.
+
+- Migrated path: **AsciiDoc -> Markdown** (`POST /api/to-markdown`, `downdoc`)
+- Confirmed Step 3 alignment target: `api/frontend/src/App.tsx` (`handleConvert`)
+
+#### Exact contract-risk points (grounded)
+
+| Layer / component | Why it is a contract-risk point | Risk type(s) present in current flow |
+|---|---|---|
+| `api/frontend/src/converters/generic-converter.ts` (`convertText`) — success body consumption | On HTTP 200, it parses JSON and extracts only a single primary string payload (`data.markdown || data.asciidoc || data.result || ""`). Any standardized result object returned alongside the payload is not consumed. | Ignoring structured fields; reducing success semantics to a single output string; potential loss of metadata (`conversionId`, `warnings`, `logs`, etc.). |
+| `api/frontend/src/converters/generic-converter.ts` (`convertText`) — failure body consumption | On `!res.ok`, it parses JSON but only reads `errorJson.detail` (string) when present, otherwise falls back to text. The structured failure `ConversionResult` fields (e.g. `error.code`) are not read. | Flattening structured failure into `detail` string; ignoring `error.code`; loss of structured failure context. |
+| `api/frontend/src/converters/generic-converter.ts` (`convertText`) — conversion failure classification | Certain failures are detected via substring heuristics on `detail`/text (e.g. “output appears to be AsciiDoc”, “output is identical…”), and routed into a dedicated modal path. | Ad hoc shaping / interpretation by message text; brittle classification; asymmetric handling between failure types. |
+| `api/frontend/src/converters/generic-converter.ts` (`convertText`) — generic error replacement | For non-heuristic HTTP failures it throws `new Error(...)` and the `catch` branch converts the error into generic notification/status strings. | Generic error replacement; loss of backend-structured semantics; inconsistent failure surfaces (modal vs toast). |
+| `api/frontend/src/App.tsx` (`handleConvert`) — result write-path selection | `App.tsx` defines `setOutput` to decide where results are written (`setMdOutput` when target is Markdown). Because only a string result is passed upward, any structured contract data cannot propagate into state without changes. | Ignoring structured fields at the primary UI coordination layer; reduction to string-only result state. |
+| `api/frontend/src/App.tsx` — result panel behavior on failure | On failures, `setOutput` is not invoked, so the destination panel content remains unchanged (previous success output persists, or stays empty). | Potential UI-state ambiguity about “current result vs last known good”; failure outcome not represented as a structured state. |
+
+#### Already safe vs. still needs Step 3 alignment
+
+- Already safe (contract-neutral display / wiring):
+  - `api/frontend/src/components/Panel.tsx`: renders state-driven text content; does not reshape backend results.
+  - `api/frontend/src/components/FormatSelector.tsx`: drives format selection; does not interpret backend results.
+
+- Still needs Step 3 alignment (contract-consumption / coordination):
+  - `api/frontend/src/converters/generic-converter.ts` (`convertText`): primary point where backend results are parsed and currently flattened/filtered.
+  - `api/frontend/src/App.tsx` (`handleConvert` + UI state coordination): primary point where outcomes are translated into UI-visible state, currently without structured result propagation.
+
+Note: current UI inconsistencies and contract-risk observations will be consolidated in sub-step 3.2.4.
+
+### Step 3.2.4 — Current Frontend/UI Inconsistencies and Alignment Observations (AsciiDoc -> Markdown)
+
+This sub-step consolidates the current frontend/UI observations from the mapped nominal/failure flows and contract-risk analysis, before defining target frontend behavior.
+
+- Migrated path: **AsciiDoc -> Markdown** (`POST /api/to-markdown`, `downdoc`)
+- Confirmed Step 3 alignment target: `api/frontend/src/App.tsx` (`handleConvert`)
+
+#### Key current frontend/UI inconsistencies and alignment-relevant observations
+
+- **Success/failure asymmetry at consumption level**:
+  - Success is reduced to a string payload (`data.markdown` path), while failure is primarily reduced to `detail` string or generic thrown errors.
+  - Structured backend semantics are not consumed symmetrically across success and failure.
+
+- **Structured backend fields are parsed but not preserved**:
+  - The frontend parse point exists (`await res.json()` in `convertText`), but structured fields such as `conversionId`, `warnings`, `logs`, and `error.code` are not propagated into UI state.
+  - Result handling remains string-first (`result` output + message strings), not contract-first.
+
+- **Ad hoc failure interpretation remains active**:
+  - Failure routing to the conversion-error modal depends on message substring heuristics from `detail`/text.
+  - Non-matching failures are converted to generic toast/status messages, creating divergent failure surfaces.
+
+- **Result panel behavior can lag backend outcome on failure**:
+  - On failure, no output state update occurs, so the result panel continues to display the previous successful result (or empty state).
+  - UI-visible result content may not explicitly represent the latest backend failure outcome.
+
+- **Primary coordination layer already clearly localized**:
+  - `App.tsx` (`handleConvert`) is the confirmed coordination target where UI state transitions and display behavior are decided.
+  - `convertText` is the main parse/translation point where backend response semantics currently get flattened.
+
+#### Already aligned/safe vs. still needs Step 3 behavior alignment
+
+- **Already aligned/safe (for current scope):**
+  - Flow ownership is clear (`App.tsx` as target, `convertText` as parse layer).
+  - UI wiring components (`Panel.tsx`, `FormatSelector.tsx`) are presentation/selectors and do not independently reshape backend contracts.
+
+- **Still needs Step 3 behavior alignment:**
+  - Contract-aware frontend consumption of standardized success/failure fields at `convertText` parse/translation stage.
+  - Contract-aware UI state/display coordination in `App.tsx` so outcome semantics are represented without relying on ad hoc string heuristics.
+
+#### Prioritization note
+
+- The highest-priority inconsistency to address first is **failure-path flattening in `convertText`** (structured failure reduced to `detail` and substring heuristics), because it is the earliest frontend point where standardized backend failure semantics are currently lost.
+
+Target frontend behavior definition begins in sub-step 3.3.1.
+
+### Step 3.3.1 — Target Success-Path Frontend/UI Behavior (AsciiDoc -> Markdown)
+
+This sub-step defines the target success-path frontend/UI behavior for Step 3 alignment at the confirmed frontend coordination target.
+
+- Migrated path: **AsciiDoc -> Markdown** (`POST /api/to-markdown`, `downdoc`)
+- Confirmed Step 3 alignment target: `api/frontend/src/App.tsx` (`handleConvert`)
+
+#### Target success-path behavior expectations (when the backend returns a standardized success `ConversionResult`)
+
+When the migrated backend path returns a standardized **success** `ConversionResult`, the Step 3 alignment target is expected to:
+- **Use the standardized result as source of truth**:
+  - treat `success === true` as the success condition, not local heuristics.
+  - keep `success:true -> error:null` semantic coherence.
+- **Render output coherently with the success result**:
+  - display the converted output only when the success result is contract-coherent (e.g. a meaningful output is available for the UI to render).
+  - avoid presenting stale/previous output as if it were the current successful conversion outcome.
+- **Preserve meaningful success information from the backend** (do not replace with ad hoc assumptions):
+  - keep available context (e.g. `conversionId`, `warnings`, `logs`, `durationMs`, timestamps, `meta`) accessible for UI/state purposes, even if not all fields are shown in the UI initially.
+- **Keep success-path UI transitions predictable**:
+  - `loading` / status / notification transitions should reflect the received standardized success outcome.
+  - success feedback should be tied to the same conversion attempt whose output is displayed.
+
+#### Acceptable success-path consumption and rendering behavior
+
+- Using `success === true` as the success condition when a standardized result is available.
+- Rendering the converted Markdown output in the intended result area once the standardized success result is received and coherent.
+- Showing a clean “success” UI state (status/notification) after the standardized success result is received.
+- Reading standardized metadata (e.g. `warnings`, `logs`, `durationMs`, `conversionId`) for auxiliary UI/state needs without reshaping the result into a legacy model.
+
+#### Unacceptable success-path behavior at this level
+
+- Treating a request as successful without relying on the standardized backend success result when it exists.
+- Masking missing/inconsistent success results by showing a “success” UI state anyway.
+- Keeping stale success output visible as if it were the current conversion output when the current request did not produce the displayed result.
+- Reconstructing a legacy/ad hoc “success object” from partial data that discards standardized fields and semantics.
+- Ignoring relevant standardized fields that are already available and necessary for correct UI state coherence (e.g. ignoring conversion identity when preventing stale display).
+
+Target failure-path frontend behavior will be defined in sub-step 3.3.2.
+
+### Step 3.3.2 — Target Failure-Path Frontend/UI Behavior (AsciiDoc -> Markdown)
+
+This sub-step defines the target failure-path frontend/UI behavior for Step 3 alignment at the confirmed frontend coordination target.
+
+- Migrated path: **AsciiDoc -> Markdown** (`POST /api/to-markdown`, `downdoc`)
+- Confirmed Step 3 alignment target: `api/frontend/src/App.tsx` (`handleConvert`)
+
+#### Target failure-path behavior expectations (when the backend returns a standardized failed `ConversionResult`)
+
+When the migrated backend path returns a standardized **failure** `ConversionResult`, the Step 3 alignment target is expected to:
+- **Use the standardized failure result as source of truth**:
+  - treat `success === false` plus a structured non-null `error` object as the failure condition.
+  - preserve `error.code` and `error.message` as the primary failure identity (do not replace them with generic local strings).
+- **Preserve structured failure information for UI/state**:
+  - keep meaningful backend fields available to the UI layer (e.g. `conversionId`, `error.code`, `error.details`, `warnings`, `logs`, timestamps, and `meta`) even if only a subset is displayed initially.
+  - prefer limited, contract-safe UI interpretation over rebuilding a legacy error model.
+- **Represent failure outcomes coherently in the UI**:
+  - show a failure state derived from the structured backend result (message and, where relevant, code-based handling).
+  - avoid treating a failed conversion as a partial success through local assumptions.
+- **Prevent stale-success misrepresentation**:
+  - do not leave prior successful output visible *as if it were the result of the failed conversion*.
+  - ensure the UI makes it clear that the latest attempt failed (even if the last known good output remains available as “previous result”).
+- **Keep failure-path UI transitions predictable**:
+  - `loading` / status / notification / modal transitions should reflect the received standardized failure outcome.
+  - failure feedback should be tied to the same conversion attempt whose result is being represented.
+
+#### Acceptable failure-path consumption and rendering behavior
+
+- Using `success === false` with structured `error` (including `error.code`) as the failure condition when a standardized result is available.
+- Displaying a readable failure message derived from backend-provided structured error information (e.g. `error.message`), optionally supplemented by safe context from `error.details`.
+- Using `error.code` for limited, explicit UI decisions where appropriate (e.g. choosing between a “fix your input” modal vs a generic error toast), without relying on substring heuristics when a code is available.
+- Keeping the result panel in a failure-safe state when no valid current output exists (do not imply a new successful conversion occurred).
+- Preserving structured failure semantics in state so later UI normalization can remain contract-aware.
+
+#### Unacceptable failure-path behavior at this level
+
+- Flattening a standardized backend failure into a string-only local error model (e.g. consuming only `detail` and discarding `error.code`).
+- Dropping `error.code` where it is relevant to correct UI interpretation and later alignment work.
+- Treating a failed conversion as success (or “success with warnings”) without the standardized result supporting that semantics.
+- Leaving stale previous output visible in a way that implies it belongs to the failed conversion attempt.
+- Rebuilding a legacy frontend error object from partial data while ignoring the standardized backend failure structure.
+
+Intermediate/loading/frontend state behavior (e.g. conversion-in-progress transitions and reset rules) will be defined in sub-step 3.3.3.
+
+### Step 3.3.3 — Target Frontend State Model (idle/loading/success/error) (AsciiDoc -> Markdown)
+
+This sub-step defines the target intermediate/frontend state model for Step 3 alignment at the confirmed frontend coordination target.
+
+- Migrated path: **AsciiDoc -> Markdown** (`POST /api/to-markdown`, `downdoc`)
+- Confirmed Step 3 alignment target: `api/frontend/src/App.tsx` (`handleConvert`)
+
+#### State definitions (intended meaning and constraints)
+
+- **`idle`**
+  - **Represents**: no active conversion attempt in flight; no new backend result currently being processed.
+  - **Enter when**: initial app load; after a conversion attempt has fully resolved and transient indicators have settled; after the user clears/dismisses transient feedback.
+  - **Display/preserve**: stable UI; last known content may remain visible, but must not imply a new conversion just occurred.
+  - **Avoid**: lingering “loading”, “success”, or “error” indicators that refer to a past attempt as if it were current.
+
+- **`loading`**
+  - **Represents**: a conversion attempt is in progress (request in flight / result pending).
+  - **Enter when**: the conversion request is initiated for the current attempt.
+  - **Display/preserve**: clear in-progress indication; disable/guard actions as needed; preserve last known content but do not present it as the current attempt’s result.
+  - **Avoid**: implying completion; showing a success indicator before a standardized success result is received; ambiguous “half success” states.
+
+- **`success`**
+  - **Represents**: the current conversion attempt completed with a coherent standardized success `ConversionResult` and a coherent output for display.
+  - **Enter when**: a standardized result for the current attempt is received with `success === true` (and contract-coherent success semantics).
+  - **Display/preserve**: display the converted output as the current result; clear prior error indicators; optionally surface success-related metadata (e.g. warnings) without reshaping.
+  - **Avoid**: declaring success without a coherent standardized success result; presenting stale output as the current attempt’s output.
+
+- **`error`**
+  - **Represents**: the current conversion attempt completed with a coherent standardized failure `ConversionResult`.
+  - **Enter when**: a standardized result for the current attempt is received with `success === false` and structured `error` (including `error.code`).
+  - **Display/preserve**: show a failure state derived from structured backend error information; preserve failure identity for UI/state coherence (e.g. `error.code`); ensure the UI communicates that the latest attempt failed.
+  - **Avoid**: flattening the failure into generic string-only state; masking failure with a success UI; showing stale prior output *as if it were produced by the failed attempt*.
+
+#### Expected high-level state transitions
+
+- `idle -> loading`: when the user initiates a conversion.
+- `loading -> success`: when the current attempt returns a coherent standardized success result.
+- `loading -> error`: when the current attempt returns a coherent standardized failure result.
+- `success -> loading`: when a new conversion begins after a previous success.
+- `error -> loading`: when a new conversion begins after a previous failure.
+- `success -> idle` / `error -> idle`: when transient indicators are dismissed/cleared and no attempt is in flight.
+
+#### Acceptable vs. unacceptable state behavior
+
+- **Acceptable**
+  - Enter `loading` immediately when a conversion attempt starts.
+  - Clear or visually demote misleading prior indicators when a new attempt starts (e.g. prior “success” should not appear as the current attempt’s success).
+  - Enter `success` only when the current attempt produced a coherent standardized success result.
+  - Enter `error` only when the current attempt produced a coherent standardized failure result.
+
+- **Unacceptable**
+  - Remaining visually in a previous “success” state during a new `loading` attempt without clear distinction.
+  - Showing stale success output as if it belongs to the current failed conversion.
+  - Treating request completion as success without reading standardized result semantics.
+  - Keeping conflicting indicators active simultaneously (e.g. “success” and “error” both representing the current attempt).
+
+Sub-step 3.3.4 will define the frontend enrichment/interpretation boundary for contract-safe UI behavior.
+
+### Step 3.3.4 — Frontend Enrichment and Interpretation Boundary (AsciiDoc -> Markdown)
+
+This sub-step defines what the frontend may safely interpret, enrich, and minimally normalize from a standardized backend `ConversionResult` without breaking contract semantics.
+
+- Migrated path: **AsciiDoc -> Markdown** (`POST /api/to-markdown`, `downdoc`)
+- Confirmed Step 3 alignment target: `api/frontend/src/App.tsx` (`handleConvert`)
+
+#### Acceptable frontend interpretation/enrichment behaviors
+
+- Derive UI outcome (`success`/`error`) from standardized result semantics (`success` plus structured `error` when failure).
+- Render converted output in the intended result area from backend-provided conversion data for the current attempt.
+- Show readable failure information derived from structured backend failure fields (primarily `error.message`, optionally `error.details`).
+- Use documented `error.code` values for limited, explicit UI decisions when relevant.
+- Surface auxiliary backend metadata/log context (`warnings`, `logs`, `durationMs`, `conversionId`, timestamps, `meta`) for UI/supporting context without changing primary semantics.
+- Add purely presentational enrichment (labels, icons, color states, badge text) that does not alter backend meaning.
+
+#### Acceptable minimal normalization behaviors (contract-safe)
+
+- Map standardized backend fields into local view-model/state fields while preserving original semantics.
+- Preserve array/object structures (`warnings`, `logs`, `meta`, structured `error`) when adapting data for display.
+- Compute presentational booleans (e.g. `isSuccessState`, `isErrorState`) from standardized result semantics without discarding source structured data.
+- Clear or demote stale display artifacts when a newer result supersedes an older one, while keeping conversion-attempt coherence.
+
+#### Unacceptable reshaping/flattening/invention behaviors
+
+- Rebuilding a legacy ad hoc frontend conversion-result model while ignoring the standardized backend result structure.
+- Flattening structured `error` into an opaque generic string-only local model.
+- Replacing `error.code` semantics with arbitrary local guesses or message-substring heuristics when structured code is available.
+- Treating incomplete local heuristics as more authoritative than the backend result semantics.
+- Inferring success/failure from unrelated UI state when the backend result already defines outcome semantics.
+- Hiding or dropping meaningful backend fields needed for coherent state transitions and UI interpretation.
+- Presenting stale output or stale errors as if they belong to the current conversion attempt.
+
+Runtime remediation begins in sub-step 3.4.1.
+
+### Step 3.6.1 — Step 3 Alignment Summary (Migrated AsciiDoc -> Markdown)
+
+This sub-step summarizes the concrete frontend/UI alignment outcomes completed in Step 3 for the already migrated AsciiDoc -> Markdown path (`downdoc`).
+
+Aligned in Step 3 (frontend/UI technical outcomes):
+- Confirmed `api/frontend/src/App.tsx` (`handleConvert`) as the Step 3 frontend/UI alignment target for the migrated path.
+- Established standardized success-result consumption at this layer (success semantics tied to coherent backend `ConversionResult` success data for the current attempt).
+- Established standardized failure-result consumption at this layer (structured backend failure semantics preserved, including meaningful `error` and relevant `error.code` handling).
+- Aligned intermediate frontend state behavior (`idle` / `loading` / `success` / `error`) with coherent attempt-bound transitions.
+- Reduced legacy/ad hoc frontend result/error shaping on the migrated path (less string-only flattening and less heuristic-only outcome handling where structured backend semantics are available).
+- Verified that standardized backend semantics survive through the real frontend flow for both success and failure attempts.
+- Verified preservation of standardized backend semantics to the effective UI output boundary (result visibility, error visibility, and state coherence for the current attempt).
+- Broadened representative end-to-end frontend scenario coverage beyond a single success/failure pair for the migrated path.
+
+Frontend/UI alignment vs. remaining out of scope:
+- Aligned: frontend consumption, state transitions, and visible output/error coherence for the migrated AsciiDoc -> Markdown flow at the confirmed target layer.
+- Not in scope (for this sub-step): alignment of other conversion flows, global UI architecture redesign, and broader frontend behavior harmonization beyond the migrated path.
+
+Next: sub-step 3.6.2 will document the reusable frontend alignment pattern derived from these confirmed Step 3 outcomes.
+
+### Step 3.6.2 — Reusable Frontend/UI Alignment Pattern (Migrated AsciiDoc -> Markdown)
+
+This sub-step documents the reusable Step 3 frontend/UI alignment pattern validated on the already migrated AsciiDoc -> Markdown path (`downdoc`).
+
+Reusable sequence (practical pattern):
+- Identify the real frontend/UI alignment target where conversion outcomes are coordinated above raw API transport.
+- Map nominal and failure-oriented UI flows for the selected path, including visible output boundary behavior.
+- Identify frontend contract-risk points where structured backend semantics can be flattened, ignored, or replaced by ad hoc heuristics.
+- Define target behavior for success consumption, failure consumption, state transitions (`idle` / `loading` / `success` / `error`), and interpretation/enrichment boundaries.
+- Remediate success-result consumption so standardized backend success semantics become the source of truth.
+- Remediate failure-result consumption so structured backend failure semantics (including meaningful `error.code`) are preserved.
+- Remediate intermediate/frontend state transitions to remove stale/conflicting indicators across repeated attempts.
+- Verify behavior at the confirmed alignment target.
+- Verify end-to-end success and end-to-end failure behavior for the same migrated path.
+- Broaden representative scenario coverage with a minimal maintainable set of frontend checks.
+- Verify that standardized backend semantics remain coherent at the effective UI output boundary.
+
+Why this pattern matters:
+- It prevents premature broad UI refactors by constraining work to one confirmed alignment target and one migrated path at a time.
+- It keeps frontend alignment localized, testable, and auditable.
+- It preserves backend semantics through the UI layer instead of rebuilding local legacy meaning.
+
+How future frontend/UI flows should apply this pattern:
+- Align one conversion path at a time.
+- Document nominal/failure flow behavior before broad implementation changes.
+- Consume structured backend results as the source of truth.
+- Preserve success/failure semantics instead of replacing them with local heuristics.
+- Verify both target-layer behavior and end-to-end visible behavior before expanding scope.
+
+Next: sub-step 3.6.3 will formalize the Definition of Done for Step 3 based on these confirmed outcomes.
+
+### Step 3 Definition of Done (release 0.0.1.4.6)
+
+Step 3 is considered complete only when all criteria below are satisfied for the already migrated AsciiDoc -> Markdown path:
+
+- The real frontend/UI alignment target has been identified.
+- The nominal frontend/UI flow has been mapped.
+- The failure-oriented frontend/UI flow has been mapped.
+- Frontend contract-risk points have been identified.
+- Target success-path frontend behavior has been defined.
+- Target failure-path frontend behavior has been defined.
+- Target `idle / loading / success / error` frontend state behavior has been defined.
+- Acceptable frontend interpretation, enrichment, and normalization boundaries have been defined.
+- The confirmed frontend alignment target correctly consumes standardized successful backend `ConversionResult` objects for the migrated path.
+- The confirmed frontend alignment target correctly consumes standardized failed backend `ConversionResult` objects for the migrated path.
+- The confirmed frontend alignment target handles frontend state transitions coherently for the migrated path.
+- Legacy ad hoc frontend result/error shaping has been reduced or removed at this layer for the migrated path.
+- End-to-end frontend success verification passes through the real flow.
+- End-to-end frontend failure verification passes through the real flow.
+- Representative end-to-end frontend scenario coverage exists for the migrated path.
+- Standardized backend semantics survive to the effective UI output boundary for the migrated path.
+- The reusable Step 3 frontend alignment pattern has been documented.
+
+What Step 3 does **not** require:
+- Migration of all frontend conversion flows.
+- Redesign of the whole UI.
+- Migration of all converters.
+- Broad architecture/state-management redesign.
+- Backend contract redesign.
+
+Why this Definition of Done matters:
+- It marks the transition from backend-only standardization toward frontend preservation of standardized semantics.
+- It removes ambiguity about Step 3 closure criteria.
+- It establishes a clean baseline for later UI work without reopening already-settled alignment questions for this migrated path.
+
+### Step 3 Completion Summary
+
+Step 3 closure note (release `0.0.1.4.6`): Step 3 successfully established contract-aligned frontend/UI behavior for the already migrated AsciiDoc -> Markdown runtime path (`downdoc`).
+
+#### A. What Step 3 achieved
+- Established frontend/UI preservation of standardized backend `ConversionResult` semantics for the first migrated runtime path.
+- Reduced/removed legacy ad hoc frontend result/error shaping on the migrated path.
+- Aligned success-path, failure-path, and frontend-state behavior at the confirmed UI coordination layer.
+- Completed end-to-end validation that standardized backend semantics survive through the real frontend flow.
+
+#### B. What concrete frontend adoption was achieved
+- The AsciiDoc -> Markdown path is now preserved not only in backend layers, but also through the surrounding frontend/UI coordination layer.
+- Success and failure remain semantically aligned through the real frontend flow for this migrated path.
+- The effective UI output boundary now preserves standardized backend semantics for this migrated path.
+- Representative end-to-end frontend verification was completed for this path.
+
+#### C. What Step 3 now provides to the project
+- A validated frontend-layer preservation baseline for standardized conversion semantics.
+- A reusable frontend/UI alignment pattern for future flow alignments.
+- A stronger reference path for later frontend/backend flow migrations.
+- A cleaner foundation for subsequent UI refinement work.
+
+#### D. What remains outside Step 3
+- Step 3 completion does not imply that all frontend flows are aligned.
+- Step 3 completion does not imply that the whole UI has been redesigned.
+- Step 3 completion does not imply that all converters/flows are migrated.
+- Step 3 completion does not imply that broader frontend architecture/state-management redesign is complete.
+- Step 3 completion does not imply that future UX refinement is complete.
+
+#### E. Transition note
+- Future work should build on the Step 1 + Step 2 + Step 3 baseline and avoid reopening already validated contract, backend-alignment, and first-UI-alignment questions for the migrated AsciiDoc -> Markdown path.
+
+### Step 4.1.1 — Candidate Paths for the Second Real Migration Wave
+
+Step 4 starts by identifying plausible candidate conversion paths for the second real migration wave after the completed AsciiDoc -> Markdown path.
+
+Plausible candidate paths (grounded in current codebase):
+
+| Candidate path | Current readiness / relevance | Why this is a plausible Step 4 candidate |
+|---|---|---|
+| **Markdown -> AsciiDoc** (`POST /api/to-asciidoc`) | High readiness; explicit dedicated backend route and dedicated frontend converter (`markdown-to-asciidoc.ts`) already in use patterns similar to the migrated path. | Closest sibling to the first migrated path (bidirectional pair), bounded scope, high representative value for validating repeatability of the same model. |
+| **Plain text -> Markdown** (`POST /api/text-to-markdown`, module `text2markdown`) | Medium-high readiness; explicit backend route + dedicated lazy-load module + explicit frontend generic endpoint mapping. | Small/contained converter behavior with clear boundaries; good low-risk candidate for a second real migration with contract-preservation checks. |
+| **HTML -> target format (notably HTML -> Markdown)** (`POST /api/from-html`) | Medium readiness; dedicated backend route exists and frontend generic converter maps HTML conversions to this endpoint. | Real production path with different input characteristics; useful representative value for testing model reuse beyond AsciiDoc/Markdown text-only shape. |
+| **Generic secured conversions via `/api/convert`** (`fromFormat`/`toFormat` with token) | Medium readiness but broad scope; route and frontend path exist, backed by secure conversion flow. | Plausible but larger candidate family; useful for later expansion after one bounded second-path migration is validated. |
+
+Note: the primary Step 4 migration target will be selected in sub-step 4.1.2.
+
+### Step 4.1.2 — Primary Step 4 Migration Target Selection
+
+This sub-step selects the single primary migration target for the second real Step 4 end-to-end wave.
+
+Selected primary target:
+- **Markdown -> AsciiDoc** (`POST /api/to-asciidoc`)
+
+Why this path is selected over other candidates:
+- It has high current readiness in both backend and frontend layers (dedicated backend route and dedicated frontend converter path already present).
+- It is the most bounded and low-risk candidate among real existing paths, with clear scope and limited ambiguity.
+- It is the strongest functional complement to the first migrated path (`adoc -> md`), providing a near-symmetric counterpart with similar operational shape.
+
+Why this is a strong second migration target for model generality:
+- It validates that the Step 1 / Step 2 / Step 3 migration/alignment model is reusable on a second real path that is close enough for controlled comparison but distinct enough to test repeatability.
+- It provides high representative value for bidirectional document-conversion behavior without requiring broad architecture changes.
+- It offers a practical baseline before expanding to broader or more heterogeneous families (e.g. generic `/api/convert` combinations).
+
+Note: official Step 4 target confirmation will be completed in sub-step 4.1.3.
+
+### Step 4.1.3 — Official Step 4 Target Confirmation
+
+This sub-step formally confirms the official Step 4 migration target for the second real end-to-end migration wave.
+
+Confirmed official Step 4 target:
+- **Markdown -> AsciiDoc** (`POST /api/to-asciidoc`)
+
+Why this is the correct Step 4 focus:
+- It is the strongest grounded candidate from the identified set, with dedicated backend/frontend paths already in place and a bounded migration scope.
+- It provides a near-symmetric counterpart to the first migrated path (`adoc -> md`), making comparison and repeatability validation technically robust.
+
+What Step 4 will validate through this target:
+- Reuse of the standardized `ConversionResult` contract on a second real converter path.
+- Reuse of centralized result-helper semantics and standardized error-code semantics.
+- Reuse of backend/orchestrator alignment method on a second runtime flow.
+- Reuse of frontend/UI alignment method to preserve semantics to the effective UI output boundary.
+- Confirmation that the migration/alignment model is reusable beyond a single path.
+
+Note: detailed converter-flow mapping for this confirmed target begins in sub-step 4.2.1.
+
+### Step 4.2.1 — Current Runtime Flow Mapping Before Helper Integration (Markdown -> AsciiDoc)
+
+This sub-step maps the current runtime behavior of the confirmed Step 4 target before payload mapping to centralized `ConversionResult` helpers.
+
+- Selected second migration target: **Markdown -> AsciiDoc** (`POST /api/to-asciidoc`)
+
+Current runtime flow (grounded, step-by-step):
+1. **Entry point**: `api/backend/routes/conversion.routes.js`, route `POST /to-asciidoc`.
+2. **Request validation**: route-level `validate(...)` requires `body.text` as a non-empty string (`z.string().min(1)`).
+3. **Route pre-check**: if `!text.trim()`, handler returns HTTP `400` with `{ detail: "The text to convert is empty" }`.
+4. **Conversion dispatch**: route calls `convertMarkdownWithPandoc(text)` from `api/backend/services/conversion/convert.js`.
+5. **Converter input handling** (`convertMarkdownWithPandoc`):
+   - validates markdown input (`non-empty string`),
+   - creates temp workspace (`ascend-pandoc-*`),
+   - writes `input.md`,
+   - prepares `output.adoc`.
+6. **Execution**: runs Pandoc through `safeSpawn('pandoc', ['-f','markdown','-t','asciidoc','-o', outputFile, inputFile], timeout 30000ms)`.
+7. **Success branch**:
+   - reads `output.adoc`,
+   - applies light formatting normalization (`trimEnd() + '\n'`),
+   - returns AsciiDoc string to route.
+8. **Route success response**:
+   - logs success,
+   - returns HTTP `200` with `{ asciidoc: <converted string> }`.
+9. **Failure branch in converter**:
+   - timeout security error -> throws `Error('Pandoc conversion timed out')`,
+   - other failures -> throws `Error('Failed to execute Pandoc conversion')`,
+   - temp files/directories are cleaned in `finally`.
+10. **Route failure response**:
+   - catches thrown error,
+   - logs error,
+   - returns HTTP `500` with `{ detail: "Conversion error: ..." }`.
+
+Current success path shape:
+- HTTP `200` JSON payload: `{ asciidoc: string }` (string result payload, no standardized `ConversionResult` envelope yet on this target path).
+
+Current failure path shape:
+- HTTP `400` validation/pre-check failures and HTTP `500` conversion/runtime failures use route-level `{ detail: string }` responses.
+- Failure information is primarily string-based at route output for this path.
+
+Integration-relevant observation (grounded):
+- This target currently follows a direct route + converter-string-return pattern (`{ asciidoc }` / `{ detail }`) rather than the standardized helper-built `ConversionResult` shape used in the first migrated path; this is the main integration gap for upcoming Step 4 helper mapping.
+
+Next: payload mapping to centralized helpers for this confirmed target begins in sub-step 4.2.2.
+
+### Step 4.2.2 — Payload Mapping to Centralized Helpers (Markdown -> AsciiDoc)
+
+This sub-step defines payload mapping for the confirmed Step 4 target before runtime helper integration.
+
+- Selected second migration target: **Markdown -> AsciiDoc** (`POST /api/to-asciidoc`)
+
+#### Success-path payload mapping (`createSuccessResult(payload)`)
+
+| Helper payload field | Current runtime source | Integration mapping note |
+|---|---|---|
+| `conversionId` | Not currently created in `/to-asciidoc` path | Derive locally at integration time (generate per-attempt ID in route/service layer). |
+| `converter` | Route uses Pandoc via `convertMarkdownWithPandoc(...)` | Set to `"pandoc"` for this target path. |
+| `pipeline` | Implicit in route + converter call | Set to `["markdown->asciidoc"]` (bounded path identity). |
+| `inputFormat` | Route is explicitly Markdown source | Set to `"markdown"`. |
+| `outputFormat` | Route target is AsciiDoc | Set to `"asciidoc"`. |
+| `inputFile` | `convertMarkdownWithPandoc` writes temp `input.md` | Derive from temp input file context at integration (`originalName`, `storedPath`, `size`, `mimeType`) while file still exists. |
+| `outputFile` | `convertMarkdownWithPandoc` writes temp `output.adoc` | Derive from temp output file context before cleanup (path/size/mime). |
+| `startedAt` | Not currently tracked | Derive from local timestamp captured at attempt start. |
+| `finishedAt` | Not currently tracked | Derive from local timestamp captured at attempt end. |
+| `durationMs` | Not currently tracked | Derive from `finished - started` in milliseconds. |
+| `warnings` | No warning list currently emitted in this path | Use helper default (`[]`) unless explicit warnings are added later. |
+| `logs` | Route currently logs via `console.log` only | Map a bounded per-attempt log array (or helper default `[]` if not collected in integration step). |
+| `meta` | No structured metadata object currently returned | Use helper default (`{}`) or minimal technical metadata if available. |
+
+#### Failure-path payload mapping (`createFailureResult(payload)`)
+
+| Helper payload field | Current runtime source | Integration mapping note |
+|---|---|---|
+| `conversionId` | Not currently created in `/to-asciidoc` path | Derive locally at integration time (same attempt ID as success path model). |
+| `converter` | Failure occurs in Pandoc-based path | Set to `"pandoc"`. |
+| `pipeline` | Implicit in selected path | Set to `["markdown->asciidoc"]`. |
+| `inputFormat` | Route source format is Markdown | Set to `"markdown"`. |
+| `outputFormat` | Route destination format is AsciiDoc | Set to `"asciidoc"`. |
+| `inputFile` | Temp `input.md` exists during converter execution | Derive from available temp input context (or fallback object if failure occurs before file creation). |
+| `startedAt` | Not currently tracked | Derive from local attempt-start timestamp. |
+| `finishedAt` | Not currently tracked | Derive from local attempt-end timestamp. |
+| `durationMs` | Not currently tracked | Derive from elapsed time at failure completion. |
+| `error` | Currently flattened to thrown `Error(...)` then route `{ detail: ... }` | Build structured error object (`code`, `message`, `details`, `recoverable`) from known failure context at integration time. |
+| `outputFile` | Temp output may not exist on failure; route currently does not expose it | Use `null` by default; include object only if grounded output artifact exists. |
+| `warnings` | No warning list currently emitted | Use helper default (`[]`). |
+| `logs` | Console logs exist but no structured per-attempt log payload | Map bounded attempt logs if collected; otherwise helper default (`[]`). |
+| `meta` | No structured metadata object currently emitted | Use helper default (`{}`) or minimal error-context metadata if available. |
+
+Integration-relevant observations (grounded):
+- **Already directly available**: path identity (`markdown -> asciidoc`), converter family (`pandoc`), converted text (`asciidoc`) on success.
+- **Requires local derivation during integration**: `conversionId`, timing fields, structured log collection, and stable `inputFile`/`outputFile` blocks before temp cleanup.
+- **Currently missing as structured runtime output**: helper-aligned `error` object (`code/message/details/recoverable`) and normalized `meta`/`warnings` fields.
+
+Next: runtime integration of the success path for this confirmed target begins in sub-step 4.2.3.
+
+### Step 4.3.2 — Backend/Orchestrator Flow Mapping (Second Migrated Path)
+
+This sub-step maps the backend/orchestrator flow of the second migrated path through the confirmed Step 4.3 alignment target.
+
+- Second migrated conversion path: **Markdown -> AsciiDoc** (`POST /api/to-asciidoc`)
+- Confirmed Step 4.3 alignment target: `api/backend/routes/conversion.routes.js` (`/to-asciidoc` handler)
+
+#### Nominal backend flow (success-oriented)
+
+1. Request enters `POST /api/to-asciidoc` in `conversion.routes.js`.
+2. Route-level validation (`validate` + `zod`) enforces `body.text` as non-empty string input shape.
+3. Route creates per-attempt coordination context (`conversionId`, `startedAt`, `startedAtMs`).
+4. Route invokes `convertMarkdownWithPandoc(text)` from `services/conversion/convert.js`.
+5. Converter creates temp files (`input.md`, `output.adoc`) and executes Pandoc via `safeSpawn(...)`.
+6. Converter returns converted AsciiDoc string to route on successful execution.
+7. Route builds standardized success result via `createSuccessResult(...)` (mapped payload fields).
+8. Route returns HTTP `200` with both `asciidoc` and `conversionResult` (success contract propagation to boundary).
+
+#### Failure-oriented backend flow
+
+1. **Pre-conversion failure branch**: blank/trimmed-empty input in route pre-check.
+2. Route builds standardized failure via `createFailureResult(...)` with grounded `EMPTY_INPUT`.
+3. Route returns HTTP `400` with failure `conversionResult` fields plus legacy-compatible `detail`.
+4. **Runtime/conversion failure branch**: converter throws (pandoc failure/timeout/other internal exception).
+5. Route catch block classifies error context (`CONVERSION_FAILED` for pandoc execution class; `INTERNAL_ERROR` for unexpected route-internal class).
+6. Route builds standardized failure via `createFailureResult(...)` including structured `error` (`code/message/details`) and returns HTTP `500` with `detail` aligned to `error.message`.
+
+#### Where standardized `ConversionResult` is first created in this path
+
+- First creation point is currently the confirmed alignment target itself (`conversion.routes.js`) via:
+  - `createSuccessResult(...)` on success,
+  - `createFailureResult(...)` on pre-check and catch failure branches.
+
+#### Upward propagation through backend layers
+
+- For this path, propagation is short and direct:
+  - route handler receives request,
+  - converter function returns/throws,
+  - alignment target creates standardized result,
+  - route returns final HTTP JSON payload.
+- No lazy-load module registry/orchestrator dispatch layer is traversed for this selected path.
+
+#### Grounded contract-risk observations (current state)
+
+- Standardized result creation and final return both occur at route level; this centralizes control but also means route-layer shaping directly defines contract integrity for this path.
+- Legacy-compatible `detail` is still appended in failure responses; contract remains preserved, but wrapper consistency must remain monitored in later alignment checks.
+
+Next: contract-risk point identification and target-behavior definition for this backend/orchestrator target follow in sub-step 4.3.3.
+
+### Step 4.3.3 — Contract-Risk Points and Target Backend/Orchestrator Behavior (Second Migrated Path)
+
+This sub-step identifies the contract-risk points and defines target backend/orchestrator behavior for the second migrated path before runtime remediation.
+
+- Second migrated conversion path: **Markdown -> AsciiDoc** (`POST /api/to-asciidoc`)
+- Confirmed Step 4.3 alignment target: `api/backend/routes/conversion.routes.js` (`/to-asciidoc` handler)
+
+#### Exact contract-risk points (grounded)
+
+| Component / layer | Why it is a contract-risk point | Risk type |
+|---|---|---|
+| `api/backend/routes/conversion.routes.js` (`/to-asciidoc` response shaping) | Final standardized result creation and HTTP payload shaping happen in the same layer. Any local response-shape tweak directly affects contract integrity. | Reshaping risk at final backend boundary; potential field loss/wrapping drift if route logic changes. |
+| `api/backend/routes/conversion.routes.js` (`detail` compatibility wrapper on failures) | Failure responses currently include both standardized fields and `detail`. This is compatible, but can drift if future edits prioritize wrapper-only output. | Wrapper drift risk; potential reversion to ad hoc error-only shape. |
+| `api/backend/services/conversion/convert.js` (`convertMarkdownWithPandoc` throw-based internals) | Converter internals throw generic `Error(...)`; route currently normalizes these, but throw messages can still influence classification quality and details precision. | Internal-error classification granularity risk; potential overly generic failure mapping if not normalized consistently. |
+| Route-level pre-check and validation split (`validate` middleware + route trim check) | Multiple input rejection points exist (middleware and route pre-check). Consistency must be preserved so both remain contract-coherent where applicable. | Inconsistent failure envelope risk between early validation and route-level failures. |
+
+#### Already safe vs. still needs Step 4.3 alignment work
+
+- **Already safe (current state):**
+  - Success branch creates standardized result via `createSuccessResult(...)`.
+  - Failure branches create standardized results via `createFailureResult(...)`.
+  - Internal runtime exceptions are normalized at the confirmed alignment target (no raw throw escapes from this path to the client).
+
+- **Still needs alignment attention:**
+  - Keep route-layer payload shaping stable so `conversionResult` remains primary and required fields are never stripped.
+  - Keep failure compatibility wrapper (`detail`) additive-only and prevent drift toward wrapper-only failures.
+  - Keep error-code classification grounded and specific where available (avoid regressions toward generic-only classifications).
+
+#### Target backend/orchestrator behavior for this path
+
+- **Success preservation**
+  - Preserve standardized success result as primary return shape for the current attempt.
+  - Keep required root fields intact and semantically coherent (`success:true`, `error:null`, valid output metadata).
+
+- **Failure preservation**
+  - Preserve standardized failure result as primary failure shape (`success:false`, structured `error`, coherent `outputFile` failure semantics).
+  - Keep `error.code` meaningful and aligned with documented semantics.
+
+- **Internal-error handling**
+  - Convert unexpected internal exceptions into standardized failure results at the alignment target.
+  - Use `INTERNAL_ERROR` only when no more specific documented code is grounded by the failure context.
+  - Preserve useful context in `error.details`/`meta` without leaking noisy or malformed internals.
+
+- **Acceptable enrichment/normalization boundary**
+  - Additive compatibility fields (e.g., `detail`) are acceptable only when they do not replace or contradict standardized fields.
+  - Limited metadata/log enrichment is acceptable when contract shape and primary semantics remain unchanged.
+
+- **Unacceptable reshaping/override behavior**
+  - Reverting to ad hoc `{ detail }`-only failures or `{ asciidoc }`-only success without standardized result context.
+  - Dropping required contract fields or flattening structured `error`.
+  - Reclassifying specific grounded errors into generic codes without justification.
+  - Mixing incompatible envelopes between success/failure branches.
+
+Runtime remediation for these Step 4.3 contract-risk points begins in sub-step 4.3.4.
+
+### Step 4.4.1 — Frontend/UI Alignment Target Identification (Second Migrated Path)
+
+This sub-step starts frontend/UI alignment for the second migrated path (**Markdown -> AsciiDoc**) and identifies the real frontend coordination target before any UI refactoring.
+
+#### Candidate frontend/UI coordination layers involved in this path
+
+| Component / layer | Role in `markdown -> asciidoc` flow | Involvement level |
+|---|---|---|
+| `api/frontend/src/converters/generic-converter.ts` (`convertText`) | First frontend consumer of backend `/api/to-asciidoc` response; parses HTTP payload, consumes `conversionResult`, and relays success/failure state to UI callbacks. | Direct |
+| `api/frontend/src/App.tsx` (`handleConvert`) | Main conversion action handler; determines source text/output setter, triggers `convertText`, and wires status/error/state callbacks. | Direct |
+| `api/frontend/src/App.tsx` (conversion states: `status`, `loading`, `conversionUiState`, `lastBackendConversionResult`) | Coordinates per-attempt lifecycle and keeps backend result semantics available at UI layer. | Direct |
+| `api/frontend/src/App.tsx` (result panel rendering using `adocInput` / `mdOutput`) | Final UI boundary where converted AsciiDoc is displayed or stale content can be cleared/preserved. | Direct |
+| `api/frontend/src/App.tsx` (error modal + notification rendering) | User-visible failure presentation (`showConversionErrorModal`, `conversionErrorMessage`, `notification`). | Direct |
+| `api/frontend/src/converters/markdown-to-asciidoc.ts` | Legacy dedicated converter wrapper for same endpoint; not used by the active conversion trigger path in current `App.tsx`. | Secondary / inactive in primary runtime path |
+
+#### Confirmed primary frontend/UI alignment target for Step 4.4
+
+- **Primary target:** `api/frontend/src/App.tsx` (centered on `handleConvert` and its state/result coordination boundary).
+
+#### Why this is the correct Step 4.4 focus
+
+- `App.tsx` is where conversion attempts are orchestrated and where `convertText` is actually invoked for the active runtime path.
+- `App.tsx` is where success/failure UI lifecycle is coordinated (`loading`, `status`, `conversionUiState`) and where backend `conversionResult` is stored (`lastBackendConversionResult`).
+- `App.tsx` is also the effective UI output boundary (result content, notifications, modal), which is where backend semantics can still be preserved, flattened, ignored, or mismapped.
+- `convertText` remains an important direct participant, but the final frontend semantic preservation decision point for this path is the `App.tsx` coordination layer.
+
+Next: detailed frontend/UI flow mapping for this confirmed target begins in sub-step 4.4.2.
+
+### Step 4.4.2 — Frontend/UI Flow Mapping (Second Migrated Path)
+
+This sub-step maps the frontend/UI flow of the second migrated path through the confirmed Step 4.4 alignment target before frontend remediation.
+
+- Second migrated conversion path: **Markdown -> AsciiDoc**
+- Confirmed Step 4.4 alignment target: `api/frontend/src/App.tsx` (`handleConvert` and UI state/display coordination), with direct API consumption in `api/frontend/src/converters/generic-converter.ts` (`convertText`)
+
+#### Nominal frontend/UI flow (success-oriented)
+
+1. User triggers conversion from the main page (`App.tsx`), typically through the convert action handled by `handleConvert`.
+2. `handleConvert` computes `sourceText` from current UI state (`mdOutput` when source is Markdown), prepares `setOutput` (writes AsciiDoc result into `adocInput` when target is AsciiDoc), and calls `convertText(...)`.
+3. `convertText` selects endpoint `POST /api/to-asciidoc`, sets attempt lifecycle to loading (`setLoading(true)`, `setConversionUiState('loading')`), and clears transient stale UI indicators.
+4. Backend returns `200` with `{ asciidoc, conversionResult }`.
+5. `convertText` first consumes `conversionResult` (validates boolean `success`, requires `success === true`, forwards it through `setBackendConversionResult`).
+6. `convertText` then relays converted text via `setOutput(asciidoc)`, updates status/notification to success, and sets `conversionUiState('success')`.
+7. `App.tsx` state updates propagate to display layers: result panel shows updated AsciiDoc content (`adocInput`), success status/notification is visible, and loading ends.
+
+#### Failure-oriented frontend/UI flow
+
+1. User triggers conversion through the same `handleConvert` path.
+2. `convertText` enters loading lifecycle and sends `POST /api/to-asciidoc`.
+3. On non-OK HTTP response, `convertText` parses JSON and checks for structured backend failure (`success:false` + structured `error`).
+4. When structured failure is present, `convertText` is the first frontend consumer of that standardized failure; it stores it via `setBackendConversionResult(structuredFailure)`.
+5. `convertText` derives user-visible failure signals from structured payload (notably `error.code` / `error.message`), sets status/notification error, optionally opens modal for selected conversion codes, and sets `conversionUiState('error')`.
+6. `App.tsx` applies these callbacks to UI state and display layers (error notification/modal + failed lifecycle state), then loading ends.
+7. Final visible outcome is an error-state UI attempt with no success confirmation for that attempt; backend failure semantics are available in `lastBackendConversionResult`.
+
+#### First frontend consumption point of standardized backend result
+
+- First consumption point for both success and structured failure is `api/frontend/src/converters/generic-converter.ts` (`convertText`) immediately after HTTP response parsing, before final UI rendering in `App.tsx`.
+
+#### Propagation through frontend state/display layers
+
+- `convertText` -> callback relay (`setBackendConversionResult`, `setConversionUiState`, `setStatus`, `setNotification`, `setOutput`) -> `App.tsx` state (`lastBackendConversionResult`, lifecycle/status, content state) -> rendered panels/notification/modal in the effective UI boundary.
+
+#### Grounded frontend contract-risk observations (current mapping)
+
+- Success and failure are not fully symmetric at output clearing logic (`setOutput("")` stale-clear branch is currently guarded for the first migrated path, not this second path).
+- Success display still relies on legacy payload fallback (`data.markdown || data.asciidoc || data.result`), which is compatible but can hide format-specific assumptions.
+- If backend returns non-structured non-OK payload, frontend falls back to generic string error handling and may lose structured semantics.
+- `lastBackendConversionResult` is populated for structured success/failure, but visible UI still primarily follows local status/notification conventions rather than direct rendering of full contract fields.
+
+Next: contract-risk points and target frontend/UI behavior definition for this confirmed target follow in sub-step 4.4.3.
+
+### Step 4.4.3 — Frontend/UI Contract-Risk Points and Target Behavior (Second Migrated Path)
+
+This sub-step identifies frontend/UI contract-risk points and defines target frontend behavior for the second migrated path before runtime remediation.
+
+- Second migrated conversion path: **Markdown -> AsciiDoc**
+- Confirmed Step 4.4 alignment target: `api/frontend/src/App.tsx` (conversion coordination boundary), with first response consumption in `api/frontend/src/converters/generic-converter.ts` (`convertText`)
+
+#### Exact frontend/UI contract-risk points (grounded)
+
+| Component / layer | Why it is a contract-risk point | Risk type |
+|---|---|---|
+| `api/frontend/src/converters/generic-converter.ts` (`setOutput("")` stale-clear gating) | Output stale-clear on structured failure is currently gated by `isMigratedAdocToMarkdown` and is not symmetric for `markdown -> asciidoc`. | Stale-success residue risk after failed second-path attempts. |
+| `api/frontend/src/converters/generic-converter.ts` (success payload fallback: `data.markdown || data.asciidoc || data.result`) | Result selection accepts multiple legacy keys and does not enforce path-specific success payload semantics beyond basic availability. | Legacy-shape fallback risk; possible semantic drift if payload keys vary. |
+| `api/frontend/src/converters/generic-converter.ts` (non-structured failure fallback) | When non-OK responses are not structured (`success:false` + `error`), flow falls back to generic string error messaging. | Structured error flattening risk (`error.code/details` loss). |
+| `api/frontend/src/App.tsx` (`status`/`notification` as primary visible signals) | Final UI messaging is mostly derived from local status/notification conventions rather than explicit rendering of structured backend fields. | Semantic compression risk (rich backend context reduced to generic UI strings). |
+| `api/frontend/src/App.tsx` (`handleConvert` + panel state model `adocInput`/`mdOutput`) | Result/source panel state mapping is format-dependent and can preserve stale values if failure handling is not consistently aligned. | Asymmetric success/failure panel coherence risk at UI boundary. |
+
+#### Already safe vs. still needs Step 4.4 alignment
+
+- **Already safe (current state):**
+  - Structured `conversionResult` is consumed first in `convertText` for both success and structured failure.
+  - Structured success/failure is propagated to `App.tsx` via `setBackendConversionResult`.
+  - Attempt lifecycle state transitions are explicitly wired (`loading -> success` and `loading -> error`) through `setConversionUiState`.
+
+- **Still needs alignment attention:**
+  - Failure stale-output handling symmetry for the second migrated path.
+  - Stronger frontend reliance on standardized structured failure semantics over generic fallback strings.
+  - Tighter success-path coupling to expected path payload shape while preserving backward-compatible handling.
+  - UI boundary consistency so failure attempts cannot appear as current successful output due to stale state.
+
+#### Target frontend/UI behavior for this path
+
+- **Success consumption/rendering**
+  - Consume standardized success `conversionResult` as the authoritative attempt result for this path.
+  - Keep required success semantics coherent at UI boundary (`success:true`, `error:null`) while rendering returned AsciiDoc output for the same attempt.
+
+- **Failure consumption/rendering**
+  - Preserve standardized failure semantics (`success:false`, structured `error`) without flattening to string-only error models when structured data is available.
+  - Preserve and surface meaningful `error.code`-driven behavior consistently for this path.
+
+- **Frontend state transitions (`idle/loading/success/error`)**
+  - New attempt starts from clean transient state, enters `loading`, and lands deterministically in `success` or `error` for that same attempt.
+  - Failure attempts must not leave stale successful output/state presented as current attempt outcome.
+
+- **Acceptable interpretation/enrichment boundary**
+  - Additive UI interpretation is acceptable (status text, notifications, modal routing) when it does not rewrite backend success/failure semantics.
+  - Minimal normalization is acceptable for display/readability if structured contract meaning is preserved.
+
+- **Unacceptable flattening/reshaping/stale-state behavior**
+  - Replacing structured backend failures with generic string-only UI errors when structured failure is present.
+  - Ignoring meaningful `error.code` semantics and collapsing failures into undifferentiated local categories.
+  - Treating stale panel content as current-attempt success after failure.
+  - Rebuilding incompatible frontend-only success/failure envelopes that contradict backend `ConversionResult`.
+
+Runtime remediation for these Step 4.4 frontend/UI contract-risk points begins in sub-step 4.4.4.
+
+### Step 4.5.1 — Cross-Path Comparison (First vs Second Migrated Flows)
+
+This sub-step compares the first and second migrated paths to identify reusable migration/alignment elements, path-specific details, and what Step 4 validates about model generality.
+
+- First migrated conversion path: **AsciiDoc -> Markdown**
+- Second migrated conversion path: **Markdown -> AsciiDoc**
+
+#### Shared vs different characteristics
+
+| Comparison area | Shared across both paths | Path-specific differences |
+|---|---|---|
+| Converter-level migration | Standardized `ConversionResult` semantics are enforced for success and failure. | First path runs through lazy-load module orchestration (`downdoc`); second path uses direct Pandoc route-level integration (`/to-asciidoc`). |
+| Backend/orchestrator preservation | Route-level boundary preserves structured success/failure envelopes and keeps `detail` as additive compatibility field. | Failure classification inputs differ by converter internals and orchestration depth; second path relies on `classifyToAsciidocInternalError` for route-level normalization. |
+| Frontend/UI preservation | `convertText` is first frontend consumer; structured result is relayed to `App.tsx` (`lastBackendConversionResult`, `conversionUiState`). | Success payload key differs by path (`markdown` vs `asciidoc`), and stale-output handling needed explicit second-path symmetry hardening. |
+| Verification style | Focused contract checks and minimal scenario-based validations were used at each layer, with explicit success/failure assertions and structured-field expectations. | Scenario sets are path-oriented (different endpoint, payload, and converter-error triggers), including second-path internal-error route checks and markdown->asciidoc frontend sequence checks. |
+| Error-shape handling | Structured `error` (`code`, `message`, optional details) is treated as primary failure semantics. | Error-code distribution depends on path runtime specifics (`EMPTY_INPUT`, `CONVERSION_FAILED`, `INTERNAL_ERROR` context and classifier behavior). |
+| State/flow handling | Attempt lifecycle model (`idle/loading/success/error`) and stale-indicator clearing rules are shared alignment goals. | Path-level output ownership differs (`mdOutput` vs `adocInput` target panel), requiring path-aware stale-result protection. |
+
+#### Reusable migration/alignment elements
+
+- Central helpers and contract fields (`createSuccessResult`, `createFailureResult`, standardized root fields, structured `error`) are reusable across flows.
+- Layered alignment sequence is reusable: converter migration -> backend/orchestrator boundary preservation -> frontend/UI consumption/state alignment -> focused verification.
+- Verification approach is reusable: small contract assertions first, then representative scenarios, then boundary/coherence checks.
+- Additive compatibility policy is reusable: preserve standardized shape as primary while keeping backward-compatible wrapper fields only as additive.
+
+#### Path-specific integration details
+
+- Converter runtime integration shape (lazy-load module path vs direct route+Pandoc path).
+- Endpoint payload/result key wiring and panel ownership (`markdown` output vs `asciidoc` output).
+- Error classification heuristics and route-level normalization context.
+- UI stale-artifact risks tied to each path's target output state location.
+
+#### What Step 4 now validates about model generality
+
+- The migration/alignment model is not single-flow specific: it applies across two opposite-direction real conversions with different runtime plumbing.
+- Standardized `ConversionResult` semantics can be preserved end-to-end (backend boundary through effective UI boundary) with localized, minimal adjustments rather than broad redesign.
+- Cross-layer verification remains practical and repeatable for additional flows when the same alignment sequence is followed.
+
+Next: sub-step 4.5.2 will document the reusable multi-flow migration/alignment pattern explicitly.
+
+### Step 4.5.2 — Reusable Multi-Flow Migration/Alignment Pattern
+
+This sub-step documents the reusable multi-flow migration/alignment pattern now validated across two real conversion paths (**AsciiDoc -> Markdown** and **Markdown -> AsciiDoc**).
+
+#### Reusable end-to-end sequence
+
+1. Select one bounded real conversion path.
+2. Map the current converter runtime flow (success path, failure path, internal error behavior).
+3. Map runtime payload inputs to `createSuccessResult()` and `createFailureResult()`.
+4. Integrate success-path standardized result construction.
+5. Integrate failure-path standardized result construction.
+6. Harmonize converter internal errors into structured failure semantics.
+7. Verify the converter path in isolation (focused success/failure scenarios).
+8. Identify the backend/orchestrator alignment target for the selected path.
+9. Map backend success/failure propagation through that target.
+10. Identify backend contract-risk points.
+11. Remediate backend preservation of standardized results.
+12. Verify backend behavior at flow level and backend output boundary.
+13. Identify the frontend/UI alignment target for the same path.
+14. Map frontend success/failure consumption and state propagation.
+15. Identify frontend contract-risk points.
+16. Remediate frontend success/failure/state behavior with minimal localized changes.
+17. Verify effective UI output boundary coherence (current-attempt ownership, stale-state control).
+18. Compare against previously migrated paths to separate reusable elements from path-specific details.
+
+#### Why this pattern matters
+
+- It demonstrates that the migration/alignment model is reusable beyond a single conversion path.
+- It reduces risk of path-specific ad hoc migrations by enforcing a stable layered method.
+- It provides Ascend with a repeatable baseline for future converter migrations and alignments.
+
+#### What stays stable vs. what stays path-specific
+
+- **Stable (method-level):**
+  - Standardized `ConversionResult` contract as primary success/failure envelope.
+  - Layer order: converter -> backend/orchestrator -> frontend/UI -> verification/consolidation.
+  - Risk-driven remediation style (minimal, localized, boundary-focused).
+
+- **Path-specific (integration-level):**
+  - Engine/runtime internals (lazy-load module behavior, direct Pandoc execution details, temp-file mechanics).
+  - Error-detail granularity/classification inputs grounded in each converter path.
+  - Local metadata assembly and compatibility-wrapper nuances.
+  - UI display nuances tied to target-panel ownership and path-specific failure presentation.
+
+Next: sub-step 4.5.3 will define concise Step 4 multi-flow convention, Definition of Done, and closure-oriented material.
+
+### Step 4.5.3 — Step 4 Multi-Flow Convention and Definition of Done
+
+This sub-step formalizes the concise multi-flow convention and official Definition of Done (DoD) for Step 4, based on the validated model across two real migrated paths.
+
+#### Concise multi-flow convention for future migrated paths
+
+- Keep converter naming Ascend-oriented and role-based.
+- Use `createSuccessResult()` and `createFailureResult()` as the standard result-construction path.
+- Standardize both success and failure at converter/route boundary before broad surrounding-layer work.
+- Align backend/orchestrator preservation after converter migration.
+- Align frontend/UI preservation after backend alignment.
+- Verify in progression order: isolation first, then backend flow/boundary, then frontend flow/boundary.
+- Preserve backend semantics in frontend layers; avoid rebuilding legacy local result/error models.
+- Migrate one bounded real path at a time to keep verification and remediation grounded.
+
+#### Official Definition of Done for Step 4
+
+Step 4 is complete only if all criteria below are true:
+
+- A second real conversion path is selected and formally confirmed.
+- The second path is migrated to standardized `ConversionResult` helpers.
+- Its success path is standardized.
+- Its failure path is standardized.
+- Its internal converter-level error handling is harmonized.
+- The second path passes focused isolated verification.
+- Backend/orchestrator alignment is performed for the second path.
+- Backend/orchestrator success/failure preservation is verified.
+- Backend/orchestrator internal coordination-layer error handling is remediated or safely preserved where reasonably possible.
+- Frontend/UI alignment is performed for the second path.
+- Frontend success and failure consumption is verified.
+- Frontend state behavior is coherent for the second path.
+- Standardized semantics survive to the effective UI output boundary.
+- The first and second migrated paths are compared.
+- A reusable multi-flow migration/alignment pattern is documented.
+
+#### What Step 4 does not require
+
+- Migration of all remaining conversion paths.
+- Broad backend or frontend architecture redesign.
+- Product-wide UI redesign.
+- Simultaneous normalization of every engine at once.
+- Inclusion of future converter additions in Step 4 closure.
+
+#### Why this DoD matters
+
+- It marks transition from one validated reference flow to a reusable multi-flow model.
+- It removes ambiguity about what "generalization" means in Ascend migration work.
+- It establishes a clean baseline for future converter migrations without reopening already validated decisions.
+
+Next: the official Step 4 closure note follows in sub-step 4.5.4.
+
+### Step 5.1.1 — Already Shared Elements Across Migrated Flows
+
+Step 5 starts by identifying what is already genuinely shared across the two real migrated flows, before any consolidation refactoring.
+
+#### Grounded shared elements (first and second migrated paths)
+
+| Shared element | Why it is considered shared |
+|---|---|
+| Standardized `ConversionResult` envelope usage | Both migrated paths now expose structured success/failure results with the same root contract semantics at backend boundaries and through frontend consumption. |
+| Structured failure error model (`error.code`, `error.message`, structured `error`) | Both paths preserve structured failure semantics and keep `error.code` meaningful in backend responses and frontend handling paths. |
+| Centralized backend result-helper usage | Both migrations rely on standardized helper-based construction (`createSuccessResult()` / `createFailureResult()`) as the primary result-building method. |
+| Converter naming/orientation convention | Both migrated converters follow Ascend-oriented, role-based naming/integration intent rather than ad hoc one-off naming. |
+| Backend/orchestrator preservation principle | In both paths, backend alignment focuses on preserving standardized results end-to-end and keeping compatibility fields additive rather than replacing the contract. |
+| Frontend/UI preservation principle | In both paths, frontend alignment uses first-consumption in conversion API layer and relays structured semantics into `App.tsx` state and visible UI outcomes. |
+| Shared frontend lifecycle expectation (`idle/loading/success/error`) | Both paths use the same attempt-lifecycle model and require stale-indicator cleanup between attempts to keep current-attempt ownership coherent. |
+| Shared verification pattern | Both paths were validated with layered checks: focused converter verification, backend/orchestrator verification, frontend/UI verification, and boundary-coherence checks. |
+| Shared documentation/alignment pattern | Both paths were documented with the same sequence: target identification, flow mapping, contract-risk identification, remediation, and consolidation notes. |
+
+Next: sub-step 5.1.2 will distinguish what is truly generic consolidation material from what remains path-specific integration detail.
+
+### Step 5.1.2 — Generic vs Path-Specific Classification
+
+This sub-step distinguishes generic consolidation candidates from elements that remain path-specific, based on grounded evidence across the two migrated flows.
+
+#### Truly generic consolidation candidates (stable across migrated flows)
+
+| Category | Why it is classified as generic |
+|---|---|
+| Standardized `ConversionResult` contract usage | Both flows preserve the same success/failure contract semantics at backend and frontend boundaries. |
+| Structured error-model semantics | Both flows use structured failure (`success:false`, `error.code`, `error.message`, optional details) as primary failure meaning. |
+| Helper-based result construction pattern | Both flows rely on `createSuccessResult()` / `createFailureResult()` as the standard construction path. |
+| Backend/orchestrator preservation rule | Both flows enforce additive compatibility wrapping while keeping standardized contract fields primary. |
+| Frontend first-consumption and relay pattern | Both flows consume structured result in conversion API layer and relay into `App.tsx` lifecycle/display state. |
+| Shared attempt lifecycle expectation | Both flows align to `idle/loading/success/error` attempt ownership with stale-state cleanup requirements. |
+| Layered verification structure | Both flows follow isolation -> backend/orchestrator -> frontend/UI -> boundary coherence verification progression. |
+| Alignment documentation sequence | Both flows are documented with the same progression (target, flow map, risks, remediation, consolidation). |
+
+#### Elements that remain path-specific (keep local for now)
+
+| Category | Why it remains path-specific |
+|---|---|
+| Engine/runtime internals | First path uses lazy-load module orchestration (`downdoc`), second path uses direct Pandoc route integration. |
+| Converter-level metadata assembly details | Field derivation inputs (timing, file metadata, transport context, output artifact conditions) differ by path execution mechanics. |
+| Error-classification detail granularity | Internal failure classification signals and precise `error.details` content depend on path-specific runtime context. |
+| Endpoint payload/result key nuances | Success payload keys and path-level output ownership differ (`markdown` vs `asciidoc` response/result handling). |
+| UI target-panel ownership nuances | Result placement and stale-artifact risk differ because each path writes to different panel state (`mdOutput` vs `adocInput`). |
+| Path-oriented representative scenario sets | Verification scenarios and fault-injection cases differ by converter behavior and route topology. |
+| Compatibility wrapper surface details | Additive wrappers (for example `detail` usage context) remain tied to per-path integration history and consumers. |
+
+Next: sub-step 5.1.3 will confirm which consolidation areas should be prioritized first.
+
+### Step 5.1.3 — Step 5 Consolidation Priority Order
+
+This sub-step prioritizes safe consolidation targets for Step 5, based on shared/generic elements already validated across both migrated flows.
+
+#### High-priority consolidation targets (first wave)
+
+| Area/category | Why high priority |
+|---|---|
+| Shared contract-preservation checklist (backend + frontend boundaries) | Highest reuse value across both flows, low implementation-risk profile, and direct impact on preventing semantic drift in future migrations. |
+| Unified structured-failure handling convention (`error.code`-first semantics) | Already stable in both flows, low risk to formalize, and high maintainability value for consistent failure behavior and diagnostics. |
+| Common verification skeleton (isolation -> backend -> frontend -> effective boundary) | Strongly reusable and already proven; codifying it first improves repeatability without forcing runtime unification. |
+| Standard migration/alignment stage gates (target identification -> risk mapping -> remediation -> consolidation) | Provides immediate process clarity for future paths with minimal risk of path-specific breakage. |
+
+#### Medium-priority consolidation targets (second wave)
+
+| Area/category | Why medium priority |
+|---|---|
+| Shared naming/documentation templates for migrated-path sections | Useful for readability and consistency, but lower immediate runtime-safety impact than contract/verification conventions. |
+| Cross-flow frontend state hygiene convention (`idle/loading/success/error` cleanup rules) | Reusable and valuable, but requires careful wording to avoid overspecifying path-local UI behavior. |
+| Compatibility-wrapper usage guidance (additive-only policy wording) | Important governance topic, but partially tied to path-local legacy integration constraints. |
+
+#### Deferred / keep path-local for now
+
+| Area/category | Why deferred/path-local now |
+|---|---|
+| Engine/runtime internals (`downdoc` lazy-load orchestration vs direct Pandoc route behavior) | Different execution models with non-trivial local constraints; premature unification would increase breakage risk. |
+| Path-specific metadata assembly details | Input/output artifact derivation differs per flow; should remain local until additional migrated paths confirm stronger commonality. |
+| Path-specific error-detail granularity and classifier heuristics | Semantically related but operationally different across engines/routes; forcing early consolidation risks over-generalized error mapping. |
+| UI target-panel ownership details (`mdOutput` vs `adocInput`) | Bound to path direction and current UI composition; should stay local until broader UI convergence is intentionally planned. |
+
+Actual Step 5 consolidation implementation begins in sub-step 5.2.1.
+
+### Step 5.2.4 — Shared Backend Convention Consistency Validation
+
+This sub-step validates that shared backend conventions are now consistently applied across the two migrated backend paths where those conventions are intended to be common.
+
+#### Shared backend conventions confirmed aligned
+
+| Convention/category | Why considered aligned across both migrated paths |
+|---|---|
+| Helper-based standardized result construction | Both paths now use helper-driven `ConversionResult` construction patterns for route-level standardized failures, with additive `detail` compatibility preserved. |
+| Structured error preservation | Both paths preserve structured `error` objects (`code`, `message`, optional details) and keep `detail` aligned to `error.message` in failure responses. |
+| Success/failure contract shape expectations | Both paths expose contract-compliant root fields and maintain success/failure semantic separation without flattening into legacy-only envelopes. |
+| Shared root-field conventions (`pipeline`, `warnings`, `logs`, `meta`) | Both paths consistently provide these fields with stable shape expectations (array/object semantics, path-appropriate values). |
+| Route pre-check empty-input normalization | Both paths now route empty/blank input through standardized helper-based failure handling (`EMPTY_INPUT`) rather than ad hoc response branches. |
+| Backend-side semantic preservation principle | Both paths preserve standardized semantics as primary payload meaning, with compatibility wrappers remaining additive-only. |
+
+#### Differences that remain intentionally path-specific
+
+| Category | Why intentionally path-specific |
+|---|---|
+| Converter/runtime execution model | `AsciiDoc -> Markdown` uses lazy-load `downdoc` orchestration; `Markdown -> AsciiDoc` uses direct Pandoc conversion flow. |
+| Converter identity and pipeline values | `converter` and `pipeline` identifiers remain flow-specific by design (`downdoc` / `asciidoc->markdown` vs `pandoc` / `markdown->asciidoc`). |
+| Input/output artifact metadata details | File naming, storage-path conventions, and output artifact semantics differ due to direction-specific runtime handling. |
+| Internal error-classification detail context | Error-detail stage metadata remains grounded in each flow’s execution context (for example converter-execution vs route validation stages). |
+
+Next: frontend convention consolidation begins in sub-step 5.3.1.
+
+### Step 5.3.1 — Already Shared Frontend/UI Elements Across Migrated Flows
+
+This sub-step starts frontend-side Step 5 consolidation by identifying what is already genuinely shared across the two migrated frontend/UI flows, before any frontend refactoring.
+
+#### Grounded shared frontend/UI elements
+
+| Shared element | Why it is considered shared |
+|---|---|
+| Structured success-result first consumption in conversion API layer | Both migrated flows consume backend success `conversionResult` first in `convertText` before final UI rendering decisions. |
+| Structured failure-result first consumption in conversion API layer | Both migrated flows consume structured backend failure (`success:false`, structured `error`) in `convertText` rather than defaulting immediately to ad hoc local error models. |
+| Shared relay into `App.tsx` conversion state | Both flows relay standardized backend result data through shared callbacks (`setBackendConversionResult`, `setStatus`, `setNotification`, `setConversionUiState`). |
+| Shared lifecycle-state expectation (`idle/loading/success/error`) | Both flows follow the same attempt lifecycle expectation and use explicit `loading -> success/error` transitions. |
+| Shared stale-state cleanup baseline at attempt start | Both flows clear transient stale indicators at new attempt start (notification/modal/error-message/backend-result reset) to reduce mixed-attempt artifacts. |
+| Shared current-attempt ownership rule for result/error display | Both flows are expected to present current-attempt semantics (not previous-attempt residue) at the effective UI output boundary. |
+| Shared structured error semantics for UI handling | Both flows preserve meaningful `error.code` availability for UI-level branching/notification semantics when structured failures are available. |
+| Shared frontend interpretation/enrichment boundary | Both flows use additive presentation mapping (status text, notification, modal routing) while preserving backend semantic meaning as primary. |
+| Shared frontend verification style | Both flows use focused contract-aware tests around `convertText`/UI state behavior, including success/failure and stale-state coherence checks. |
+| Shared frontend documentation/alignment pattern | Both flows have been documented with the same sequence (target identification, flow mapping, contract-risk mapping, remediation, consolidation verification). |
+
+Next: sub-step 5.3.2 will distinguish what is truly generic frontend consolidation material from what remains path-specific frontend behavior.
+
+### Step 5.3.2 — Frontend Generic vs Path-Specific Classification
+
+This sub-step distinguishes generic frontend/UI consolidation candidates from frontend elements that remain path-specific, based on grounded evidence across the two migrated UI flows.
+
+#### Truly generic frontend/UI consolidation candidates
+
+| Category | Why it is classified as generic |
+|---|---|
+| Structured success-result consumption contract | Both flows consume backend `conversionResult` as the primary success semantic source in `convertText` before final UI presentation. |
+| Structured failure-result consumption contract | Both flows consume structured backend failures (`success:false`, structured `error`) as primary failure semantics when available. |
+| Shared conversion callback relay model | Both flows relay result/state updates through the same callback interface into `App.tsx` (`setBackendConversionResult`, `setStatus`, `setNotification`, `setConversionUiState`). |
+| Shared attempt lifecycle model (`idle/loading/success/error`) | Both flows depend on the same lifecycle-state expectations and deterministic `loading -> success/error` transitions. |
+| Shared transient stale-state cleanup baseline | Both flows clear transient attempt indicators at new request start (notification/modal/error message/backend result). |
+| Shared structured-error availability principle (`error.code`) | Both flows preserve `error.code` availability for UI-level handling/branching when structured failure is present. |
+| Shared interpretation/enrichment boundary | Both flows use additive presentation mapping (status, notification, modal routing) without replacing backend semantic meaning. |
+| Shared frontend verification structure | Both flows rely on focused, contract-aware tests around `convertText` behavior, state transitions, and stale-state coherence. |
+
+#### Frontend elements that remain path-specific (keep local for now)
+
+| Category | Why it remains path-specific |
+|---|---|
+| Result payload key and panel ownership nuances | Success payload/result ownership differs by direction (`markdown` vs `asciidoc`) and maps into different panel state slots (`mdOutput` vs `adocInput`). |
+| Path-specific stale-output risk profile | Residual stale-output exposure differs by flow direction and target panel, so guard behavior remains flow-sensitive. |
+| Path-oriented error display nuance | Modal/notification emphasis can vary by flow-specific failure signatures and historically established user-facing wording. |
+| Path-specific view-model shaping details | Local source/result text selection logic in `handleConvert` depends on source/target direction and cannot be fully unified yet without broader UI changes. |
+| Flow-specific representative test scenarios | Scenario inputs and expected UI artifacts differ by conversion direction and endpoint payload conventions. |
+| Path-specific display/message wording | User-visible status/error text remains partially tuned per flow context and should not be over-normalized prematurely. |
+
+Next: sub-step 5.3.3 will confirm which frontend/UI consolidation areas should be prioritized first.
+
+### Step 5.3.3 — Frontend/UI Consolidation Priority Order
+
+This sub-step prioritizes safe frontend/UI consolidation targets for Step 5, based on the generic vs path-specific classification already validated across both migrated UI flows.
+
+#### High-priority frontend/UI consolidation targets (first wave)
+
+| Area/category | Why high priority |
+|---|---|
+| Shared `convertText` contract-handling conventions | Highest reuse value and lowest risk: standardize the rules for consuming `conversionResult` (success/failure), preserving `error.code`, and enforcing current-attempt ownership without touching path-specific UI rendering. |
+| Shared stale-state cleanup baseline at attempt start | Low-risk consolidation with high UX/consistency payoff; reduces mixed-attempt artifacts across both paths while remaining additive. |
+| Shared lifecycle transition convention (`idle/loading/success/error`) | Stabilizes state semantics for both paths and future migrations; small, localized normalization yields maintainability gains without UI redesign. |
+| Shared verification conventions for migrated flows | Consolidating test patterns (success/failure/stale-state sequences) improves confidence and repeatability without changing runtime behavior. |
+
+#### Medium-priority consolidation targets (later wave)
+
+| Area/category | Why medium priority |
+|---|---|
+| Shared UI messaging/notification conventions for structured failures | Valuable for consistency, but riskier because user-facing wording and modal routing can be path-sensitive. |
+| Shared documentation/templates for frontend alignment sections | Improves readability and future migration speed, but does not directly change runtime safety. |
+| Shared minimal normalization utilities (display-safe) | Useful, but must avoid creeping into path-specific view-model shaping; best after first-wave contract/state rules are locked. |
+
+#### Deferred / keep path-local for now
+
+| Area/category | Why deferred/path-local now |
+|---|---|
+| Target-panel ownership and payload key mapping (`mdOutput` vs `adocInput`, `markdown` vs `asciidoc`) | Direction-dependent and tightly coupled to current UI composition; premature unification risks breaking display semantics. |
+| Path-specific error-display nuance and modal heuristics | Still partly tuned to flow-specific failure signatures; should remain local until a deliberate UX convergence step is planned. |
+| `handleConvert` view-model shaping details | Highly dependent on source/target selection logic and broader UI structure; consolidation would be higher-risk without a broader design step. |
+
+Actual frontend/UI consolidation implementation begins in sub-step 5.4.1.
+
+### Step 5.4.4 — Shared Frontend/UI Convention Consistency Validation
+
+This sub-step validates that shared frontend/UI conventions are now consistently applied across the two migrated frontend flows where those conventions are intended to be common.
+
+#### Shared frontend/UI conventions confirmed aligned
+
+| Convention/category | Why considered aligned across both migrated frontend flows |
+|---|---|
+| Structured success-result consumption as source of truth | Both flows now require a valid structured `conversionResult` and expected flow output field before treating a request as successful. |
+| Structured failure-result consumption as source of truth | Both flows consume structured failures (`success:false`, structured `error`) directly in `convertText` rather than collapsing them into generic-only local errors. |
+| Structured failure information preservation (`error.code`) | Both flows preserve `error.code` for notification/modal branching and keep failure semantics available in `lastBackendConversionResult`. |
+| Shared lifecycle transition expectations (`idle/loading/success/error`) | Both flows follow the same attempt lifecycle convention with deterministic loading-to-terminal-state transitions. |
+| Shared stale-state clearing expectations | Both flows clear transient stale indicators at attempt start and clear stale output on migrated-path failure/error handling branches. |
+| Shared avoidance of legacy-only reshaping | Both flows keep backend semantics primary and use local UI mapping as additive presentation, not semantic replacement. |
+| Shared effective UI-boundary semantic preservation | Both flows maintain current-attempt ownership at the visible boundary (output/notification/modal/state), preventing stale previous-attempt success from representing current failed attempts. |
+
+#### Differences that remain intentionally path-specific
+
+| Category | Why intentionally path-specific |
+|---|---|
+| Result payload key and panel ownership mapping | `adoc->md` and `md->adoc` legitimately target different output keys and panel state slots (`markdown`/`mdOutput` vs `asciidoc`/`adocInput`). |
+| Flow-specific modal/message nuance | User-facing wording and some modal emphasis remain tied to flow-specific failure signatures and should not be force-normalized yet. |
+| `handleConvert` direction-dependent view-model shaping | Source/result text selection logic remains coupled to source/target direction and broader UI composition. |
+| Path-oriented representative UI scenarios | Scenario coverage differs by conversion direction and endpoint payload context, which is expected and acceptable. |
+
+Next: Step 5 synthesis and convention-closure work begins in sub-step 5.5.1.
+
+### Step 5.5.1 — Step 5 Consolidation Summary
+
+This sub-step summarizes what Step 5 has concretely consolidated across the first and second migrated conversion paths.
+
+#### What Step 5 consolidated
+
+- Shared backend conventions are now explicitly aligned across both migrated paths where intended (helper-based failure construction conventions, structured error preservation conventions, additive compatibility-wrapping conventions).
+- Shared frontend/UI conventions are now explicitly aligned across both migrated flows where intended (structured success/failure consumption, lifecycle-state expectations, stale-state cleanup expectations, current-attempt ownership expectations).
+- Generic/common vs path-specific classification was formalized on both backend and frontend sides.
+- Priority order for safe consolidation work was defined and then executed in focused waves.
+- Remaining non-semantic convention drift was reduced/normalized where low-risk and grounded.
+- Cross-path validation confirmed both migrated flows follow the same intended shared rules where those rules are common.
+- Legitimate path-specific differences were preserved instead of force-unified.
+- Maintainability/readability improved without changing documented `ConversionResult` contract semantics or API semantics.
+
+#### Shared/common baseline vs intentionally path-specific scope
+
+- **Consolidated as shared/common practice**
+  - Contract-preserving helper usage patterns
+  - Structured error-shape preservation rules
+  - Shared lifecycle/state and stale-cleanup conventions in migrated frontend flows
+  - Layered verification and consistency-validation conventions
+
+- **Still intentionally path-specific or deferred**
+  - Engine/runtime execution internals (`downdoc` lazy-load path vs direct Pandoc path)
+  - Direction-dependent payload/result ownership and panel mapping details
+  - Flow-specific error-detail granularity, messaging nuance, and representative scenario emphasis
+  - Broader architectural/UI unification beyond safe local convention alignment
+
+Next: sub-step 5.5.2 will formalize the common convention baseline established by Step 5.
+
+### Step 5.5.2 — Common Convention Baseline (Established by Step 5)
+
+This sub-step formalizes the common convention baseline that Step 5 has stabilized across the two migrated conversion paths.
+
+#### Common backend baseline conventions
+
+- Use standardized helper-based result construction as default (`createSuccessResult()` / `createFailureResult()`).
+- Apply standardized success/failure construction expectations at route/orchestrator boundaries.
+- Preserve structured `error` semantics as primary failure meaning (`code`, `message`, optional details).
+- Keep `pipeline`, `warnings`, `logs`, and `meta` present with stable shape expectations.
+- Keep converter naming/integration role-oriented and Ascend-consistent where applicable.
+- Preserve standardized backend semantics as primary payload meaning; compatibility wrappers remain additive-only.
+
+#### Common frontend/UI baseline conventions
+
+- Consume standardized backend success/failure results as primary semantic source of truth for migrated flows.
+- Follow shared lifecycle expectations (`idle / loading / success / error`) for current-attempt ownership.
+- Apply stale-state clearing at attempt start and on migrated-flow error branches to prevent stale success display.
+- Preserve structured failure semantics in UI handling (`error.code` availability and structured relay to state).
+- Avoid legacy local success/error reshaping when standardized semantics are available.
+- Preserve backend semantics to the effective UI boundary (output, status, notification/modal, lifecycle state).
+
+#### Baseline-by-default vs grounded path-specific allowance
+
+- **Baseline-by-default for future migrated flows**
+  - The backend and frontend conventions listed above should be the default implementation/verification baseline.
+
+- **May remain path-specific when grounded**
+  - Engine/runtime execution internals
+  - Direction-dependent payload/result ownership and panel mapping
+  - Flow-specific error-detail granularity and user-facing wording nuances
+  - Representative scenario emphasis tied to path topology
+
+#### Why this baseline matters
+
+- It avoids re-deciding conventions already validated across two real flows.
+- It improves maintainability and consistency as additional flows are migrated.
+- It provides a stable starting point for future migrations without forcing premature over-abstraction.
+
+Next: the official Definition of Done for Step 5 follows in sub-step 5.5.3.
+
+### Step 5 Definition of Done
+
+This sub-step formalizes the official Definition of Done for Step 5 of release `0.0.1.4.6`.
+
+Step 5 is complete only if all criteria below are true:
+
+- Elements genuinely shared across the first and second migrated flows are identified.
+- Generic/shared elements are clearly distinguished from path-specific elements.
+- Safe consolidation priorities are explicitly established.
+- Shared backend conventions are consolidated where appropriate.
+- Shared backend conventions are explicitly validated across both migrated backend paths.
+- Shared frontend/UI conventions are consolidated where appropriate.
+- Shared frontend/UI conventions are explicitly validated across both migrated frontend flows.
+- Remaining non-semantic convention drift is reduced where safe.
+- Legitimate path-specific differences are preserved where appropriate.
+- A common convention baseline is documented for future migrated flows.
+- Standardized `ConversionResult` contract semantics remain unchanged.
+- Both migrated flows remain working and contract-compliant after consolidation.
+- Both migrated flows remain semantically aligned at the effective UI/output boundary after consolidation.
+
+#### What Step 5 does not require
+
+- Migration of additional conversion flows.
+- Broad backend architecture redesign.
+- Broad frontend/UI redesign.
+- Full product-wide normalization in one step.
+- Elimination of all path-specific behavior.
+- Introduction of new abstraction frameworks as a prerequisite.
+
+#### Why this Definition of Done matters
+
+- It marks the transition from validating the model on two flows to stabilizing shared practice across them.
+- It removes ambiguity about what a "consolidated baseline" means in Ascend.
+- It provides a cleaner foundation for later scale-out work without reopening settled conventions.
+
+Next: the official Step 5 closure note follows in sub-step 5.5.4.
+
+### Step 6.1.1 — Remaining Grounded Candidate Paths for Future Migration Waves
+
+Step 6 starts by identifying the remaining grounded migration candidates that are already present in the codebase after the first two migrated flows.
+
+| Candidate conversion path | Current grounded status | Why it is a realistic future migration candidate |
+|---|---|---|
+| `Text -> Markdown` (`POST /api/text-to-markdown`) | Backend route exists in `conversion.routes.js`; frontend routing exists in `convertText` (`txt -> markdown` endpoint selection). | It is already a dedicated path (not generic fallback-only), so it can be migrated with bounded scope similar to prior waves. |
+| `HTML -> *` via Pandoc (`POST /api/from-html`) | Backend route exists for `html -> target`; frontend routing exists in `convertText` (`sourceFormat === 'html'` branch). | Real flow already wired end-to-end with explicit route ownership; suitable for path-specific migration/alignment pass. |
+| Generic Pandoc route (`POST /api/convert`) for non-migrated format pairs | Backend conversion service supports multiple formats (`txt`, `asciidoc`, `markdown`, `html`, `pdf`, `yaml`, `json`, `docx`, `epub`, `rst`, `tex`, `latex`); frontend already routes non-specialized pairs to `/api/convert`. | It is the largest grounded candidate family for future waves, with many real pairs already runnable through one existing entry point. |
+| Legacy frontend wrapper path: `Markdown -> AsciiDoc` wrapper module (`converters/markdown-to-asciidoc.ts`) | Wrapper module still exists, while active migrated runtime path is driven by `convertText` + `App.tsx`. | It is a grounded candidate for future cleanup/alignment decisions (retain/deprecate/standardize usage) once migration-wave priorities include wrapper harmonization. |
+| Legacy frontend wrapper path: `AsciiDoc -> Markdown` wrapper module (`converters/asciidoc-to-markdown.ts`) | Wrapper module still exists, while active migrated runtime path is driven by `convertText` + `App.tsx`. | Like the opposite wrapper, it remains a grounded candidate for future consolidation of frontend entry points after core migration waves. |
+
+Next: sub-step 6.1.2 will classify these candidates by readiness, risk, and value for the next migration wave.
+
+### Step 5 Closure
+
+This sub-step records the official closure note for Step 5 of release `0.0.1.4.6`.
+
+#### What Step 5 achieved
+
+Step 5 established:
+
+- A shared convention baseline across the first and second migrated conversion paths.
+- Backend-side consolidation of conventions that were truly generic and safe to normalize.
+- Frontend/UI-side consolidation of conventions that were truly generic and safe to normalize.
+- Explicit validation that both migrated flows follow the same intended shared rules where those rules are common.
+- Preservation of legitimate path-specific differences where they still belong.
+
+#### Concrete consolidation outcomes
+
+- Shared backend conventions were identified, prioritized, consolidated, and validated.
+- Shared frontend/UI conventions were identified, prioritized, consolidated, and validated.
+- Remaining non-semantic convention drift was reduced where safe.
+- Standardized `ConversionResult` contract semantics remained unchanged.
+- Both migrated flows remained working and semantically aligned after consolidation.
+
+#### What Step 5 now provides
+
+- A stable two-flow convention baseline for future migration work.
+- A clearer boundary between shared/common practice and path-specific behavior.
+- Improved maintainability/readability across the first two migrated paths.
+- A stronger base for future migrations without reopening already settled convention questions.
+
+#### What remains outside Step 5
+
+Step 5 closure does **not** imply that:
+
+- All remaining conversion paths are migrated.
+- Architecture-wide redesign is complete.
+- Full product-wide normalization is complete.
+- All path-specific behavior should disappear.
+- Future UI/UX refinement is complete.
+- Step 6 work has already started.
+
+#### Transition note
+
+Future work should build on the stabilized shared convention baseline established in Steps 1-5, rather than reopening already validated contract, backend-alignment, frontend-alignment, and cross-flow convention decisions for the first two migrated paths.
+
+### Step 6.1.2 — Candidate Classification (Readiness, Risk, Migration Value)
+
+This sub-step classifies the remaining grounded migration candidates identified in Step 6.1.1 using pragmatic readiness, risk, and migration-value criteria.
+
+| Candidate conversion path | Readiness | Migration risk | Migration value / priority signal | Short grounded justification |
+|---|---|---|---|---|
+| `Text -> Markdown` (`/api/text-to-markdown`) | High | Low | High | Dedicated backend route and explicit frontend branch already exist; bounded scope and close fit to the validated two-flow migration pattern. |
+| `HTML -> *` (`/api/from-html`) | Medium-High | Medium | Medium-High | Real route and frontend branch are already present, but multi-target behavior adds slightly more mapping/verification complexity than a single-direction path. |
+| Generic multi-format route (`/api/convert`) | Medium | High | High (strategic), Medium (near-term) | Broad real usage surface and many format pairs provide strong long-term value, but cross-format variance increases migration/alignment risk for a single next wave. |
+| Frontend legacy wrapper modules (`asciidoc-to-markdown.ts`, `markdown-to-asciidoc.ts`) | Medium | Low-Medium | Medium | Grounded cleanup/alignment candidates with bounded frontend scope, but they are secondary to route-level conversion-path migration priorities. |
+
+#### Near-term candidate strength signal
+
+- **Stronger near-term candidates:** `Text -> Markdown` first, then `HTML -> *` (good readiness with manageable risk and clear migration value).
+- **Weaker near-term candidates:** full `/api/convert` family as an immediate next wave (high surface and higher dependency/risk complexity), plus wrapper-only cleanup as a secondary priority.
+
+Next: sub-step 6.1.3 will select the next realistic migration wave.
+
+### Step 6.1.3 — Next Realistic Migration Wave Selection
+
+This sub-step selects the next realistic migration wave based on the grounded candidate inventory and readiness/risk/value classification from Steps 6.1.1 and 6.1.2.
+
+#### Selected next migration wave
+
+- **Primary selected wave:** `Text -> Markdown` (`POST /api/text-to-markdown`)
+
+#### Why this wave was selected
+
+- It has the strongest readiness/risk profile among remaining candidates (high readiness, low migration risk, high practical value).
+- It is already represented by a dedicated backend route and an explicit frontend routing branch, which keeps migration scope bounded.
+- It fits the validated migration/alignment model directly (converter/route normalization -> backend preservation -> frontend consumption/state verification) without introducing cross-format orchestration complexity.
+- It is likely to succeed without reopening settled foundational conventions from Steps 1-5.
+
+#### Why this wave is lower-friction than other candidates
+
+- Compared with `HTML -> *`, it has fewer target-format branches and therefore lower mapping/verification branching complexity.
+- Compared with the broad `/api/convert` family, it avoids high-surface multi-format dependency risk in a single wave.
+- Compared with wrapper-only cleanup candidates, it provides direct migration-wave value on an active conversion path rather than secondary structural cleanup.
+
+Next: sub-step 6.2.1 will define migration order and execution strategy for this selected wave.
+
+### Step 6.2.1 — Migration Order and Strategy for the Selected Wave
+
+This sub-step defines migration order and execution strategy for the selected next wave identified in Step 6.1.3.
+
+#### Selected next wave candidate
+
+- `Text -> Markdown` (`POST /api/text-to-markdown`)
+
+#### Recommended migration order
+
+1. Migrate and verify `Text -> Markdown` as a **single-path wave** (strict one-path-at-a-time execution).
+2. Complete the full validated sequence on this path before opening any additional Step 6 candidate:
+   - converter/runtime mapping and helper payload mapping
+   - success/failure standardization
+   - internal-error harmonization
+   - backend/orchestrator alignment and verification
+   - frontend/UI alignment and verification
+   - boundary-level consolidation checks
+
+#### Why this order is recommended
+
+- `Text -> Markdown` has the strongest low-friction profile (highest readiness, lowest risk, clear route/frontend ownership).
+- A strict single-path wave minimizes overlap risk and keeps failure diagnosis bounded.
+- It maximizes reuse of the already validated migration/alignment model from Steps 1-5 without introducing multi-branch coordination complexity.
+- It preserves convention stability by preventing premature expansion to broader candidate surfaces.
+
+#### Deferred within/after this wave
+
+- `HTML -> *` migration is deferred until the `Text -> Markdown` wave is fully completed and validated.
+- Broad `/api/convert` family migration remains deferred due to multi-format surface/risk.
+- Frontend wrapper harmonization remains deferred as secondary cleanup work, not part of this immediate wave strategy.
+
+Next: sub-step 6.2.2 will define migration-readiness criteria for flows in this selected wave.
+
+### Step 6.2.2 — Migration-Readiness Criteria for the Selected Wave
+
+This sub-step defines migration-readiness criteria for paths considered for entry into the selected next wave strategy (starting with `Text -> Markdown`).
+
+#### Minimum required readiness criteria (must-have)
+
+- The conversion path is real, reachable, and currently wired in code (backend route/service path and relevant frontend trigger path).
+- Runtime flow is sufficiently understandable to map end-to-end (input, conversion call, output path, failure branches).
+- Nominal success and failure paths are both identifiable and testable.
+- Error behavior is observable enough to classify and normalize (not fully opaque/untraceable).
+- Backend orchestration boundary is traceable enough for Step 2-style alignment work.
+- Frontend/UI consumption boundary is traceable enough for Step 3-style alignment work (if the path is user-facing).
+- Scope is bounded enough to execute without reopening broad architecture or contract questions.
+- No blocking engine/runtime dependency is currently preventing realistic execution.
+
+#### Helpful but non-blocking readiness signals
+
+- Existing focused scripts/tests already touch the path or can be extended with minimal effort.
+- Path uses established helper/convention patterns partially (even if not fully aligned yet).
+- Observability signals (logs/errors) are already present and interpretable.
+- Frontend path already uses `convertText` conventions, reducing additional integration work.
+- Prior migration artifacts provide near-direct pattern reuse for this path.
+
+#### Defer / unready signals (migrate later)
+
+- Path is only partially present or not actually reachable through current runtime wiring.
+- Success/failure behavior cannot be reliably isolated without broad exploratory refactor.
+- Critical engine dependency is unavailable/unstable, making validation non-deterministic.
+- Path requires cross-cutting architecture/UI redesign to migrate safely.
+- Error behavior is too opaque to preserve structured semantics without high-risk guesswork.
+- Scope is inherently multi-path/multi-format at once, with high coupling and unclear bounded entry point.
+
+#### Why these criteria matter
+
+These criteria keep future migration waves low-risk and controlled by ensuring each candidate enters migration only when bounded, traceable, and executable through the already validated alignment model.
+
+Next: sub-step 6.2.3 will classify remaining candidates into easy-win, cleanup-first, and defer groups.
+
+### Step 6.2.3 — Practical Candidate Grouping (Easy Win / Cleanup-First / Defer)
+
+This sub-step classifies remaining grounded candidates by practical migration readiness using the criteria defined in Step 6.2.2.
+
+#### Easy win candidates
+
+| Candidate path | Category | Grounded justification |
+|---|---|---|
+| `Text -> Markdown` (`POST /api/text-to-markdown`) | Easy win | Dedicated backend route and explicit frontend branch already exist, success/failure behavior is bounded and traceable, and migration scope fits the validated low-friction model. |
+
+#### Cleanup-first candidates
+
+| Candidate path | Category | Grounded justification |
+|---|---|---|
+| `HTML -> *` (`POST /api/from-html`) | Cleanup-first | Runtime path is real and traceable, but multi-target behavior increases branching/verification load; benefits from small preparation/constraint cleanup before full migration execution. |
+| Frontend legacy wrapper modules (`asciidoc-to-markdown.ts`, `markdown-to-asciidoc.ts`) | Cleanup-first | Grounded and low-risk as cleanup targets, but secondary to primary route-level migration work; wrapper role should be clarified to avoid overlap/noise during wave execution. |
+
+#### Defer for later candidates
+
+| Candidate path | Category | Grounded justification |
+|---|---|---|
+| Generic multi-format family (`POST /api/convert`) | Defer for later | Broad multi-format surface is real but high-coupling/high-variance; not ideal for immediate low-friction wave entry without reopening wider cross-format complexity. |
+
+Next: Step 6.3 will define common non-regression preparation for future migration waves.
+
+### Step 6.3.1 — Existing Verification Coverage Comparison and Common Non-Regression Structure
+
+This sub-step compares verification coverage already used across migrated flows and extracts the minimum common non-regression structure for future migration waves.
+
+#### Verification layers already evidenced in the project
+
+- Isolated converter success/failure checks (for converter-level behavior and error semantics).
+- Baseline representative scenario checks (small multi-scenario coverage per migrated path).
+- Backend/orchestrator preservation checks (contract propagation and internal-failure normalization at backend layers).
+- Frontend/UI preservation checks (structured success/failure consumption and state-transition coherence in `convertText`/UI flow).
+- End-to-end success/failure checks (request-to-boundary validation on migrated endpoints).
+- Effective boundary checks:
+  - backend output boundary contract checks,
+  - effective UI output-boundary coherence checks (current-attempt ownership, anti-stale behavior).
+
+#### Common vs path-specific verification elements
+
+- **Already common across migrated flows**
+  - Contract-root field assertions for success/failure envelopes.
+  - Structured failure assertions (`error.code`, `error.message`, additive `detail` consistency).
+  - At least one nominal success and one grounded failure scenario.
+  - Verification of lifecycle/state coherence and stale-output protection on migrated frontend flows.
+  - Layered sequence: isolated path checks -> backend/orchestrator checks -> frontend/UI checks -> boundary checks.
+
+- **Still path-specific**
+  - Engine/runtime fault-injection probes and internal-error trigger methods.
+  - Direction-specific payload/output ownership assertions (`markdown` vs `asciidoc` targets).
+  - Path-oriented representative scenario mix and user-facing error wording expectations.
+
+#### Minimum common non-regression structure for future waves
+
+1. Isolated path verification: success + structured failure + one internal-error normalization check.
+2. Backend/orchestrator verification: contract preservation through route coordination and output boundary.
+3. Frontend/UI verification: structured success/failure consumption, `idle/loading/success/error` transition coherence, stale-state safeguards.
+4. Representative scenario pass: a compact set covering nominal and at least one meaningful failure family.
+5. Final boundary validation: confirm standardized semantics survive to effective backend/UI boundaries.
+
+Next: sub-step 6.3.2 will formalize the minimum verification kit for future migrated flows.
+
+### Step 6.3.2 — Minimum Reusable Verification Kit for Future Migrated Flows
+
+This sub-step formalizes the minimum reusable verification kit derived from the common non-regression structure validated across migrated flows.
+
+#### Minimum required checks
+
+- **Isolated converter success check**
+  - Verify nominal success output and standardized success semantics at converter/path level.
+- **Isolated converter failure check**
+  - Verify at least one grounded failure path returns/preserves structured failure semantics.
+- **Backend/orchestrator preservation check**
+  - Verify standardized result propagation through the backend coordination layer.
+- **End-to-end success check**
+  - Verify success survives from request entry to effective output boundary for the migrated path.
+- **End-to-end failure check**
+  - Verify failure survives with structured error semantics (`error.code` available) to effective output boundary.
+- **Effective backend boundary check**
+  - Verify final backend payload boundary preserves contract semantics (including additive compatibility fields only).
+
+#### Recommended but optional checks
+
+- **Compact representative scenario set**
+  - Add 2-4 path-relevant scenarios (nominal + meaningful failure variants) to reduce regression blind spots.
+- **Internal-error normalization probe**
+  - Add one targeted internal-failure probe to confirm safe structured normalization behavior.
+- **Cross-attempt coherence check**
+  - Verify success->failure or failure->success sequence coherence for migrated frontend flows.
+- **Focused boundary regression script**
+  - Add a dedicated script/test if the path has known boundary drift risk history.
+
+#### Conditional / path-dependent checks
+
+- **Frontend/UI preservation checks** (conditional)
+  - Required when the path is user-facing in the current product flow; may be scoped down for backend-only/internal paths.
+- **Effective UI boundary check** (conditional)
+  - Required when a real UI consumption/rendering boundary exists for the migrated path.
+- **Engine-specific internal probes** (conditional)
+  - Apply only when a path’s runtime allows safe deterministic fault injection or controlled internal-error triggers.
+
+#### Why this kit matters
+
+This kit keeps migration waves low-risk and comparable by enforcing a consistent minimum verification floor across flows while allowing path-dependent checks where grounded.
+
+Next: sub-step 6.3.3 will convert this verification kit into a migration playbook/checklist.
+
+### Step 6.3.3 — Operational Migration Playbook (Reusable Checklist)
+
+This sub-step turns the validated migration/alignment model into a concise operational playbook for future conversion-flow migrations.
+
+#### Required migration checklist (default sequence)
+
+1. Confirm candidate readiness against Step 6.2.2 minimum criteria.
+2. Map current converter/runtime flow (success path, failure path, internal error behavior).
+3. Map payload fields into `createSuccessResult()` / `createFailureResult()` inputs.
+4. Integrate standardized success-path result construction.
+5. Integrate standardized failure-path result construction.
+6. Harmonize internal error behavior into structured failure semantics.
+7. Run isolated converter/path verification (minimum kit required checks).
+8. Identify backend/orchestrator alignment target for the path.
+9. Map backend success/failure propagation and contract-risk points.
+10. Apply minimal backend remediation to preserve standardized semantics.
+11. Verify backend output boundary contract behavior.
+12. Identify frontend/UI alignment target for the same path (if user-facing).
+13. Map frontend success/failure consumption and state behavior.
+14. Apply minimal frontend remediation for structured semantics + state coherence.
+15. Verify effective UI boundary coherence and stale-state safeguards.
+16. Run final cross-layer non-regression pass using the minimum verification kit.
+17. Record path comparison/consolidation notes against previously migrated flows.
+
+#### Conditional / when-applicable checklist items
+
+- Apply frontend/UI alignment and UI-boundary checks only when the path is user-facing in the current product flow.
+- Add engine-specific internal-failure probes only when deterministic fault-injection is feasible and safe.
+- Expand representative scenarios only when path complexity justifies additional coverage.
+- Add compatibility-wrapper checks only when additive wrapper fields are present at the boundary.
+- Include wrapper-entry cleanup checks only when the path still has legacy wrapper overlap.
+
+#### Stop / defer signals (do not proceed yet)
+
+- Path is not fully reachable or wiring is incomplete.
+- Success/failure behavior cannot be mapped without broad exploratory refactor.
+- Critical runtime dependency/engine state is unstable or unavailable.
+- Migration scope would force cross-cutting architecture/UI redesign.
+- Error behavior is too opaque to preserve structured semantics safely.
+- Candidate requires multi-path/multi-format coupling beyond a bounded wave scope.
+
+#### Why this playbook matters
+
+This playbook keeps future migrations controlled, comparable, and low-risk by enforcing a repeatable, bounded sequence with explicit readiness gates and non-regression validation expectations.
+
+Next: sub-step 6.4.1 will summarize what Step 6 has prepared for the next migration wave.
+
+### Step 6.4.1 — Step 6 Preparation Summary
+
+This sub-step summarizes what Step 6 has concretely prepared for future migration waves.
+
+#### What Step 6 prepared
+
+- A grounded inventory of remaining migration candidates still present in the codebase.
+- A pragmatic readiness/risk/value classification for those candidates.
+- Selection of the next realistic migration wave (`Text -> Markdown`) with explicit rationale.
+- Migration-readiness criteria defining minimum entry conditions for future wave candidates.
+- Practical grouping into easy-win, cleanup-first, and defer categories.
+- A minimum common non-regression structure extracted from already migrated flows.
+- A minimum reusable verification kit for future migrated flows (required/optional/conditional checks).
+- An operational migration playbook/checklist defining required sequence, conditional steps, and stop/defer signals.
+
+#### Stable planning material vs out-of-scope implementation work
+
+- **Now prepared as stable migration-planning material**
+  - Candidate inventory and prioritization logic
+  - Readiness gates and wave-selection rationale
+  - Reusable non-regression and verification baseline
+  - Reusable operational migration checklist
+
+- **Still outside Step 6 scope**
+  - Actual migration implementation of additional flows
+  - Runtime/backend/frontend code changes for new paths
+  - Broader architecture/UI redesign work
+  - Execution of later migration waves beyond current planning preparation
+
+Next: sub-step 6.4.2 will formalize the migration-readiness and playbook baseline established by Step 6.
+
+### Step 6.4.2 — Migration-Readiness and Playbook Baseline
+
+This sub-step formalizes the default migration-readiness and operational playbook baseline prepared by Step 6 for future migration waves.
+
+#### Readiness-baseline expectations (default entry conditions)
+
+- Converter path exists and is currently reachable in runtime wiring.
+- Runtime flow is understandable enough to map end-to-end.
+- Success and failure paths are identifiable and testable.
+- Backend path is traceable enough for contract-preservation alignment work.
+- Frontend/UI path is traceable enough when the flow is user-facing.
+- Migration scope is bounded enough for one-wave execution.
+- No blocking dependency/engine state makes the flow non-viable now.
+
+#### Playbook-baseline expectations (default migration behavior)
+
+- Migrate one bounded real flow at a time.
+- Map runtime flow before helper payload integration work.
+- Standardize success and failure semantics before broad surrounding-layer alignment.
+- Verify isolated converter/path behavior before backend/frontend alignment.
+- Preserve standardized semantics instead of rebuilding legacy local models.
+- Apply the minimum reusable verification kit before considering a flow safely migrated.
+
+#### Baseline-by-default vs grounded path-specific adaptation
+
+- **Baseline-by-default**
+  - Readiness and playbook expectations above should apply to future waves unless a grounded exception exists.
+
+- **May require path-specific adaptation when grounded**
+  - Engine/runtime internals and deterministic fault-injection feasibility.
+  - Direction-dependent payload ownership and UI target-panel mapping.
+  - Flow-specific error-detail granularity and user-facing wording nuances.
+  - Scenario emphasis required by path topology or external dependency behavior.
+
+#### Why this baseline matters
+
+- It reduces re-decision of migration principles already validated in previous steps.
+- It keeps future waves controlled, comparable, and bounded.
+- It helps avoid premature refactors and unbounded migration scope.
+
+Next: the official Definition of Done for Step 6 follows in sub-step 6.4.3.
+
+### Step 6 Definition of Done
+
+This sub-step formalizes the official Definition of Done for Step 6 of release `0.0.1.4.6`.
+
+Step 6 is complete only if all criteria below are true:
+
+- Remaining grounded candidate conversion paths are identified.
+- Those candidates are classified by readiness, risk, and migration value.
+- The next realistic migration wave is selected.
+- A migration order/strategy for that wave is defined.
+- Practical migration-readiness criteria are defined.
+- Remaining candidates are grouped into easy-win, cleanup-first, and defer-for-later categories.
+- Existing verification coverage across migrated flows is compared.
+- A minimum common non-regression structure is extracted.
+- A minimum reusable verification kit is documented.
+- An operational migration playbook/checklist is documented.
+- A migration-readiness/playbook baseline is formalized for future waves.
+- Step 6 clearly distinguishes what is prepared now versus what requires future implementation.
+
+#### What Step 6 does not require
+
+- Migration of a third flow.
+- Refactoring remaining candidate flows.
+- Backend or frontend redesign.
+- Immediate implementation of the selected next wave.
+- Complete normalization of all remaining converters in this step.
+
+#### Why this Definition of Done matters
+
+- It marks the transition from validating/consolidating the first migrated flows to preparing future waves in a controlled way.
+- It removes ambiguity about what "migration readiness" means in Ascend planning.
+- It provides a stable planning baseline for future implementation without reopening settled migration principles.
+
+Next: the official Step 6 closure note follows in sub-step 6.4.4.
+
+### Step 6 Closure
+
+This sub-step records the official closure note for Step 6 of release `0.0.1.4.6`.
+
+#### What Step 6 achieved
+
+Step 6 successfully established:
+
+- A grounded inventory of remaining migration candidates.
+- A pragmatic readiness/risk/value classification for those candidates.
+- A selected next realistic migration wave.
+- Explicit migration-readiness criteria.
+- A practical easy-win / cleanup-first / defer framework.
+- A reusable minimum non-regression and verification baseline.
+- An operational migration playbook/checklist for future flows.
+
+#### Concrete preparation outcomes
+
+- Ascend now has a documented method for deciding which remaining flows should be migrated next.
+- Future migration waves can be prepared without reopening already validated contract and alignment principles.
+- A minimum verification kit now exists for comparing future migrated flows on a common baseline.
+- Migration planning is now more controlled, comparable, and low-risk.
+
+#### What Step 6 now provides
+
+- A stable migration-readiness baseline.
+- A practical future-wave planning framework.
+- A reusable verification baseline for future migrated flows.
+- A cleaner bridge between validated early migrations and later scaling work.
+
+#### What remains outside Step 6
+
+Step 6 closure does **not** imply that:
+
+- The selected next migration wave has already been implemented.
+- A third flow has already been migrated.
+- Remaining candidate flows have already been cleaned up.
+- Backend or frontend redesign is complete.
+- All remaining converters are normalized.
+- Step 7 work has already started.
+
+#### Transition note
+
+Future work should build on the migration-readiness and playbook baseline documented in Steps 1-6, rather than reopening already validated contract, alignment, consolidation, and migration-method decisions.
+
+### Step 7.1.1 — First Executable Flow Confirmation (Selected Wave)
+
+Step 7 starts by confirming the first concrete executable flow inside the migration wave selected in Step 6.
+
+- **Selected wave:** `Text -> Markdown` migration wave
+- **First concrete flow to execute:** `Text -> Markdown` via `POST /api/text-to-markdown`
+
+Why this flow is confirmed first:
+
+- It has the highest practical readiness among the selected-wave scope.
+- It has the lowest expected execution friction and dependency complexity.
+- It is the best fit for the validated migration/alignment playbook and minimum verification kit.
+- It provides the strongest chance of a clean first execution outcome for Step 7 before any broader wave expansion.
+
+Next: sub-step 7.1.2 will define the execution order for the remaining items in this wave.
+
+### Step 7.1.2 — Practical Execution Order Inside the Selected Wave
+
+This sub-step defines the practical execution order inside the selected migration wave before implementation starts.
+
+- **Selected migration wave:** `Text -> Markdown` wave
+- **First confirmed flow:** `Text -> Markdown` via `POST /api/text-to-markdown`
+
+#### Recommended execution order
+
+1. Execute `Text -> Markdown` migration end-to-end as the first and only active in-wave implementation item.
+2. Run full validation against the established playbook and minimum verification kit for this flow.
+3. Only after validated first execution evidence, decide whether to open the next candidate (`HTML -> *`) as a separate follow-on wave item.
+
+#### Why this order is recommended
+
+- It keeps cadence strictly sequential and controlled (no parallel migration interference).
+- It maximizes reuse of the validated migration/alignment method on the highest-readiness path first.
+- It minimizes coupling risk while preserving clear failure diagnosis boundaries.
+- It avoids expanding scope before first-execution evidence confirms expected low-friction behavior.
+
+#### Deferred until first execution evidence is validated
+
+- `HTML -> *` remains deferred until `Text -> Markdown` execution and verification are complete.
+- Generic `/api/convert` family remains deferred (high-surface complexity).
+- Wrapper-focused cleanup remains deferred as secondary work outside this immediate execution order.
+
+Next: sub-step 7.1.3 will freeze the Step 7 execution scope.
+
+### Step 7.1.3 — Step 7 Execution Scope Freeze
+
+This sub-step freezes the Step 7 execution scope so the selected migration wave remains bounded, controlled, and protected from scope creep before implementation.
+
+- **Selected migration wave:** `Text -> Markdown` wave
+- **First confirmed executable flow:** `Text -> Markdown` via `POST /api/text-to-markdown`
+
+#### IN scope for Step 7
+
+- Execute migration work for the confirmed first flow only (`Text -> Markdown`).
+- Follow the execution order defined in Step 7.1.2 (strictly sequential progression).
+- Apply the validated migration/alignment playbook sequence from Steps 1-6.
+- Apply the minimum reusable verification kit and boundary checks for this flow.
+- Perform only minimal, flow-bounded fixes required to preserve standardized semantics and non-regression.
+
+#### OUT of scope for Step 7
+
+- Migrating unrelated additional flows in parallel.
+- Broad backend architecture redesign.
+- Broad frontend/UI redesign.
+- Building new generic frameworks/abstraction layers without a blocking need.
+- Product-wide cleanup unrelated to the selected wave.
+- Reopening already validated contract/alignment/convention decisions without grounded blocker evidence.
+
+#### Deferred until later
+
+- `HTML -> *` migration until the first flow execution is complete and validated.
+- Generic `/api/convert` family migration.
+- Wrapper-focused cleanup and broader harmonization work.
+- Any larger cross-flow normalization beyond this bounded execution wave.
+
+#### Why this scope freeze matters
+
+It keeps Step 7 execution low-risk, diagnosable, and comparable by preventing mid-flight scope expansion and preserving a controlled one-flow migration cadence.
+
+Next: sub-step 7.2.1 will begin runtime flow mapping of the first executable flow.
+
+### Step 7.2.1 — Current Runtime Flow Mapping (Before Helper Integration)
+
+This sub-step maps the current runtime flow before helper integration for the first executable flow inside the selected Step 7 wave.
+
+- Selected migration wave: **Text -> Markdown**
+- First executable flow: **`POST /api/text-to-markdown`**
+
+#### Current runtime flow (grounded)
+
+1. Request enters `api/backend/routes/conversion.routes.js` at `router.post('/text-to-markdown', ...)`.
+2. Route-level validation middleware (`validate` + `zod`) requires `body.text` as non-empty string shape (`z.string().min(1)`).
+3. Route handler reads `text` from `req.body`.
+4. Route applies a second local pre-check: `if (!text.trim())` then returns HTTP `400` with `{ detail: "The text to convert is empty" }`.
+5. Route logs conversion start with input size (`console.log`).
+6. Route invokes `text2markdown(text)` from `api/backend/services/conversion/convert.js` (called with `await`; function itself is synchronous and returns a string or throws).
+7. `text2markdown` performs in-memory line parsing/normalization (headings, lists, separators, simple links/emails), collapses extra blank lines, and returns normalized Markdown text ending with a newline.
+8. Route logs conversion success and returns HTTP `200` with `{ markdown }`.
+9. If any exception is thrown (route/body/runtime), route `catch` logs error and returns HTTP `500` with `{ detail: "Conversion error: ..." }`.
+
+#### Current success-path shape
+
+- Success response is currently legacy/simple: `200` with `{ markdown: string }`.
+- No standardized `ConversionResult` object is currently attached on this path.
+
+#### Current failure-path shape
+
+- Failure responses are currently string-detail envelopes:
+  - Validation/pre-check failures: `400` with `{ detail: string }`.
+  - Runtime failures: `500` with `{ detail: string }`.
+- Structured `error` object (`code`, `message`, `details`) is not currently emitted on this path.
+
+#### Integration-relevant observations (before helper mapping)
+
+- No temp files are created in this path; conversion is in-memory only.
+- No duration measurement is currently tracked at route level.
+- No structured `warnings`/`logs` arrays or `meta` object are currently returned.
+- Output artifact metadata (output file/path object) is not currently present.
+- Error generation is currently throw/string-detail based, with mixed failure entry points (middleware validation, route trim check, catch block).
+
+Next: payload mapping from this current flow to centralized helpers (`createSuccessResult()` / `createFailureResult()`) is defined in sub-step 7.2.2.
+
+### Step 7.2.2 — Payload Mapping to Centralized Helpers (Before Integration)
+
+This sub-step defines payload mapping to centralized helpers before runtime integration for the first executable Step 7 flow.
+
+- Selected migration wave: **Text -> Markdown**
+- First executable flow: **`POST /api/text-to-markdown`**
+
+#### Success payload mapping (`createSuccessResult(payload)`)
+
+| Field | Current runtime source | Mapping strategy for integration |
+|---|---|---|
+| `conversionId` | Not currently created in `/text-to-markdown` route | Derive locally at request start (same route-level UUID pattern used in migrated paths). |
+| `converter` | Route currently calls `text2markdown(text)` directly | Set to a stable converter identifier for this flow (expected: `"text2markdown"`). |
+| `pipeline` | Not currently emitted | Derive fixed path pipeline for this route (expected: `["text->markdown"]`). |
+| `inputFormat` | Implied by route (`text-to-markdown`) | Set to `"txt"` (or `"text"` if project convention requires), consistently with route semantics. |
+| `outputFormat` | Implied by route return (`markdown`) | Set to `"markdown"`. |
+| `inputFile` | Request body text only; no file artifact object currently built | Derive in-memory input descriptor from request text (`originalName`, `storedPath`, `size`, `mimeType`). |
+| `outputFile` | Result text available in memory; no output artifact object currently built | Derive in-memory output descriptor from produced markdown length and mime type. |
+| `startedAt` | Not currently tracked | Derive at request start timestamp. |
+| `finishedAt` | Not currently tracked | Derive at success completion timestamp. |
+| `durationMs` | Not currently tracked | Derive from start/end timing delta. |
+| `warnings` | Not currently structured | Use helper default (`[]`) unless grounded warnings are introduced locally later. |
+| `logs` | Console logs exist but no structured per-attempt log list | Use helper default (`[]`) for this migration step. |
+| `meta` | Not currently emitted | Derive minimal route metadata object (for example route id + transport mode). |
+
+#### Failure payload mapping (`createFailureResult(payload)`)
+
+| Field | Current runtime source | Mapping strategy for integration |
+|---|---|---|
+| `conversionId` | Not currently created | Derive locally at request start (same id as success branch attempt). |
+| `converter` | Direct call to `text2markdown` | Set to same stable converter identifier as success branch. |
+| `pipeline` | Not currently emitted | Derive fixed pipeline value for this flow (`["text->markdown"]`). |
+| `inputFormat` | Route semantics | Set consistently to `"txt"` (or project-approved equivalent). |
+| `outputFormat` | Route semantics | Set to `"markdown"`. |
+| `inputFile` | Request body text only | Derive in-memory input descriptor from available text (empty or provided content). |
+| `startedAt` | Not currently tracked | Derive at request start. |
+| `finishedAt` | Not currently tracked | Derive at failure completion. |
+| `durationMs` | Not currently tracked | Derive elapsed time at failure completion. |
+| `error` | Currently flattened to `{ detail: ... }` in 400/500 responses | Build structured `error` with grounded `code/message/details` (route-precheck vs runtime failure context). |
+| `outputFile` | No output artifact on failure today | Set `null` unless grounded output artifact exists at failure time. |
+| `warnings` | Not currently structured | Use helper default (`[]`). |
+| `logs` | Only console logging exists | Use helper default (`[]`) for this step. |
+| `meta` | Not currently emitted | Derive minimal metadata object (`route`, `transport`, optional stage marker). |
+
+#### Integration-relevant observations
+
+- **Already directly available:** input text, produced markdown (success), route identity, and catch/pre-check failure context.
+- **Must be derived locally during integration:** `conversionId`, timing fields, in-memory input/output descriptors, and minimal `meta`.
+- **Must be normalized from current behavior:** current `{ detail: ... }` failure shape should be mapped to structured helper `error`.
+- **Currently absent in this path:** structured `warnings`/`logs` payloads and output artifact metadata on failure.
+
+Next: runtime integration of the success path for this flow begins in sub-step 7.2.3.
+
+### Step 7.3.2 — Backend/Orchestrator Flow Mapping Through the Confirmed Alignment Target
+
+This sub-step maps the backend/orchestrator flow of the first executable Step 7 flow through the confirmed alignment target, after 7.2.3/7.2.4/7.2.5 integration.
+
+- Selected migration wave: **Text -> Markdown**
+- First executable flow: **`POST /api/text-to-markdown`**
+- Confirmed Step 7.3 alignment target: **`api/backend/routes/conversion.routes.js` at `router.post('/text-to-markdown', ...)`**
+
+#### Nominal success-oriented backend flow (current grounded runtime)
+
+1. Request enters backend at `POST /api/text-to-markdown` in `api/backend/routes/conversion.routes.js`.
+2. Route-level validation middleware (`validate` + `zod`) accepts `body.text` as `z.string()`.
+3. Route initializes per-attempt context (`conversionId`, `startedAt`, `startedAtMs`) inside the confirmed alignment target.
+4. Route applies local semantic pre-check (`!text.trim()`) and continues only for non-empty text.
+5. Route invokes converter execution (`await text2markdown(text)`) through `api/backend/services/conversion/convert.js`.
+6. On converter success, route derives `finishedAt` and `durationMs`.
+7. First standardized success `ConversionResult` is created in the alignment target via `createSuccessResult(...)`, with:
+   - converter/pipeline/format fields (`text2markdown`, `["text->markdown"]`, `txt -> markdown`)
+   - in-memory `inputFile` and `outputFile`
+   - timing (`startedAt`, `finishedAt`, `durationMs`)
+   - `warnings: []`, `logs: []`, `meta` object.
+8. Route returns final backend-level success payload as `{ markdown, conversionResult }` to the HTTP response boundary.
+
+#### Failure-oriented backend flow (current grounded runtime)
+
+1. Same backend entry point and route-level validation as success flow.
+2. If semantic pre-check fails (`!text.trim()`):
+   - failure is normalized in the alignment target through `buildTextToMarkdownFailure(...)` -> `createFailureResult(...)`
+   - grounded code is `EMPTY_INPUT` with `error.details.stage = "route-precheck"`
+   - final response is HTTP `400` with standardized failure result plus compatibility `detail`.
+3. If converter execution throws:
+   - converter-local `try/catch` in the alignment target classifies failure as `CONVERSION_FAILED` (`stage = "converter-execution"`)
+   - failure is normalized through `buildTextToMarkdownFailure(...)` -> `createFailureResult(...)`
+   - final response is HTTP `500` with standardized failure result plus compatibility `detail`.
+4. If unexpected route-level/internal exception occurs outside converter-local catch:
+   - outer route `catch` classifies as `INTERNAL_ERROR` (`stage = "route-internal"`)
+   - failure is normalized through `buildTextToMarkdownFailure(...)` -> `createFailureResult(...)`
+   - final response is HTTP `500` with standardized failure result plus compatibility `detail`.
+
+#### Standardized result lifecycle through the confirmed target
+
+- **First creation point (success):** `createSuccessResult(...)` inside `router.post('/text-to-markdown', ...)` in `conversion.routes.js`.
+- **First creation point (failure):** `createFailureResult(...)` via `buildTextToMarkdownFailure(...)` in the same route handler.
+- **Upward propagation:** standardized object is created and returned directly by the confirmed target (no additional backend orchestrator layer mutates it for this path).
+- **Final backend return path:** Express route response (`res.json(...)`) is the effective backend output boundary for this flow.
+
+#### Contract-preservation and contract-risk observations
+
+##### Preserved correctly
+
+- Standardized success and failure objects are both created in the alignment target before response emission.
+- Required root-level contract fields are preserved in both success and failure responses.
+- Failure branches use structured `error` with grounded codes (`EMPTY_INPUT`, `CONVERSION_FAILED`, `INTERNAL_ERROR`).
+- `warnings`, `logs`, and `meta` remain structurally consistent with the established contract baseline.
+
+##### Safely enriched
+
+- Compatibility `detail` is additive (`detail === error.message`) and does not replace structured `error`.
+- Stage context is preserved in `error.details.stage` for internal diagnostics.
+
+##### Reshaped/stripped/wrapped/bypassed risk points
+
+- **Wrapped (intentional):** success is wrapped as `{ markdown, conversionResult }` and failure as `{ ...conversionResult, detail }`; this is consistent with existing migrated-route compatibility patterns.
+- **Not applicable for this flow:** no lazy-loader registry/module-resolution orchestration step is used on `text-to-markdown`, so there is no contract risk at registry/lazy-load boundaries for this specific path.
+- **Residual risk (low):** route-level middleware validation failures that occur before handler execution can still bypass route-built `ConversionResult` shaping if schema becomes stricter again; current `z.string()` plus route pre-check avoids this drift.
+
+Next: sub-step 7.3.3 will identify backend/orchestrator contract-risk points and define target backend/orchestrator behavior for this Step 7 flow.
+
+### Step 7.3.3 — Backend/Orchestrator Contract-Risk Points and Target Behavior (First Step 7 Flow)
+
+This sub-step identifies grounded backend/orchestrator contract-risk points and defines the target backend behavior for the first executable Step 7 flow, reusing the 7.3.2 flow mapping.
+
+- Selected migration wave: **Text -> Markdown**
+- First executable flow: **`POST /api/text-to-markdown`**
+- Confirmed Step 7.3 alignment target: **`api/backend/routes/conversion.routes.js` at `router.post('/text-to-markdown', ...)`**
+
+#### Exact risk points in the current backend/orchestrator flow
+
+1. **Middleware-before-handler escape point (pre-target risk)**
+   - **Where:** validation middleware stage before route handler body execution.
+   - **Why risky:** if schema constraints become stricter again (for example back to `min(1)`), request rejection may happen before route-level `createFailureResult(...)` construction, producing non-standardized error envelopes.
+   - **Current status:** low residual risk (currently mitigated by `z.string()` + route pre-check).
+
+2. **HTTP wrapper asymmetry at output boundary**
+   - **Where:** final response shape (`{ markdown, conversionResult }` on success vs `{ ...conversionResult, detail }` on failure).
+   - **Why risky:** downstream consumers that read only top-level keys may drift into path-specific handling and ignore the standardized object as primary source.
+   - **Current status:** acceptable compatibility wrapper, but still a contract-consumption risk if consumers are not disciplined.
+
+3. **Additive compatibility field drift (`detail`)**
+   - **Where:** failure responses include `detail` in addition to `error`.
+   - **Why risky:** future edits could accidentally diverge `detail` from `error.message`, reintroducing parallel semantics.
+   - **Current status:** currently safe (`detail === error.message`), but requires ongoing guardrails.
+
+4. **Partial rebuild risk in route-local helper updates**
+   - **Where:** `buildTextToMarkdownFailure(...)` and success payload assembly in the route.
+   - **Why risky:** future edits could omit required root-level fields (`warnings`, `logs`, `meta`, timing fields, or file descriptors), causing silent contract erosion.
+   - **Current status:** currently safe and complete, but maintenance-sensitive.
+
+5. **Raw throw bypass risk in new internal branches**
+   - **Where:** any newly introduced internal branch in this route or converter call path.
+   - **Why risky:** uncaught or re-thrown errors could bypass standardized failure normalization.
+   - **Current status:** core branches are normalized (`converter-execution` and outer `catch`), residual risk exists for future modifications.
+
+#### Points that already appear safe
+
+- Standardized success creation is centralized at route target via `createSuccessResult(...)`.
+- Standardized failure creation is centralized via `buildTextToMarkdownFailure(...)` -> `createFailureResult(...)`.
+- Known failure categories are normalized with grounded codes:
+  - `EMPTY_INPUT` (semantic pre-check)
+  - `CONVERSION_FAILED` (converter execution failure)
+  - `INTERNAL_ERROR` (unexpected route-internal failure)
+- Required contract structure is currently preserved in both success and failure branches, including `warnings`, `logs`, and `meta`.
+- Internal diagnostic context is preserved through `error.details.stage` without flattening `error`.
+
+#### Points that still require alignment attention
+
+- Protect against pre-handler validation drift that can bypass route-built standardized failures.
+- Keep compatibility wrapping strictly additive and prevent semantic split between wrapper fields and `conversionResult`.
+- Maintain field-complete helper payloads as route code evolves.
+- Ensure any future internal error branch in this flow is normalized into `createFailureResult(...)` rather than leaked as raw throw behavior.
+
+#### Target backend/orchestrator behavior for this flow
+
+##### Success-path preservation (target)
+
+- The alignment target must treat `conversionResult` as the canonical success object and preserve all required root-level fields.
+- Response wrapping (`{ markdown, conversionResult }`) is acceptable only as compatibility transport; no success semantics should be moved outside `conversionResult`.
+- Safe enrichment is limited to additive compatibility fields and non-destructive metadata updates.
+
+##### Failure-path preservation (target)
+
+- All known failure conditions must return a standardized failure `ConversionResult` from the alignment target.
+- `error` must remain structured (`code`, `message`, `details`, `recoverable`) with grounded documented codes.
+- `outputFile` must remain coherent with failure semantics (`null` unless a grounded artifact exists).
+- Compatibility `detail` may exist but must remain a strict mirror of `error.message`.
+
+##### Internal-error handling (target)
+
+- Unexpected internal exceptions must be caught and normalized to standardized failures at the alignment target.
+- Use `INTERNAL_ERROR` only when no more specific grounded code applies.
+- Preserve useful local context in `error.details` (for example `stage`, `rawMessage`) without leaking incompatible raw payloads.
+
+##### Acceptable enrichment/normalization (target)
+
+- Additive response wrapping for compatibility.
+- Additive metadata/context enrichment in `meta` and `error.details`.
+- Stable timing/file descriptors derived from in-memory route context.
+
+##### Unacceptable reshaping/flattening (target)
+
+- Returning ad-hoc `{ detail: ... }` as the only failure payload.
+- Omitting required contract root fields in success or failure.
+- Replacing structured `error` with flattened strings.
+- Diverging compatibility fields from canonical `conversionResult` semantics.
+- Allowing raw throws to escape known internal failure branches without normalization.
+
+Next: sub-step 7.3.4 will apply targeted backend/orchestrator remediation for remaining alignment gaps identified here.
+
+### Step 7.3.5 — Verification and Consolidation of Backend/Orchestrator Remediation (First Step 7 Flow)
+
+This sub-step verifies and consolidates the backend/orchestrator remediation applied to the first executable Step 7 flow.
+
+- Selected migration wave: **Text -> Markdown**
+- First executable flow: **`POST /api/text-to-markdown`**
+- Confirmed Step 7.3 alignment target: **`api/backend/routes/conversion.routes.js` at `router.post('/text-to-markdown', ...)`**
+
+#### Verification coverage executed
+
+- `api/backend/scripts/verify-e2e-text-to-markdown-success-contract.js`
+- `api/backend/scripts/verify-e2e-text-to-markdown-failure-contract.js`
+- `api/backend/scripts/verify-e2e-text-to-markdown-representative-scenarios.js`
+- `api/backend/scripts/verify-e2e-text-to-markdown-downstream-failure-preservation.js`
+
+#### Consolidated verification outcomes
+
+##### Success-path relay/preservation
+
+- Success responses continue to expose `{ markdown, conversionResult }`.
+- `conversionResult.success === true` and `conversionResult.error === null` are preserved.
+- Required root-level fields remain present and structurally valid.
+- No legacy ad-hoc success object reconstruction was observed in the remediated target path.
+
+##### Failure-path relay/preservation
+
+- Failure responses remain standardized and preserve structured `error`.
+- Grounded `error.code` values remain meaningful (`EMPTY_INPUT` and `CONVERSION_FAILED` in tested paths).
+- Required root-level fields remain present in failures; `outputFile` stays coherent with failure semantics (`null` for current grounded cases).
+- Failure responses are not flattened to string-only envelopes.
+
+##### Internal coordination-layer error handling
+
+- Internal converter-execution failures are normalized and returned as structured failures.
+- Downstream standardized failure payloads are preserved through the remediated route layer instead of being overwritten by generic internal failures.
+- Outer route-level internal error handling remains as structured fallback normalization when no valid downstream standardized failure is present.
+
+#### Consolidation note
+
+The remediated backend/orchestrator target for the Step 7 first flow now consistently preserves standardized `ConversionResult` objects for success, expected failure, and internal coordination-layer failure handling under the verified scenarios.
+
+Next: Step 7 backend/orchestrator work can proceed with this flow-specific remediation baseline considered verified and consolidated.
+
+### Step 7.4.3 — Frontend/UI Contract-Risk Points and Target Behavior (First Step 7 Flow)
+
+This sub-step identifies grounded frontend/UI contract-risk points and defines the target frontend/UI behavior for the first executable Step 7 flow, reusing the already established frontend coordination mapping (`App.tsx` -> `convertText`).
+
+- Selected migration wave: **Text -> Markdown**
+- First executable flow: **`POST /api/text-to-markdown`**
+- Frontend/UI coordination path considered: **`api/frontend/src/App.tsx` (`handleConvert`) + `api/frontend/src/converters/generic-converter.ts` (`convertText`)**
+
+#### Exact frontend/UI contract-risk points (grounded)
+
+1. **Flow-entry gating risk (UI path currently blocked)**
+   - **Where:** `App.tsx` `handleConvert` currently allows only `asciidoc <-> markdown`.
+   - **Why risky:** the remediated backend `Text -> Markdown` standardized semantics can be fully ignored by normal UI execution because this flow is rejected before `convertText` call in common interaction paths.
+   - **Impact:** contract-preserving backend payloads may not reach the effective UI boundary for this flow.
+
+2. **Non-migrated-path handling in `convertText` (semantic downgrading risk)**
+   - **Where:** `generic-converter.ts` treats only two migrated paths as `isMigratedContractPath`.
+   - **Why risky for `txt -> markdown`:**
+     - success does not require `conversionResult` presence/validity;
+     - output extraction uses legacy fallback (`data.markdown || data.asciidoc || data.result || ""`);
+     - stale-output clearing on generic errors is currently enforced only for migrated paths.
+   - **Impact:** standardized semantics can be partially bypassed or reduced to legacy output extraction behavior.
+
+3. **Structured failure not fully owned by UI for this flow**
+   - **Where:** on structured failure, `setBackendConversionResult(...)` is called, but stale output cleanup is conditional on `isMigratedContractPath`.
+   - **Why risky:** for `txt -> markdown`, previous successful output can remain visible after a failed current attempt in some error branches.
+   - **Impact:** current-attempt ownership at the result panel may become ambiguous.
+
+4. **State/contract asymmetry between success and failure**
+   - **Where:** success path for non-migrated routes may proceed from output fields alone, while failure path can rely on structured error if present.
+   - **Why risky:** success/failure semantics are not enforced symmetrically around canonical `conversionResult`.
+   - **Impact:** UI may preserve backend error semantics better than backend success semantics for this specific flow.
+
+5. **Legacy message fallback risk**
+   - **Where:** fallback branches in `convertText` still construct generic string errors from HTTP text/detail when structured payload is absent or ignored.
+   - **Why risky:** meaningful backend `error.code` context can be dropped from user-visible feedback in legacy branches.
+   - **Impact:** semantic compression to generic string-only failure messaging remains possible.
+
+#### Points that already appear safe
+
+- `convertText` can already route `txt -> markdown` to `POST /api/text-to-markdown`.
+- Structured failure payloads (`success === false` + structured `error`) are consumed when received, and `setBackendConversionResult` can preserve raw backend failure object in UI state.
+- `conversionUiState` transitions (`loading` -> `success`/`error`) are already wired through the shared conversion call.
+- Notification/error modal mechanisms are already present and can render conversion failures without flattening all branches.
+
+#### Points still requiring alignment work
+
+- Enable practical UI execution path for `txt -> markdown` without bypass at `handleConvert`/format gating level.
+- Promote `txt -> markdown` to contract-preserving handling parity with already migrated paths in `convertText`.
+- Enforce current-attempt output ownership (stale-output cleanup) for this flow on all failure categories.
+- Require canonical success semantics to stay tied to standardized `conversionResult`, not only legacy output-key fallback.
+
+#### Target frontend/UI behavior for this flow
+
+##### Success consumption/rendering (target)
+
+- UI should treat backend `conversionResult` as the canonical success semantic source for this flow (same preservation principle used by already migrated flows).
+- Result panel rendering may still use `markdown` transport field, but only when consistent with a valid success `conversionResult`.
+- Required structured fields from backend success should remain available in `lastBackendConversionResult` for diagnostics and UI coherence.
+
+##### Failure consumption/rendering (target)
+
+- UI should preserve structured backend failure semantics (`error.code`, `error.message`, optional `error.details`) without flattening into generic strings when structured payload is present.
+- `error.code` should remain visible/usable in status/notification logic for this flow, as already done for migrated paths.
+- Compatibility text fields (`detail`) are acceptable only as additive fallback, not as replacement for structured error semantics.
+
+##### `idle / loading / success / error` state behavior (target)
+
+- New attempt must clear stale transient indicators before request dispatch.
+- `loading` must start at request launch and always terminate in `success` or `error`.
+- On any failed current attempt (structured or non-structured), stale previous success output should not remain presented as current result for this flow.
+- `lastBackendConversionResult` should represent current-attempt ownership and not leak previous attempt semantics.
+
+##### Acceptable interpretation/enrichment (target)
+
+- Additive UI-level enrichment (localized labels, modal wording, notifications) based on structured backend semantics.
+- Minimal fallback messaging when backend is genuinely non-structured.
+- Non-destructive projection of backend result into UI state for diagnostics and presentation.
+
+##### Unacceptable flattening/reshaping/stale-state behavior (target)
+
+- Treating `txt -> markdown` success as valid purely from legacy output keys while ignoring contradictory or missing standardized success semantics.
+- Flattening structured failures into string-only generic errors when structured backend error is available.
+- Dropping `error.code` for this flow in branches where structured backend error exists.
+- Leaving stale previous output visible after a failed current conversion attempt.
+- Rebuilding a parallel frontend-only success/failure model that diverges from backend `ConversionResult` semantics.
+
+Next: sub-step 7.4.4 will apply targeted frontend/UI remediation so this flow follows the target behavior defined above.
+
+### Step 7.4.5 — Verification and Consolidation of Frontend/UI Remediation (First Step 7 Flow)
+
+This sub-step verifies and consolidates the frontend/UI remediation for the first executable Step 7 flow after 7.4.4 updates.
+
+- Selected migration wave: **Text -> Markdown**
+- First executable flow: **`POST /api/text-to-markdown`**
+- Frontend/UI target verified: **`api/frontend/src/converters/generic-converter.ts` (`convertText`)** with coordination through **`api/frontend/src/App.tsx` (`handleConvert`)**
+
+#### Verification coverage re-run
+
+- `api/frontend/src/converters/generic-converter.test.ts` (Vitest)
+  - includes dedicated `txt -> markdown` success/failure consumption checks
+  - includes state-coherence and stale-output protection checks
+
+#### Consolidated verification outcomes
+
+##### Success-path consumption/preservation
+
+- Standardized success `ConversionResult` is consumed as canonical semantics for `txt -> markdown`.
+- Success is no longer accepted for this flow when required standardized success semantics are missing.
+- Required semantics (`success === true`, `error === null`, structured result object presence) are enforced in verified branches.
+
+##### Failure-path consumption/preservation
+
+- Standardized failed `ConversionResult` is consumed without flattening into generic string-only local models when structured payload is available.
+- Structured failure data is preserved, including meaningful `error.code` for UI-level handling.
+- Backend failure semantics remain accessible via frontend backend-result state relay.
+
+##### Frontend state behavior (`idle/loading/success/error`)
+
+- New attempts enter `loading` and clear transient stale indicators at attempt start.
+- Failed attempts transition coherently to `error` with stale output cleanup on this flow.
+- Successful attempts transition coherently to `success` with current-attempt output ownership.
+- Conflicting stale success/error indicators are not observed in verified scenarios.
+
+#### Consolidation note
+
+The first Step 7 frontend/UI flow now preserves standardized backend `ConversionResult` semantics through success/failure handling and coherent state transitions under the verified test coverage.
+
+### Step 7.5.2 — Playbook Conformance Check Against Executed Step 7 Flow
+
+This sub-step verifies whether the executed Step 7 first flow followed the Step 6 operational migration playbook/checklist (`Step 6.3.3`).
+
+- Selected migration wave: **Text -> Markdown**
+- Executed flow checked: **`POST /api/text-to-markdown`**
+- Playbook reference: **Step 6.3.3 required migration checklist (items 1-17)**
+
+#### Playbook steps clearly completed
+
+- **Runtime flow mapping:** completed in `Step 7.2.1`.
+- **Payload mapping:** completed in `Step 7.2.2`.
+- **Success-path helper integration:** completed in `Step 7.2.3`.
+- **Failure-path helper integration:** completed in `Step 7.2.4`.
+- **Internal-error harmonization:** completed in `Step 7.2.5`.
+- **Isolated verification (path-level):** completed in `Step 7.2.6` with dedicated backend scripts.
+- **Backend/orchestrator target identification + mapping + remediation + consolidation:**
+  - target/mapping/risk definition in `Step 7.3.2` and `Step 7.3.3`
+  - remediation in `Step 7.3.4`
+  - verification/consolidation in `Step 7.3.5`.
+- **Frontend/UI target mapping + risk definition + remediation + consolidation:**
+  - risk/target behavior definition in `Step 7.4.3`
+  - remediation in `Step 7.4.4`
+  - verification/consolidation in `Step 7.4.5`.
+
+#### Steps completed in a lighter but acceptable way
+
+- **Backend output-boundary verification:** executed via focused route-level e2e scripts for `text-to-markdown` (success/failure/representative scenarios plus downstream-failure preservation), rather than introducing a new broad verification harness.
+- **Effective UI-boundary verification:** covered through focused frontend conversion-layer tests (`generic-converter.test.ts`) that validate structured success/failure consumption and stale-state safeguards; acceptable for this bounded single-flow wave.
+- **Final cross-layer non-regression pass:** performed as repeated targeted backend + frontend verification passes for this flow instead of a monolithic full-suite migration runner; acceptable given the wave scope freeze.
+
+#### Grounded deviations (if any)
+
+- **No blocking deviation found.**
+- Minor sequencing compression occurred by documenting and validating some backend/frontend checkpoints in tightly coupled increments, but required playbook intents were still satisfied.
+- The optional cross-flow comparison/consolidation note (playbook item 17) was handled in concise flow-focused form rather than a broad new comparison chapter, which is acceptable at this stage because Step 7 remains strictly single-flow scoped.
+
+#### Gap worth noting
+
+- No current blocker for playbook conformance.
+- Residual caution remains the same as previously noted: preserve strict route-level contract shaping if validation middleware constraints are tightened in future edits.
+
+#### Conformance conclusion
+
+The executed Step 7 first flow conforms overall to the Step 6 migration playbook/checklist, with required steps completed and only bounded, acceptable light-weight execution choices.
+
+### Step 7.5.3 — Execution Observations (Surprises, Frictions, and Grounded Deviations)
+
+This sub-step captures grounded execution observations from the first Step 7 flow (`Text -> Markdown`) across converter migration, backend/orchestrator alignment, frontend/UI alignment, and verification/consolidation.
+
+- Executed flow reviewed: **`POST /api/text-to-markdown`**
+- Scope reviewed: **7.2.x + 7.3.x + 7.4.x + 7.5.2 consolidation**
+
+#### Main surprises and frictions observed
+
+1. **Frontend entry-path gating was more restrictive than expected**
+   - `txt -> markdown` was present in conversion routing logic but still blocked by UI conversion-allow rules in `App.tsx`.
+   - This created a practical mismatch between backend migration readiness and effective UI reachability.
+   - **Classification:** notable but acceptable flow-specific surprise (resolved during 7.4.4).
+
+2. **`convertText` contract-preservation logic was path-whitelisted**
+   - The anti-flattening and anti-stale protections were initially scoped to previously migrated paths only.
+   - `txt -> markdown` required explicit inclusion to inherit the same success/failure and stale-state safeguards.
+   - **Classification:** future-refinement candidate for playbook guidance (new flows may repeatedly require this explicit extension).
+
+3. **Downstream standardized failure preservation needed explicit guarding**
+   - Backend remediation showed that valid downstream standardized failure payloads could be overwritten by generic route-level normalization unless explicitly preserved.
+   - A dedicated preservation check was needed to avoid unjustified replacement with generic internal failure handling.
+   - **Classification:** important and should remain documented for future migrations.
+
+4. **Verification stack remained reliable but required focused layering**
+   - Migration quality was best validated through targeted backend + frontend checks rather than one broad suite.
+   - This was effective but requires disciplined per-flow coverage to avoid gaps.
+   - **Classification:** acceptable execution choice; reinforces existing playbook recommendation for layered checks.
+
+5. **Windows process-exit behavior remained a recurring operational friction**
+   - Some standalone verification scripts needed explicit delayed process exit handling to avoid hanging despite logically completed assertions.
+   - **Classification:** acceptable operational friction, but should remain part of script hygiene patterns.
+
+#### What appears acceptable for this wave
+
+- Additional local handling in frontend contract-path inclusion for `txt -> markdown`.
+- Focused verification strategy (targeted scripts/tests) instead of broad global runner for this bounded single-flow wave.
+- Additive compatibility wrappers (`detail`) while preserving canonical structured semantics.
+
+#### What should inform later playbook refinement
+
+- Add an explicit checkpoint that frontend conversion-entry gating must be revalidated when a new path is migrated.
+- Add an explicit checkpoint that any path-whitelist contract-preservation logic in shared frontend conversion utilities must be updated when onboarding a new flow.
+- Keep a formal backend checkpoint to preserve downstream standardized failures before fallback normalization.
+
+#### What could block similar future migrations if undocumented
+
+- Leaving UI entry-gating mismatches undocumented (backend migrated but flow still unreachable in real UI path).
+- Forgetting to extend shared frontend contract-preservation switches for newly migrated flows.
+- Replacing meaningful downstream standardized failures with generic internal failures at route/orchestrator boundaries.
+
+#### Observation conclusion
+
+The Step 7 first flow did not reveal a blocker-level architectural surprise, but it did reveal recurring flow-onboarding frictions (UI gating, shared-path whitelists, and downstream-failure preservation) that should remain explicitly documented to keep future waves predictable.
+
+### Step 7.5.4 — Wave Verification Validation (Clean-Enough Decision)
+
+This sub-step validates whether the executed Step 7 wave is clean enough at wave-verification level to move forward to synthesis/closure work (without starting Step 7.6 yet).
+
+- Wave validated: **Step 7 first executed wave**
+- Flow basis: **`Text -> Markdown` via `POST /api/text-to-markdown`**
+- Evidence reused: **7.2.x isolated verification + 7.3.x backend/orchestrator verification + 7.4.x frontend/UI verification + 7.5.2 playbook conformance + 7.5.3 execution observations**
+
+#### Validated / clean aspects
+
+- The selected Step 7 flow is migrated to standardized helper-based semantics on success and failure.
+- Backend/orchestrator preservation is validated:
+  - standardized success/failure objects survive route-level propagation,
+  - internal failures are normalized coherently,
+  - downstream meaningful standardized failures are preserved.
+- Frontend/UI preservation is validated:
+  - standardized success and structured failure semantics are consumed,
+  - `error.code` remains available where relevant,
+  - stale-state protections and state-transition coherence are verified for this flow.
+- Relevant targeted checks pass across backend and frontend verification layers.
+- No unresolved major blocker was identified in execution, verification, or conformance review.
+
+#### Acceptable residual differences (non-blocking)
+
+- Compatibility wrapper asymmetry remains intentional (`{ markdown, conversionResult }` on success; additive `detail` on failure) and is documented.
+- Verification remains intentionally focused/layered rather than expanded into a broad monolithic wave runner; acceptable for this bounded single-flow wave.
+- Documented operational frictions (for example Windows process-exit handling in standalone scripts) remain script-hygiene concerns, not migration blockers.
+
+#### Potential blockers check
+
+- No blocker-level unresolved issue was found that would invalidate Step 7 wave execution quality.
+- Remaining differences are bounded, documented, and acceptable within the frozen wave scope.
+
+#### Wave-verification conclusion
+
+The executed Step 7 wave is considered **clean enough** at wave-verification level and is eligible to proceed to Step 7 synthesis/closure work when scheduled.
+
+### Step 7.6.1 — Concise Technical Summary of Step 7 Execution
+
+Step 7 executed a bounded single-flow migration wave on **Text -> Markdown** (`POST /api/text-to-markdown`) and carried that flow through converter-path migration, backend/frontend alignment, and wave-level verification.
+
+#### What Step 7 actually executed
+
+- **Executed flow:** `Text -> Markdown` as the first and only in-wave implementation target.
+- **Converter-level migration execution:**
+  - success-path standardized result construction integrated with `createSuccessResult(...)`;
+  - failure-path standardized result construction integrated with `createFailureResult(...)`;
+  - internal error handling harmonized to preserve grounded structured semantics (`EMPTY_INPUT`, `CONVERSION_FAILED`, `INTERNAL_ERROR`) and avoid unnecessary raw-throw leakage.
+- **Backend/orchestrator alignment execution:**
+  - route-level alignment target mapped and remediated;
+  - standardized success/failure propagation preserved through the backend output boundary;
+  - downstream meaningful standardized failures preserved instead of being overwritten by generic internal fallbacks.
+- **Frontend/UI alignment execution:**
+  - `txt -> markdown` flow made contract-preserving in conversion consumption logic;
+  - standardized success/failure semantics consumed with structured error preservation;
+  - state-transition coherence reinforced (`loading -> success/error`) with stale-state safeguards for this flow.
+- **Verification and consolidation execution:**
+  - isolated backend verification scripts for success/failure/representative scenarios;
+  - backend remediation verification including downstream failure-preservation probe;
+  - focused frontend verification for structured success/failure consumption and state coherence;
+  - playbook conformance and execution-observation checks recorded;
+  - wave-level clean-enough decision validated (`7.5.4`).
+
+#### What Step 7 proved or confirmed
+
+- The Step 6 migration playbook is operationally reusable on this new bounded flow.
+- Standardized `ConversionResult` semantics can be migrated end-to-end on `Text -> Markdown` without broad redesign.
+- Layered verification and minimal targeted remediation are sufficient to reach wave-verification cleanliness for this scope.
+
+#### What remains outside Step 7 scope
+
+- Migration execution of additional deferred paths (`HTML -> *`, generic `/api/convert` family, broader wrapper cleanup).
+- Broad cross-flow architecture redesign or generalized migration framework refactor.
+- Broader product-wide frontend/backend cleanup not required by the bounded Step 7 wave.
+
+### Step 7.6.2 — Multi-Flow Baseline Update (Validated Reference Set Expansion)
+
+This sub-step updates the validated multi-flow baseline to explicitly include the executed Step 7 flow in the reference set.
+
+#### Updated validated reference set
+
+The validated reference set now includes three executed flows:
+
+1. First migrated flow: **AsciiDoc -> Markdown** (`POST /api/to-markdown`)
+2. Second migrated flow: **Markdown -> AsciiDoc** (`POST /api/to-asciidoc`)
+3. Executed Step 7 flow: **Text -> Markdown** (`POST /api/text-to-markdown`)
+
+#### What remains common across the validated flows
+
+- Standardized helper-based result construction is used on success and failure (`createSuccessResult(...)`, `createFailureResult(...)`).
+- Structured failure semantics are preserved with meaningful `error.code` and non-destructive compatibility handling.
+- Backend/orchestrator propagation preserves canonical `ConversionResult` semantics through route-level output boundaries.
+- Frontend conversion consumption preserves structured semantics and state coherence (`loading/success/error`) with stale-state safeguards on migrated paths.
+- Layered verification pattern remains stable: focused path checks, backend consolidation, frontend consolidation, and wave-level cleanliness validation.
+
+#### What remains path-specific but acceptable
+
+- Converter engines and internals differ by flow (downdoc/lazy-load, pandoc, text2markdown).
+- Additive transport wrappers differ by endpoint (`markdown`/`asciidoc` fields plus compatibility `detail` where applicable).
+- Error-code distribution and scenario emphasis differ by path while remaining within documented semantics.
+- Targeted verification scripts remain path-shaped (flow-specific scenario sets), which is acceptable under the bounded migration model.
+
+#### Baseline-confidence impact for future migrations
+
+Expanding the validated reference set from two to three real flows increases confidence that the migration/alignment model is reusable beyond the initial pair, including a lightweight in-memory text flow. This strengthens the practical baseline for future wave execution while preserving bounded-scope discipline.
+
+### Step 7 Definition of Done
+
+Step 7 of release `0.0.1.4.6` is complete only if all criteria below are satisfied.
+
+#### Completion criteria (all required)
+
+- The first executable flow in the selected Step 7 wave is formally confirmed.
+- The Step 7 execution scope is explicitly frozen and respected.
+- The flow runtime is mapped before integration.
+- Payload mapping to centralized helpers is documented.
+- Success-path integration is completed.
+- Failure-path integration is completed.
+- Internal-error harmonization is completed.
+- Isolated verification passes for the executed flow.
+- Backend/orchestrator alignment is completed.
+- Backend/orchestrator verification passes.
+- Frontend/UI alignment is completed.
+- Frontend/UI verification passes.
+- The executed flow is compared against already migrated flows in the validated baseline set.
+- Playbook conformance is checked against the Step 6 operational checklist.
+- Execution surprises/frictions are documented with grounded classification.
+- The wave is validated as clean enough for synthesis/closure.
+
+#### Step 7 does NOT require
+
+- Executing the entire remaining migration wave.
+- Migrating all deferred flows.
+- Broad backend/frontend architecture redesign.
+- Reopening already validated foundational steps from earlier release stages.
+
+### Step 7 Closure
+
+Step 7 of release `0.0.1.4.6` is closed with execution and validation of the first concrete flow from the selected next migration wave: **Text -> Markdown** (`POST /api/text-to-markdown`).
+
+#### What Step 7 achieved
+
+- Executed the first in-wave concrete flow under the Step 7 bounded scope.
+- Migrated that flow at converter/result-construction level to standardized helper-based semantics.
+- Aligned backend/orchestrator propagation for that flow, including internal-error handling coherence.
+- Aligned frontend/UI consumption and state behavior for that flow.
+- Verified that this flow follows the validated migration/alignment model established in earlier steps.
+
+#### Concrete result produced by Step 7
+
+- Added one more real executed flow to the validated reference set.
+- Confirmed that the Step 6 operational playbook/checklist is applicable in practical execution.
+- Expanded confidence in the reusable migration method with a third real flow.
+
+#### What Step 7 now provides to the project
+
+- A stronger executed migration baseline across multiple real flows.
+- Better confidence for executing the remaining items of the selected wave.
+- Additional evidence that the migration/alignment model scales beyond the initial validated pair.
+
+#### What remains outside Step 7
+
+- Execution of the rest of the selected migration wave.
+- Migration execution of deferred flows.
+- Broad backend/frontend redesign work.
+- Future-step work not started yet.
+
+#### Transition note
+
+Future work should build on the now-validated Step 7 execution result and avoid reopening already validated migration/alignment questions for this flow unless a new grounded blocker appears.
+
+### Step 8.1.1 — Confirmation of the Next Executable Flow in the Selected Wave
+
+Step 8 begins by confirming the next concrete flow to execute after the completed Step 7 first-flow execution, while keeping the same migration-wave decision logic and sequential cadence.
+
+- **Selected migration wave:** `Text -> Markdown`-first wave with deferred follow-on candidates
+- **Step 7 flow already executed:** `Text -> Markdown` via `POST /api/text-to-markdown`
+- **Next concrete flow to execute:** `HTML -> *` via `POST /api/from-html` (next follow-on candidate)
+
+#### Why this flow is confirmed next
+
+- It was already identified as the next follow-on candidate after first-flow validation in the established execution order.
+- Step 7 completed cleanly, so the defer condition for opening the next candidate is now satisfied.
+- It remains the lowest-friction remaining option compared with broader `/api/convert` family migration.
+- It best preserves controlled sequential execution and fit with the validated playbook before any higher-surface expansion.
+
+Next: sub-step 8.1.2 will verify whether the wave order needs any grounded adjustment after the Step 7 execution evidence.
+
+### Step 8.1.2 — Post-Step-7 Execution Order Review for the Selected Wave
+
+This sub-step reviews whether the selected migration-wave execution order should be adjusted after the completed Step 7 execution.
+
+- **Selected migration wave:** `Text -> Markdown`-first wave with deferred follow-on candidates
+- **Step 7 flow already executed:** `Text -> Markdown` via `POST /api/text-to-markdown`
+- **Currently recommended next flow:** `HTML -> *` via `POST /api/from-html`
+
+#### Ordering decision after Step 7 evidence
+
+- **Decision:** the original order remains valid (no adjustment required at this stage).
+
+#### Grounded rationale
+
+- Step 7 completed with clean wave-verification outcomes and no blocker-level architectural surprise.
+- Observed frictions in Step 7 were flow-local onboarding issues (UI gating, path-whitelist extension, downstream failure-preservation guard) and were remediated/documented without indicating a higher-priority replacement candidate.
+- No hidden dependency was revealed that would justify promoting broader `/api/convert` migration ahead of `HTML -> *`.
+- The next candidate (`HTML -> *`) still provides the best controlled progression under the validated playbook while preserving bounded sequential execution.
+- Coupling/interference risk remains lower with this order than with expanding directly to higher-surface generic conversion paths.
+
+Next: sub-step 8.1.3 will freeze the remaining Step 8 execution scope before implementation of the next flow begins.
+
+### Step 8.1.3 — Remaining Step 8 Execution Scope Freeze
+
+This sub-step freezes the remaining execution scope of Step 8 to keep the selected wave bounded, controlled, and protected from scope creep before implementation resumes.
+
+- **Selected migration wave:** `Text -> Markdown`-first wave with deferred follow-on candidates
+- **Step 7 flow already executed:** `Text -> Markdown` via `POST /api/text-to-markdown`
+- **Next confirmed executable flow:** `HTML -> *` via `POST /api/from-html`
+
+#### IN scope for the remaining Step 8 execution
+
+- Execute migration/alignment work for the next confirmed flow (`HTML -> *`) only.
+- Follow the validated sequential order (no parallel multi-flow execution).
+- Reuse the established migration/alignment playbook and minimum verification kit.
+- Keep implementation and verification bounded to converter-level, backend/orchestrator, and frontend/UI layers required for this flow.
+- Apply only minimal, grounded fixes required to preserve standardized semantics and verification coherence.
+
+#### OUT of scope for Step 8
+
+- Migrating unrelated additional flows beyond the next confirmed flow.
+- Broad backend architecture redesign.
+- Broad frontend/UI redesign.
+- Building generic migration frameworks without a demonstrated blocking need.
+- Product-wide cleanup unrelated to the selected wave.
+- Reopening already validated contract/alignment/convention decisions without a grounded blocker.
+
+#### Deferred until later
+
+- Generic `/api/convert` family migration.
+- Additional deferred wave candidates beyond `HTML -> *`.
+- Broad wrapper-focused harmonization and non-essential cross-flow cleanup.
+- Any larger redesign work outside the bounded wave execution model.
+
+#### Why this scope freeze matters
+
+It preserves controlled sequential execution, limits coupling risk, keeps diagnostics clear, and prevents mid-flight expansion that would reduce comparability with the validated migration/alignment method.
+
+Next: sub-step 8.2.1 will begin runtime flow mapping of the next confirmed executable flow.
+
+### Step 8.2.1 — Current Runtime Flow Mapping (Before Helper Integration)
+
+This sub-step maps the current runtime flow of the next confirmed executable flow before any helper-based payload mapping or integration work.
+
+- **Selected migration wave:** `Text -> Markdown`-first wave with deferred follow-on candidates
+- **Current Step 8 flow:** `HTML -> *` via `POST /api/from-html`
+
+#### Current runtime flow (grounded)
+
+1. Request enters `api/backend/routes/conversion.routes.js` at `router.post('/from-html', ...)`.
+2. Validation middleware (`validate` + `zod`) requires:
+   - `text: z.string().min(1)`
+   - `to: z.string().min(1)`.
+3. Route handler reads `{ text, to }` from `req.body`.
+4. Route applies local semantic pre-check: `if (!text.trim())` -> HTTP `400` with `{ detail: "The HTML text to convert is empty" }`.
+5. Route logs start: `Converting <length> characters (HTML -> <to>) with Pandoc`.
+6. Route calls `await convertHtmlWithPandoc(text, to)` from `api/backend/services/conversion/convert.js`.
+7. `convertHtmlWithPandoc` delegates directly to `convertWithPandoc(html, 'html', toFormat)`.
+8. `convertWithPandoc` performs:
+   - input/format validation and format normalization,
+   - Pandoc format mapping (`from` and `to`),
+   - temporary directory and input/output file path creation,
+   - input file write + `safeSpawn('pandoc', ...)` execution,
+   - output file read and text cleanup for text-like formats,
+   - guaranteed temp-file/temp-dir cleanup in `finally`.
+9. On route-level success, route logs result size and returns HTTP `200` with dynamic payload `{ [to]: result }`.
+10. On route-level catch, route logs error and returns HTTP `500` with `{ detail: "Conversion error: ..." }`.
+
+#### Current success-path shape
+
+- HTTP `200` with a dynamic output key only (example: `{ markdown: string }`, `{ asciidoc: string }`, etc.).
+- No standardized `ConversionResult` object is currently attached on this path.
+- No route-level duration field or structured `warnings`/`logs`/`meta` payload is currently returned.
+
+#### Current failure-path shape
+
+- Validation/pre-check failure:
+  - middleware rejection for missing/invalid fields (`z.string().min(1)`), or
+  - route semantic empty-input check -> HTTP `400` with `{ detail: string }`.
+- Runtime conversion/service failure:
+  - service can throw normalized errors (`Pandoc conversion failed`, timeout, or generic execution failure),
+  - route catch transforms them to HTTP `500` with `{ detail: "Conversion error: ..." }`.
+- Structured failure `ConversionResult` is not currently emitted.
+
+#### Integration-relevant observations (before payload mapping)
+
+- The route currently mixes middleware-level rejection and route-level detail-only failure envelopes.
+- `convertWithPandoc` is throw-driven and file-backed (temp files/dir), while route responses are detail-only objects; no standardized result object is propagated.
+- Output file information exists internally in `convertWithPandoc` (temp `outputFile`) but is cleaned up before response and not exposed as structured metadata.
+- Duration and structured attempt telemetry are not measured/returned at route boundary.
+- Error information is generated in multiple layers (input/format checks, spawn timeout/exec failure, route catch), then flattened into `detail` at output boundary.
+
+Next: sub-step 8.2.2 will define payload mapping from this current flow to centralized helpers (`createSuccessResult()` / `createFailureResult()`).
+
+### Step 8.2.2 — Payload Mapping to Centralized Helpers (Before Integration)
+
+This sub-step defines payload mapping for the current Step 8 flow (`HTML -> *` via `POST /api/from-html`) before helper integration.
+
+- **Selected migration wave:** `Text -> Markdown`-first wave with deferred follow-on candidates
+- **Current Step 8 flow:** `HTML -> *` via `POST /api/from-html`
+
+#### Success payload mapping (`createSuccessResult(payload)`)
+
+| Field | Runtime source in current flow | Mapping status | Mapping strategy for integration |
+|---|---|---|---|
+| `conversionId` | Not currently created in `/from-html` route | Derivable locally | Create per-attempt route id at request start (same pattern as migrated routes). |
+| `converter` | Route uses `convertHtmlWithPandoc(...)` | Derivable locally | Use stable converter identifier: `"pandoc"`. |
+| `pipeline` | Not currently emitted | Derivable locally | Use fixed path pipeline for this route: `["html-><to>"]` (or normalized equivalent list). |
+| `inputFormat` | Implied by route (`from-html`) | Directly available | Set to `"html"`. |
+| `outputFormat` | Request body field `to` | Directly available | Set to normalized `to` value used by runtime conversion call. |
+| `inputFile` | Request body `text` only, no structured descriptor today | Derivable locally | Build in-memory input descriptor from HTML body (`originalName`, `storedPath`, `size`, `mimeType`). |
+| `outputFile` | Converted output exists as string (`result`) in route; service has temp output file internally | Derivable locally | Build response-level in-memory output descriptor from converted content length + target mime type. |
+| `startedAt` | Not tracked at route level | Derivable locally | Capture at request start timestamp. |
+| `finishedAt` | Not tracked at route level | Derivable locally | Capture at success completion timestamp. |
+| `durationMs` | Not tracked at route level | Derivable locally | Compute elapsed time from start to completion. |
+| `warnings` | No structured warning list currently returned | Helper default | Use helper default `[]` for this migration step. |
+| `logs` | Console logs only; no per-attempt structured logs returned | Helper default | Use helper default `[]` for this migration step. |
+| `meta` | No structured metadata currently returned | Derivable locally | Add minimal metadata (route id/path + in-memory transport + optional target format marker). |
+
+#### Failure payload mapping (`createFailureResult(payload)`)
+
+| Field | Runtime source in current flow | Mapping status | Mapping strategy for integration |
+|---|---|---|---|
+| `conversionId` | Not currently created | Derivable locally | Reuse same per-attempt id created at request start. |
+| `converter` | Conversion path uses `convertHtmlWithPandoc` -> `convertWithPandoc` | Derivable locally | Set to `"pandoc"` for this flow. |
+| `pipeline` | Not currently emitted | Derivable locally | Use fixed route-level pipeline representation aligned with target format. |
+| `inputFormat` | Route semantics | Directly available | Set to `"html"`. |
+| `outputFormat` | Request body field `to` | Directly available | Set to normalized target format value. |
+| `inputFile` | Request body `text` only | Derivable locally | Build in-memory input descriptor from available request text (including empty/trimmed case). |
+| `startedAt` | Not tracked at route level | Derivable locally | Capture at request start. |
+| `finishedAt` | Not tracked at route level | Derivable locally | Capture at failure completion. |
+| `durationMs` | Not tracked at route level | Derivable locally | Compute elapsed time at failure return point. |
+| `error` | Currently flattened to `{ detail: ... }` in route responses and generic service throws | Derivable locally | Build structured error (`code`, `message`, `details`, `recoverable`) from grounded failure stage (pre-check vs runtime/pandoc execution). |
+| `outputFile` | No failure output metadata returned today; temp output file is cleaned up internally | Typically absent currently | Set `null` by default; include only if grounded failure-time output artifact is available and safe to expose. |
+| `warnings` | No structured warning list currently returned | Helper default | Use helper default `[]`. |
+| `logs` | Console logging only | Helper default | Use helper default `[]`. |
+| `meta` | No structured metadata currently returned | Derivable locally | Add minimal route/transport metadata and optional failure-stage marker. |
+
+#### Field availability classification (consolidated)
+
+- **Directly available now:** `inputFormat` (`html`), `outputFormat` (`to`), raw request `text`, converted output string on success.
+- **Derivable locally during integration:** `conversionId`, `converter`, `pipeline`, `inputFile`, `outputFile` (success), `startedAt`, `finishedAt`, `durationMs`, structured `error`, minimal `meta`.
+- **Expected via helper defaults:** `warnings`, `logs` (both as `[]` at this stage).
+- **Currently absent / not exposed at boundary:** failure-time `outputFile` metadata (service temp-file lifecycle is internal and cleaned before response).
+
+Next: sub-step 8.2.3 will start runtime success-path integration for this flow using `createSuccessResult(...)`.
