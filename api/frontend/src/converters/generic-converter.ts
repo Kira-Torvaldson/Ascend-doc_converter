@@ -136,8 +136,16 @@ export async function convertText(
   conversionOptions?: any,
   confirmationToken?: string | null,
   setShowErrorModal?: (show: boolean) => void,
-  setErrorMessage?: (message: string) => void
+  setErrorMessage?: (message: string) => void,
+  setBackendConversionResult?: (result: any | null) => void,
+  setConversionUiState?: (state: 'idle' | 'loading' | 'success' | 'error') => void
 ) {
+  const isMigratedAdocToMarkdown = sourceFormat === 'asciidoc' && targetFormat === 'markdown'
+  const isMigratedMarkdownToAsciidoc = sourceFormat === 'markdown' && targetFormat === 'asciidoc'
+  const isMigratedTextToMarkdown = sourceFormat === 'txt' && targetFormat === 'markdown'
+  const isMigratedContractPath =
+    isMigratedAdocToMarkdown || isMigratedMarkdownToAsciidoc || isMigratedTextToMarkdown
+
   if (!text.trim()) {
     setStatus("Veuillez entrer du texte à convertir");
     return;
@@ -150,6 +158,12 @@ export async function convertText(
 
   setStatus("Conversion en cours...");
   setLoading(true);
+  if (setConversionUiState) setConversionUiState('loading');
+  // New attempt starts: clear transient stale indicators.
+  setNotification(null);
+  if (setShowErrorModal) setShowErrorModal(false);
+  if (setErrorMessage) setErrorMessage("");
+  if (setBackendConversionResult) setBackendConversionResult(null);
 
   try {
     const controller = new AbortController();
@@ -207,10 +221,11 @@ export async function convertText(
     if (!res.ok) {
       let errorText = "";
       let errorDetail = "";
+      let errorJson: any = null;
       
       try {
-        // Try to parse as JSON first (backend returns JSON with 'detail' field)
-        const errorJson = await res.json().catch(() => null);
+        // Try to parse as JSON first (backend returns JSON with 'detail' field and may include conversionResult)
+        errorJson = await res.json().catch(() => null);
         if (errorJson && errorJson.detail) {
           errorDetail = errorJson.detail;
           errorText = errorJson.detail;
@@ -221,6 +236,46 @@ export async function convertText(
       } catch {
         // If both fail, use empty string
         errorText = await res.text().catch(() => "");
+      }
+
+      const structuredFailure =
+        errorJson && typeof errorJson === 'object' && errorJson.success === false && errorJson.error && typeof errorJson.error === 'object'
+          ? errorJson
+          : null;
+
+      if (structuredFailure) {
+        if (setBackendConversionResult) setBackendConversionResult(structuredFailure);
+        const backendError = structuredFailure.error || {};
+        const backendMessage =
+          typeof backendError.message === 'string' && backendError.message.trim().length > 0
+            ? backendError.message
+            : (errorDetail || errorText || `HTTP Error ${res.status}`);
+        const backendCode = typeof backendError.code === 'string' ? backendError.code : '';
+
+        // Prevent stale success output from being presented as current failed conversion output.
+        if (isMigratedContractPath) {
+          setOutput("");
+        }
+
+        const shouldShowConversionErrorModal =
+          backendCode === 'CONVERSION_FAILED' ||
+          backendCode === 'OUTPUT_NOT_CREATED' ||
+          backendCode === 'OUTPUT_INVALID' ||
+          backendCode === 'OUTPUT_IS_INPUT';
+
+        if (shouldShowConversionErrorModal && setShowErrorModal && setErrorMessage) {
+          setShowErrorModal(true);
+          setErrorMessage(backendMessage);
+        }
+
+        setStatus("Erreur de conversion");
+        setNotification({
+          message: `Erreur de conversion${backendCode ? ` (${backendCode})` : ''}`,
+          type: 'error',
+          visible: true
+        });
+        if (setConversionUiState) setConversionUiState('error');
+        return;
       }
       
       const errorMessage = `HTTP Error ${res.status}${errorText ? `: ${errorText}` : ""}`;
@@ -248,6 +303,7 @@ export async function convertText(
           type: 'error',
           visible: true
         });
+        if (setConversionUiState) setConversionUiState('error');
         return;
       }
       
@@ -255,8 +311,73 @@ export async function convertText(
     }
 
     const data = await res.json();
-    // Handle different responses according to endpoint
-    const result = data.markdown || data.asciidoc || data.result || "";
+    const conversionResult = data && typeof data === 'object' ? (data as any).conversionResult : null;
+    if (isMigratedContractPath && (!conversionResult || typeof conversionResult !== 'object')) {
+      throw new Error('Invalid conversion response: missing conversionResult')
+    }
+    if (conversionResult && typeof conversionResult === 'object') {
+      if (typeof conversionResult.success !== 'boolean') {
+        throw new Error('Invalid conversionResult: missing boolean success');
+      }
+      if (conversionResult.success !== true) {
+        // Treat as a structured failure (do not flatten to generic throw).
+        if (setBackendConversionResult) setBackendConversionResult(conversionResult);
+        const backendError = (conversionResult as any).error || {};
+        const backendMessage =
+          typeof backendError.message === 'string' && backendError.message.trim().length > 0
+            ? backendError.message
+            : 'ConversionResult indicates failure'
+        const backendCode = typeof backendError.code === 'string' ? backendError.code : '';
+
+        // Prevent stale success output from being presented as current failed conversion output.
+        if (isMigratedContractPath) {
+          setOutput("");
+        }
+
+        const shouldShowConversionErrorModal =
+          backendCode === 'CONVERSION_FAILED' ||
+          backendCode === 'OUTPUT_NOT_CREATED' ||
+          backendCode === 'OUTPUT_INVALID' ||
+          backendCode === 'OUTPUT_IS_INPUT';
+
+        if (shouldShowConversionErrorModal && setShowErrorModal && setErrorMessage) {
+          setShowErrorModal(true);
+          setErrorMessage(backendMessage);
+        }
+
+        setStatus("Erreur de conversion");
+        setNotification({
+          message: `Erreur de conversion${backendCode ? ` (${backendCode})` : ''}`,
+          type: 'error',
+          visible: true
+        });
+        if (setConversionUiState) setConversionUiState('error');
+        return;
+      }
+      if (setBackendConversionResult) setBackendConversionResult(conversionResult);
+    }
+    // For migrated paths, require the expected output field so success display
+    // stays owned by the current structured conversion result.
+    let result = ""
+    if (isMigratedAdocToMarkdown) {
+      if (typeof data.markdown !== 'string') {
+        throw new Error('Invalid conversion response: missing markdown output')
+      }
+      result = data.markdown
+    } else if (isMigratedTextToMarkdown) {
+      if (typeof data.markdown !== 'string') {
+        throw new Error('Invalid conversion response: missing markdown output')
+      }
+      result = data.markdown
+    } else if (isMigratedMarkdownToAsciidoc) {
+      if (typeof data.asciidoc !== 'string') {
+        throw new Error('Invalid conversion response: missing asciidoc output')
+      }
+      result = data.asciidoc
+    } else {
+      // Handle legacy/non-migrated responses according to endpoint
+      result = data.markdown || data.asciidoc || data.result || "";
+    }
     setOutput(result);
     setStatus("Conversion réussie ✔");
     setNotification({
@@ -264,7 +385,13 @@ export async function convertText(
       type: 'success',
       visible: true
     });
+    if (setConversionUiState) setConversionUiState('success');
   } catch (e: any) {
+    // Keep current-attempt ownership coherent on migrated paths: any request-time
+    // error should not leave previous successful output presented as current.
+    if (isMigratedContractPath) {
+      setOutput("");
+    }
     if (e.name === "AbortError") {
       const timeoutMessage = "Erreur : Timeout - La conversion prend trop de temps. Le fichier est peut-être trop volumineux.";
       setStatus(timeoutMessage);
@@ -273,6 +400,7 @@ export async function convertText(
         type: 'error',
         visible: true
       });
+      if (setConversionUiState) setConversionUiState('error');
     } else if (e.message?.includes("NetworkError") || e.message?.includes("Failed to fetch")) {
       const networkMessage = `Erreur réseau : Impossible de contacter l'API à ${API_BASE}. Vérifiez que le serveur backend est démarré.`;
       setStatus(networkMessage);
@@ -281,6 +409,7 @@ export async function convertText(
         type: 'error',
         visible: true
       });
+      if (setConversionUiState) setConversionUiState('error');
     } else {
       const errorMessage = `Erreur lors de l'appel à l'API : ${e.message ?? e}`;
       setStatus(errorMessage);
@@ -289,6 +418,7 @@ export async function convertText(
         type: 'error',
         visible: true
       });
+      if (setConversionUiState) setConversionUiState('error');
     }
   } finally {
     setLoading(false);

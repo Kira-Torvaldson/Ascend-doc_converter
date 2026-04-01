@@ -66,6 +66,20 @@ async function main() {
     assert.strictEqual(typeof body.detail, 'string')
     assert.strictEqual(body.detail, body.error.message)
 
+    // Additional low-level drift check: zero-length string should now be
+    // normalized by route pre-check into the same structured EMPTY_INPUT shape.
+    const emptyResponse = await fetch(`http://127.0.0.1:${port}/api/to-markdown`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: '' })
+    })
+    assert.strictEqual(emptyResponse.status, 400)
+    const emptyBody = await emptyResponse.json()
+    assertFailureConversionResult(emptyBody)
+    assert.strictEqual(emptyBody.error.code, 'EMPTY_INPUT')
+    assert.strictEqual(typeof emptyBody.detail, 'string')
+    assert.strictEqual(emptyBody.detail, emptyBody.error.message)
+
     console.log('[OK] e2e /api/to-markdown failure returns standardized ConversionResult with structured error.code')
   } finally {
     await new Promise((resolve) => server.close(resolve))
