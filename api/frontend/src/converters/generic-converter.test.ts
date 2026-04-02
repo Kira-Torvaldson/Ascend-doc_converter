@@ -82,7 +82,9 @@ describe('convertText (success consumption)', () => {
     expect(setNotification).toHaveBeenCalledWith(null)
     expect(setBackendConversionResult).toHaveBeenCalledWith(null) // cleared at start
     expect(setBackendConversionResult).toHaveBeenCalledWith({ success: true, conversionId: 'c1', error: null })
-    expect(setOutput).toHaveBeenCalledWith('# Title')
+    // Contract-first flows clear stale output at attempt start.
+    expect(setOutput).toHaveBeenCalledWith('')
+    expect(setOutput).toHaveBeenLastCalledWith('# Title')
   })
 
   it('does not treat success as valid if conversionResult indicates failure', async () => {
@@ -116,6 +118,7 @@ describe('convertText (success consumption)', () => {
         error: expect.objectContaining({ code: 'CONVERSION_FAILED', message: 'nope' }),
       })
     )
+    // Output is cleared at attempt start and on failure paths.
     expect(setOutput).toHaveBeenCalledWith('')
     expect(setNotification).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -160,6 +163,7 @@ describe('convertText (success consumption)', () => {
         error: expect.objectContaining({ code: 'CONVERSION_FAILED' }),
       })
     )
+    // Output is cleared at attempt start and on failure paths.
     expect(setOutput).toHaveBeenCalledWith('')
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
     expect(setConversionUiState).toHaveBeenCalledWith('error')
@@ -459,6 +463,132 @@ describe('convertText (success consumption)', () => {
         type: 'error',
       })
     )
+  })
+
+  describe('Step 8 (html -> *) contract-first behavior', () => {
+    it('consumes standardized success ConversionResult and uses data[targetFormat] as output (html->markdown)', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        makeOkResponse({
+          markdown: 'Converted',
+          conversionResult: { success: true, conversionId: 'h1', error: null, meta: {} },
+        })
+      )
+      ;(globalThis as any).fetch = fetchMock
+
+      await convertText(
+        '<h1>Title</h1>',
+        'html',
+        'markdown',
+        setStatus,
+        setOutput,
+        setLoading,
+        setNotification,
+        {},
+        null,
+        setShowErrorModal,
+        setErrorMessage,
+        setBackendConversionResult,
+        setConversionUiState
+      )
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const [endpoint] = fetchMock.mock.calls[0]
+      expect(endpoint).toContain('/api/from-html')
+
+      // clears output at attempt start and then sets final output
+      expect(setOutput).toHaveBeenCalledWith('')
+      expect(setOutput).toHaveBeenLastCalledWith('Converted')
+      expect(setBackendConversionResult).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true, conversionId: 'h1', error: null })
+      )
+      expect(setConversionUiState).toHaveBeenCalledWith('loading')
+      expect(setConversionUiState).toHaveBeenCalledWith('success')
+    })
+
+    it('treats structured HTTP failure as the source of truth and clears stale output (html->markdown)', async () => {
+      const ui = {
+        output: 'STALE_SUCCESS',
+        showErrorModal: false,
+        errorMessage: '',
+        notification: null as any,
+        conversionUiState: 'idle' as 'idle' | 'loading' | 'success' | 'error',
+        backendResult: null as any,
+        status: '',
+      }
+
+      const setStatusState = (s: string) => { ui.status = s }
+      const setOutputState = (s: string) => { ui.output = s }
+      const setLoadingState = (_: boolean) => {}
+      const setNotificationState = (n: any) => { ui.notification = n }
+      const setShowErrorModalState = (v: boolean) => { ui.showErrorModal = v }
+      const setErrorMessageState = (m: string) => { ui.errorMessage = m }
+      const setBackendResultState = (r: any) => { ui.backendResult = r }
+      const setUiState = (s: any) => { ui.conversionUiState = s }
+
+      ;(globalThis as any).fetch = vi.fn().mockResolvedValue(
+        makeErrorResponse(500, {
+          success: false,
+          detail: 'Conversion failed',
+          error: { code: 'CONVERSION_FAILED', message: 'Pandoc conversion failed', details: { stage: 'pandoc' } },
+        })
+      )
+
+      await convertText(
+        '<p>x</p>',
+        'html',
+        'markdown',
+        setStatusState,
+        setOutputState,
+        setLoadingState,
+        setNotificationState,
+        {},
+        null,
+        setShowErrorModalState,
+        setErrorMessageState,
+        setBackendResultState,
+        setUiState
+      )
+
+      expect(ui.conversionUiState).toBe('error')
+      expect(ui.output).toBe('') // stale output must not remain visible as current result
+      expect(ui.backendResult).toEqual(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({ code: 'CONVERSION_FAILED' }),
+        })
+      )
+    })
+
+    it('does not treat HTTP 200 as success if conversionResult.success=false (html->markdown)', async () => {
+      ;(globalThis as any).fetch = vi.fn().mockResolvedValue(
+        makeOkResponse({
+          markdown: 'Should not be used',
+          conversionResult: { success: false, error: { code: 'CONVERSION_FAILED', message: 'nope' } },
+        })
+      )
+
+      await convertText(
+        '<p>x</p>',
+        'html',
+        'markdown',
+        setStatus,
+        setOutput,
+        setLoading,
+        setNotification,
+        {},
+        null,
+        setShowErrorModal,
+        setErrorMessage,
+        setBackendConversionResult,
+        setConversionUiState
+      )
+
+      expect(setBackendConversionResult).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, error: expect.objectContaining({ code: 'CONVERSION_FAILED' }) })
+      )
+      expect(setOutput).toHaveBeenCalledWith('')
+      expect(setConversionUiState).toHaveBeenCalledWith('error')
+    })
   })
 
   it('clears stale output for structured markdown->asciidoc failure', async () => {
