@@ -13,6 +13,13 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.4.6 (2026-04-02)
+
+#### Changed
+- Extended `ConversionResult` contract documentation (Steps 10–11, Step 11 closure, handoff baseline).
+- AsciiDoc → Markdown wrapper alignment and related e2e verification scripts for `/api/to-markdown`.
+- Aligned README badge, package versions, and displayed app metadata to `0.0.1.4.6` (frontend/backend).
+
 ### 0.0.1.4.4 (2026-03-24)
 
 #### Changed

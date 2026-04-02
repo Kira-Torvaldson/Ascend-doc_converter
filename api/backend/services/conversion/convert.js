@@ -650,9 +650,9 @@ async function convertMarkdownWithPandoc(markdown) {
     return stdout.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
   } catch (error) {
     if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
-      throw new Error('Pandoc conversion timed out')
+      throw new Error('Pandoc conversion timed out', { cause: error })
     }
-    throw new Error('Failed to execute Pandoc conversion')
+    throw new Error('Failed to execute Pandoc conversion', { cause: error })
   } finally {
     try { if (require('fs').existsSync(inputFile)) unlinkSync(inputFile) } catch (_) {}
     try { if (require('fs').existsSync(outputFile)) unlinkSync(outputFile) } catch (_) {}

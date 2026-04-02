@@ -6883,4 +6883,986 @@ This section defines Step 11 completion criteria only and does **not** start Ste
 
 #### Step boundary
 
-Step 11 closes here as a planning and handoff milestone only and does **not** start Step 12.
+Step 11 closes here as a planning and handoff milestone only and does **not** start Step 12.1.2.
+
+### Step 12.1.1 — Step 12 Entry Flow Confirmation (From Step 11 Handoff)
+
+#### Handoff package reviewed
+
+- **Source of truth:** **Step 11.2.3** (Ready-to-Execute Handoff Package), reinforced by **Step 11.3.2** (formalized default baseline).
+
+#### Confirmed execution entry flow (exact)
+
+- **Wrapper module:** `api/frontend/src/converters/markdown-to-asciidoc.ts`
+- **Entry function:** `convertMarkdownToAsciiDoc(...)`
+- **Backend endpoint:** `POST /api/to-asciidoc`
+- **Direction:** Markdown → AsciiDoc (Pandoc-backed route per module documentation)
+
+This is the **only** in-scope execution entry for Step 12 under the frozen Step 11 plan (single wrapper + single route boundary).
+
+#### Readiness and go / no-go verification (Step 11.2.2 / 11.2.3 criteria)
+
+- **Go conditions (must still hold immediately before any Step 12 code changes):**
+  - Baseline green: `npm test` and `npm run typecheck` pass.
+  - `convertText(...)` contract-first behavior for already validated flows remains intact (non-regression on prior migrated paths).
+  - The `markdown-to-asciidoc.ts` wrapper remains an isolated, localized entry surface.
+  - No requirement for unbounded backend expansion, global envelope redesign, or broad UI/state redesign to proceed under the frozen scope.
+
+- **No-Go conditions (stop and document):**
+  - Baseline already failing before changes.
+  - Only “safe” path would violate frozen scope (unbounded backend/UI work).
+
+**Step 12.1.1 status:** The handoff-defined flow **still matches** the intended entry point and **still aligns with the frozen go / no-go intent**. Actual command-level verification must be re-run at execution start (this sub-step does not substitute for running the checks).
+
+#### Why this remains the correct next execution target
+
+- It is the **explicit Step 11 selection** and completes the **remaining legacy wrapper** pair after Step 10, using the same **wrapper + dedicated route** pattern.
+- It preserves **bounded risk** versus deferred high-surface work (`POST /api/convert`).
+- It is **directly comparable** to Step 10 for verification posture and contract-first expectations.
+
+#### Blocker note (only if grounded)
+
+- **No grounded blocker recorded** for Step 12.1.1 based on the handoff package and frozen scope. If any go condition fails when commands are run, treat that as a **new grounded blocker** and stop rather than widening scope.
+
+#### Step boundary
+
+This step confirms entry flow and gates only and does **not** start Step 12.2.2.
+
+### Step 12.1.2 — Scope Freeze Before Step 12 Execution
+
+#### Confirmed entry flow reused (from Step 12.1.1)
+
+- `api/frontend/src/converters/markdown-to-asciidoc.ts`
+- `convertMarkdownToAsciiDoc(...)`
+- `POST /api/to-asciidoc`
+
+#### In scope (must remain bounded)
+
+- Localized alignment of the Step 12 entry wrapper to preserve contract-first success/failure behavior.
+- Localized preservation at the `POST /api/to-asciidoc` boundary only where required for this flow’s contract semantics.
+- Minimal verification and documentation updates tied directly to this Step 12 flow.
+
+#### Out of scope (explicitly excluded)
+
+- Broad backend redesign, cross-route envelope redesign, or any architecture-wide refactor.
+- Generic multi-format family migration via `POST /api/convert`.
+- Broad frontend/UI redesign or app-wide entrypoint-routing consolidation.
+- Any migration execution on additional flows beyond the confirmed Step 12 entry flow.
+
+#### Deferred (must stay deferred)
+
+- `POST /api/convert` broad-family work until a separately bounded sub-slice is explicitly selected.
+- Any migration targets other than `markdown-to-asciidoc.ts` + `POST /api/to-asciidoc`.
+- Future planning/synthesis work beyond this Step 12 scope freeze.
+
+#### Execution boundaries (non-expansion rule)
+
+- Scope must not expand beyond the single wrapper + single route boundary above.
+- If safe completion would require unbounded backend changes, broad UI redesign, or multi-flow expansion, treat it as a grounded blocker: document it and stop.
+- No “scope creep by convenience”: any item not explicitly in scope remains excluded unless a real blocker is proven.
+
+#### Why this scope freeze keeps Step 12 controlled
+
+- It keeps Step 12 comparable to the validated Step 10/11 planning model (single bounded unit).
+- It protects non-regression by avoiding premature expansion into high-surface deferred candidates.
+- It keeps rollback and verification tractable by limiting touched surfaces before migration work begins.
+
+#### Step boundary
+
+This step freezes Step 12 scope only and does **not** start Step 12.2.2.
+
+### Step 12.2.1 — Current Runtime Flow Mapping (Before Helper Integration)
+
+#### Flow under inspection
+
+- **Step 12 execution flow:** Markdown -> AsciiDoc wrapper path
+- **Frontend entry:** `api/frontend/src/converters/markdown-to-asciidoc.ts` -> `convertMarkdownToAsciiDoc(...)`
+- **Backend endpoint:** `POST /api/to-asciidoc` (`api/backend/routes/conversion.routes.js`)
+
+#### Entry point
+
+- UI calls `convertMarkdownToAsciiDoc(text, setStatus, setOutput, setLoading, setNotification, [setConversionMode])`.
+- Wrapper performs local precheck (`!text.trim()`), sets runtime UI state, then calls `fetch(${API_BASE}/api/to-asciidoc)` with JSON body `{ text }`.
+
+#### Main converter / wrapper
+
+- **Frontend wrapper:** `convertMarkdownToAsciiDoc(...)` (UI-driven async wrapper; no returned result object).
+- **Backend conversion engine:** `convertMarkdownWithPandoc(text)` inside route `/to-asciidoc`.
+- **Contract builders at backend boundary:** `createSuccessResult(...)` on success and `createFailureResult(...)` via `buildToAsciidocFailure(...)` on failure.
+
+#### Input parameters
+
+- **Frontend wrapper input:** Markdown `text` plus setter callbacks (`setStatus`, `setOutput`, `setLoading`, `setNotification`, optional `setConversionMode`).
+- **Backend route input:** `req.body.text` (validated as string by `validate(...)` + zod schema), then route-level empty-input guard.
+
+#### Temporary file handling
+
+- **Frontend wrapper:** none.
+- **Backend `/to-asciidoc` route path:** in-memory request/response contract metadata (`in-memory://...`) and no explicit temp-file write/cleanup in this route path.
+
+#### Success path (current runtime)
+
+1. Wrapper sets status/loading (+ optional conversion mode) and calls backend.
+2. Backend validates request, checks non-empty input, runs `convertMarkdownWithPandoc(text)`.
+3. Backend computes `finishedAt`/`durationMs`, builds `conversionResult` with:
+   - output metadata (`outputFile`, size, mime),
+   - `warnings: []`, `logs: []`,
+   - route meta (`/api/to-asciidoc`, `in-memory`).
+4. Backend responds `200` with `{ asciidoc, conversionResult }`.
+5. Wrapper currently reads `data.asciidoc`, sets output/status/success notification.
+
+#### Failure path (current runtime)
+
+- **Backend failures:**
+  - Empty input -> `400` standardized failure from `buildToAsciidocFailure(...)` (+ `detail`).
+  - Internal conversion errors -> classified by `classifyToAsciidocInternalError(...)`, then `500` standardized failure (+ `detail`).
+- **Frontend failures:**
+  - Non-OK HTTP -> wrapper throws `Error("Erreur HTTP ...")` after reading text.
+  - Abort/network/other errors handled in `catch` -> status + error notification set.
+  - `finally` always clears loading state.
+
+#### Return / throw behavior
+
+- **Wrapper external behavior:** returns `Promise<void>` and does not propagate typed result objects.
+- **Control style:** mixed internal style (early `return` on empty input + `throw` on non-OK HTTP + `catch` handling), but outwardly no uncaught error is intentionally exposed.
+- **Backend route:** returns JSON success or failure payloads (does not return JS exceptions to caller).
+
+#### Where duration, logs, warnings, output, and error are produced
+
+- **Duration:** backend route computes `durationMs` at success/failure result creation time.
+- **Warnings/logs:** backend result builders currently emit `warnings: []` and `logs: []` (explicit empty arrays).
+- **Output:** backend success payload includes `asciidoc`; frontend uses `data.asciidoc` to update UI output.
+- **Error:** backend standardized failure includes structured `error` (+ `error.code`) and `detail`; frontend currently consumes transport/error text in catch branches rather than parsing standardized failure payload as source-of-truth.
+
+#### Integration-relevant observations (pre-12.2.2)
+
+- Backend already emits standardized `ConversionResult` on both success/failure at route boundary.
+- Frontend wrapper remains legacy-shaped (output field + thrown HTTP error text) and is not yet contract-first on `conversionResult` / structured failure semantics.
+- This creates a known success/failure envelope mismatch at the wrapper ingestion point, which is the primary integration target for Step 12 helper mapping/alignment.
+
+#### Step boundary
+
+This step maps current runtime behavior only and does **not** start Step 12.2.3.
+
+### Step 12.2.2 — Helper Payload Mapping (Before Integration)
+
+This mapping reuses the Step 12.2.1 runtime flow and defines practical payload sourcing for `createSuccessResult(payload)` and `createFailureResult(payload)` for the `markdown-to-asciidoc` flow.
+
+#### Mapping status legend
+
+- **Direct:** directly available from current runtime inputs/results.
+- **Derivable:** can be computed locally from available data.
+- **Default:** expected helper/default value when not explicitly set.
+- **Missing:** not currently available at wrapper level without additional wiring.
+
+#### `createSuccessResult(payload)` mapping
+
+| Field | Mapping status | Practical source for Step 12 flow |
+|---|---|---|
+| `conversionId` | Direct | `conversionResult.conversionId` from backend success payload. |
+| `converter` | Direct | `conversionResult.converter` (backend currently sets `pandoc`). |
+| `pipeline` | Direct | `conversionResult.pipeline` (backend currently `['markdown->asciidoc']`). |
+| `inputFormat` | Direct | `conversionResult.inputFormat` (`markdown`). |
+| `outputFormat` | Direct | `conversionResult.outputFormat` (`asciidoc`). |
+| `inputFile` | Direct | `conversionResult.inputFile` from backend boundary result. |
+| `outputFile` | Direct | `conversionResult.outputFile` from backend boundary result. |
+| `startedAt` | Direct | `conversionResult.startedAt`. |
+| `finishedAt` | Direct | `conversionResult.finishedAt`. |
+| `durationMs` | Direct | `conversionResult.durationMs`. |
+| `warnings` | Direct | `conversionResult.warnings` (currently explicit empty array). |
+| `logs` | Direct | `conversionResult.logs` (currently explicit empty array). |
+| `meta` | Direct | `conversionResult.meta` (route/transport metadata). |
+
+#### `createFailureResult(payload)` mapping
+
+| Field | Mapping status | Practical source for Step 12 flow |
+|---|---|---|
+| `conversionId` | Direct | `failure.conversionId` when backend returns standardized failure. |
+| `converter` | Direct | `failure.converter` from backend failure result (`pandoc`). |
+| `pipeline` | Direct | `failure.pipeline` from backend failure result. |
+| `inputFormat` | Direct | `failure.inputFormat` from backend failure result. |
+| `outputFormat` | Direct | `failure.outputFormat` from backend failure result. |
+| `inputFile` | Direct | `failure.inputFile` from backend failure result. |
+| `outputFile` | Direct | `failure.outputFile` (currently null on route failures). |
+| `startedAt` | Direct | `failure.startedAt` from backend failure result. |
+| `finishedAt` | Direct | `failure.finishedAt` from backend failure result. |
+| `durationMs` | Direct | `failure.durationMs` from backend failure result. |
+| `warnings` | Direct | `failure.warnings` (currently explicit empty array). |
+| `logs` | Direct | `failure.logs` (currently explicit empty array). |
+| `meta` | Direct | `failure.meta` from backend failure result. |
+| `error` | Direct | `failure.error` (structured code/message/details). |
+
+#### Locally derivable fields (fallback when structured boundary payload is unavailable)
+
+- `inputFormat`: fixed flow constant `markdown`.
+- `outputFormat`: fixed flow constant `asciidoc`.
+- `pipeline`: fixed flow constant `['markdown->asciidoc']`.
+- `converter`: fixed flow expectation `pandoc` for this route.
+- `inputFile.size`: derivable from source text length when needed.
+
+#### Helper-default fields (bounded fallback)
+
+- `warnings`: helper default empty array if absent.
+- `logs`: helper default empty array if absent.
+- `meta`: helper/route default object if absent.
+- `outputFile`: helper default `null` on failures without produced output.
+
+#### Currently missing at wrapper level (without additional integration wiring)
+
+- Guaranteed structured failure payload ingestion in all wrapper error branches (current wrapper throws/parses text on non-OK before contract-first mapping).
+- Local generation of trustworthy `startedAt`/`finishedAt`/`durationMs` values equivalent to backend contract quality if backend payload is not consumed.
+- Reliable `conversionId` in transport/network failure branches where no backend JSON payload is available.
+
+#### Integration-relevant note
+
+- The backend already provides nearly all required payload fields directly for both success and failure; Step 12 helper integration should prioritize **making the wrapper consume standardized backend `conversionResult`/failure objects first**, with local derivation/defaults only as bounded fallback.
+
+#### Step boundary
+
+This step defines helper payload mapping only and does **not** start Step 12.2.3.
+
+### Step 12.2.6 — Isolated Verification After 12.2.3 / 12.2.4 / 12.2.5
+
+#### Verification scope
+
+- Flow under verification: `POST /api/to-asciidoc` (Step 12 selected flow).
+- Verification style reused from `api/backend/scripts/`:
+  - `verify-e2e-to-asciidoc-success-contract.js`
+  - `verify-e2e-to-asciidoc-failure-contract.js`
+  - `verify-e2e-to-asciidoc-representative-scenarios.js`
+  - `verify-e2e-to-asciidoc-internal-error-contract.js`
+
+#### Scenarios executed
+
+- **Nominal success scenario:** markdown heading/paragraph input -> HTTP 200 with `asciidoc` + standardized `conversionResult`.
+- **Grounded failure scenario:** empty/blank markdown input -> HTTP 400 with standardized failure `ConversionResult` and structured `error.code = EMPTY_INPUT`.
+- **Small baseline scenario set:** representative script covering two success inputs and two EMPTY_INPUT failures.
+- **Internal-error harmonization check:** forced internal Pandoc error path -> HTTP 500 standardized failure `ConversionResult` with grounded internal classification.
+
+#### Results
+
+- **Success status:** PASS — success response includes `conversionResult` with expected root contract fields.
+- **Failure status:** PASS — failure responses include standardized root fields, structured `error.code`, and `detail` aligned to `error.message`.
+- **Baseline status:** PASS — representative scenario set validated for `/api/to-asciidoc`.
+- **Internal-error status:** PASS — internal path remains within standardized failure contract after harmonization.
+
+#### Tiny fix note
+
+- No additional code fix was required for Step 12.2.6 verification.  
+- Operational note: one combined multi-script run stalled after the representative checks; re-running the internal-error script in isolation completed successfully and confirmed contract behavior.
+
+#### Step boundary
+
+This step verifies the isolated Step 12 flow only and does **not** start Step 12.3.1.
+
+### Step 12.3.1 — Identify the Real Backend/Orchestrator Alignment Target (Step 12)
+
+#### Step 12 flow under inspection
+
+- **Frontend entry (Step 12 scope):** `api/frontend/src/converters/markdown-to-asciidoc.ts` -> `convertMarkdownToAsciiDoc(...)` -> **`POST /api/to-asciidoc`**
+- **Backend surface:** Express route handler in **`api/backend/routes/conversion.routes.js`** for **`POST /to-asciidoc`** (mounted under `/api`).
+
+#### Backend coordination layers actually involved
+
+1. **HTTP + routing:** Express `router.post('/to-asciidoc', ...)`.
+2. **Request validation:** `validate({ body: z.object({ text: z.string() }) })` (schema middleware).
+3. **Route-level precheck:** empty/whitespace input -> standardized failure via `buildToAsciidocFailure(...)` (HTTP `400`).
+4. **Conversion engine call:** `convertMarkdownWithPandoc(text)` from **`api/backend/services/conversion/convert.js`** (Pandoc subprocess, temp files under OS temp dir, cleanup in `finally`).
+5. **Contract assembly:** `createSuccessResult(successPayload)` on success; `buildToAsciidocFailure(...)` -> `createFailureResult(failurePayload)` on failure; `classifyToAsciidocInternalError(...)` for internal classification; nested catch fallback for secondary internal failures (Step 12.2.5).
+
+**Not involved for this route:** `lazyload.runConverter(...)` / module registry path (used by other flows such as `/api/to-markdown`, but **not** the Step 12 `to-asciidoc` handler).
+
+#### True backend/orchestrator alignment target (chosen)
+
+- **Primary alignment target:** **`api/backend/routes/conversion.routes.js`** — the **`/to-asciidoc`** route handler and its **local helpers** in the same file (`buildToAsciidocFailure`, `classifyToAsciidocInternalError`, response shaping with `detail`).
+
+#### Why this is the correct layer
+
+- It is the **HTTP boundary** where standardized `ConversionResult` success/failure is assembled and returned to the client.
+- It is where **route-level contract risks** are controlled (precheck, internal error classification, harmonized catch-path behavior) without depending on a separate lazy-load orchestration hop for this flow.
+- Engine behavior (`convertMarkdownWithPandoc`) is a **downstream dependency**; alignment work should preserve conversion semantics and focus contract preservation at the **route boundary** first.
+
+#### Step boundary
+
+This step identifies the alignment target only and does **not** start Step 12.3.2.
+
+### Step 12.3.2 — Backend/Orchestrator Flow Map (Step 12 via 12.3.1 Target)
+
+- **Flow name:** Step 12 execution entry — Markdown → AsciiDoc via `POST /api/to-asciidoc`
+- **Confirmed backend target:** `api/backend/routes/conversion.routes.js` (`router.post('/to-asciidoc', ...)`)
+
+#### Success flow (backend)
+
+1. **HTTP entry:** `POST /api/to-asciidoc` → `conversion.routes.js`.
+2. **Request validation:** `validate.middleware.js` + Zod ensures `{ text: string }` (schema-level validation before the route handler runs).
+3. **Route precheck:** if `!text.trim()` → standardized failure path (see failure flow) and **does not** call Pandoc.
+4. **Engine call (non-contract string result):** `convertMarkdownWithPandoc(text)` in `api/backend/services/conversion/convert.js`:
+   - writes temp input under OS temp dir, runs Pandoc subprocess, reads output string, cleans up temp artifacts in `finally`.
+   - returns **plain AsciiDoc text** (not a `ConversionResult`).
+5. **Timing + contract assembly at route boundary:** route computes `finishedAt` and `durationMs`, builds `successPayload`, then:
+   - `conversionResult = createSuccessResult(successPayload)`.
+6. **HTTP response:** returns **200** with `{ asciidoc, conversionResult }` (AsciiDoc output duplicated: top-level `asciidoc` string plus standardized nested `conversionResult`).
+
+#### Failure flow (backend)
+
+Failures are produced **in the route** (and optionally triggered by engine throws); there is **no lazy-load orchestration hop** for this endpoint.
+
+1. **Route precheck failure (`EMPTY_INPUT`):**
+   - If `!text.trim()` after schema validation → `buildToAsciidocFailure(...)` → `createFailureResult(...)` inside `buildToAsciidocFailure`.
+   - Returned as **400** `{ ...failure, detail: failure.error.message }`.
+2. **Engine / Pandoc execution failures:**
+   - `convertMarkdownWithPandoc(text)` throws → caught by route `catch`.
+   - `classifyToAsciidocInternalError(error)` maps message patterns to `CONVERSION_FAILED` vs `INTERNAL_ERROR`.
+   - `buildToAsciidocFailure(...)` → standardized failure returned as **500** `{ ...failure, detail: failure.error.message }`.
+3. **Secondary internal failure in failure construction (Step 12.2.5):**
+   - If building the primary failure response throws, nested `catch` returns a fallback standardized `INTERNAL_ERROR` still via `buildToAsciidocFailure(...)`.
+
+**Note:** invalid JSON / schema validation failures are handled by middleware and may **not** be a standardized `ConversionResult` (known cross-route pattern; grounded contract-risk point).
+
+#### Standardized result — first creation point + upward propagation
+
+- **First standardized success creation:** `createSuccessResult(successPayload)` in **`conversion.routes.js`** immediately after successful `convertMarkdownWithPandoc(text)` returns output text.
+- **First standardized failure creation:** `createFailureResult(failurePayload)` inside **`buildToAsciidocFailure(...)`** (same file), invoked from route precheck and from error handling paths.
+- **Propagation upward:** there is **no intermediate orchestrator layer** for this flow:
+  - Engine returns **text only** upward to the route.
+  - Route is the **sole** layer that constructs standardized `ConversionResult` and emits the HTTP JSON response.
+
+#### Grounded backend contract-risk points (Step 12)
+
+- **HTTP envelope asymmetry:** success nests standardized result under `conversionResult`, while failures are **root-level** standardized `ConversionResult` plus `detail` (same structural pattern as other dedicated routes).
+- **Middleware validation bypass risk:** Zod `validate(...)` failures can return non-`ConversionResult` error shapes unless separately standardized at the boundary.
+- **Internal error classification brittleness:** `classifyToAsciidocInternalError` relies on substring matching of `error.message` for Pandoc-related cases; message drift can change `CONVERSION_FAILED` vs `INTERNAL_ERROR` classification.
+- **Engine error abstraction:** `convertMarkdownWithPandoc` may throw/rethrow generic wrapper errors, reducing structured signal before route classification.
+
+#### Step boundary
+
+This step maps backend flow behavior only and does **not** start Step 12.3.3.
+
+### Step 12.3.3 — Backend Contract-Risk Points + Target Behavior (Step 12)
+
+- **Flow name:** Step 12 execution entry — Markdown → AsciiDoc via `POST /api/to-asciidoc`
+- **Confirmed backend target:** `api/backend/routes/conversion.routes.js` (`router.post('/to-asciidoc', ...)`)
+- **Uses:** backend/orchestrator flow map from **Step 12.3.2**
+
+#### Where standardized `ConversionResult` may still be reshaped / stripped / wrapped / rebuilt / bypassed
+
+- **(Risk) HTTP response envelope asymmetry at the route boundary**
+  - Success: `{ asciidoc, conversionResult }` (standardized result is *nested* under `conversionResult`).
+  - Failure: `{ ...failureResult, detail }` (standardized result is *root-level* plus `detail`).
+  - Risk: consumers may treat only `asciidoc` / `detail` and ignore structured fields.
+- **(Risk) Middleware validation bypass**
+  - Invalid JSON / Zod schema failures may return `{ error, issues }` rather than a `ConversionResult` (known cross-route pattern).
+  - Risk: contract-first clients cannot rely on a single failure shape for all HTTP error paths.
+- **(Risk) Engine throws as unstructured signals**
+  - `convertMarkdownWithPandoc` throws/rethrows errors that are not `ConversionResult`; classification depends on `classifyToAsciidocInternalError` message heuristics.
+  - Risk: message drift changes `CONVERSION_FAILED` vs `INTERNAL_ERROR` without a structured code from the engine.
+- **(Risk) Failure-construction path complexity**
+  - Primary failure build + nested fallback (Step 12.2.5) can mask the original exception if the primary failure builder throws.
+  - Risk: loss of diagnostic fidelity unless `details`/`stage` fields remain explicit and stable.
+
+#### Safe points (already aligned / low drift)
+
+- **(Safe) Route-local standardized builders for `/to-asciidoc`**
+  - Success uses `createSuccessResult(successPayload)` after engine output is known.
+  - Failure uses `buildToAsciidocFailure(...)` -> `createFailureResult(failurePayload)` for grounded route failures.
+- **(Safe) No lazy-load orchestration hop for this route**
+  - There is no second layer that can silently convert standardized results into legacy module shapes (unlike lazyload-preserved flows).
+- **(Safe) Isolated verification evidence (Step 12.2.6)**
+  - Success/failure/internal-error scripts confirm standardized root fields for the primary route paths.
+
+#### Points that still need explicit alignment awareness (not necessarily broken)
+
+- **Middleware error shape** remains a separate compatibility surface from route-standardized failures.
+- **Message-based internal classification** should be treated as a stability dependency (tests/docs), not a semantic guarantee from Pandoc.
+
+#### Target backend behavior (Step 12) — before remediation
+
+**Success preservation**
+
+- Return **200** with:
+  - `asciidoc: string` (AsciiDoc output text)
+  - `conversionResult: ConversionResult` where:
+    - `success === true`
+    - `error === null`
+    - required root fields exist (including `warnings`, `logs`, `meta` collections)
+- Do not replace `conversionResult` with ad-hoc legacy success objects.
+
+**Failure preservation**
+
+- For route-handled failures (`400`/`500` from `/to-asciidoc`), return a **root-level** standardized failure `ConversionResult` plus `detail`:
+  - `success === false`
+  - structured `error` with stable `error.code` where grounded (`EMPTY_INPUT`, `CONVERSION_FAILED`, `INTERNAL_ERROR`, etc.)
+  - required root fields remain present
+- Do not flatten structured failures to string-only responses at the route boundary.
+
+**Internal coordination errors**
+
+- Engine/internal errors must be converted into standardized failures via `buildToAsciidocFailure` + classification, not surfaced as raw unhandled exceptions at the HTTP boundary.
+- If failure construction itself fails, fallback must still be a standardized `INTERNAL_ERROR` with explicit `details.stage` semantics (as implemented in Step 12.2.5).
+
+**Acceptable enrichment**
+
+- Adding `detail` alongside structured `error` for client compatibility.
+- Enriching `meta` with route-scoped keys **without** deleting/overwriting meaningful existing `meta` from builders.
+- Appending safe diagnostic fields under `error.details` / `details.stage` when grounded.
+
+**Unacceptable reshaping / flattening**
+
+- Returning responses that omit required `ConversionResult` root fields for `/to-asciidoc` success/failure paths that are intended to be contract-first.
+- Replacing structured `error` with a string-only error model at the route boundary.
+- Stripping `error.code`, `pipeline`, `warnings`, `logs`, or `meta` collections from standardized results.
+
+#### Step boundary
+
+This step defines risk points and target behavior only and does **not** start Step 12.3.4.
+
+### Step 12.3.4 — Backend/Orchestrator Remediation (Step 12)
+
+#### What was remediated (minimal, route + engine for this flow)
+
+- **`convertMarkdownWithPandoc` error preservation:** `api/backend/services/conversion/convert.js` now rethrows wrapper errors with **`Error` `cause` chaining** so the original Pandoc-path error is not discarded behind a generic message-only surface.
+- **Route classification uses full error context:** `api/backend/routes/conversion.routes.js` adds `collectAsciidocErrorMessages(...)` and updates `classifyToAsciidocInternalError` to classify using the **concatenated message chain** (including `error.cause`), keeping `CONVERSION_FAILED` vs `INTERNAL_ERROR` grounded on real Pandoc semantics where possible.
+
+#### Verification (isolated)
+
+- Re-ran existing scripts: `verify-e2e-to-asciidoc-success-contract.js`, `verify-e2e-to-asciidoc-failure-contract.js`, `verify-e2e-to-asciidoc-representative-scenarios.js`, `verify-e2e-to-asciidoc-internal-error-contract.js`.
+
+#### Step boundary
+
+This step applies localized backend remediation only and does **not** start Step 12.3.5.
+
+### Step 12.3.5 — Backend/Orchestrator Remediation Verification and Consolidation (Step 12)
+
+#### What was verified (post-12.3.4)
+
+- **Standardized success preservation:** HTTP **200** responses still return `asciidoc` plus nested `conversionResult` produced by `createSuccessResult(...)`, with required root fields intact (scripts assert the full success contract).
+- **Standardized failure preservation:** HTTP **400** / **500** responses still return **root-level** standardized failure `ConversionResult` objects (not string-only errors), with legacy `detail` alongside structured `error`.
+- **Structured `error` + `error.code`:** failure scripts assert `error.code` is present and stable for grounded cases (e.g. `EMPTY_INPUT`); internal-error script asserts `CONVERSION_FAILED` for the forced Pandoc-path failure.
+- **Internal coordination / engine errors:** forced `convertMarkdownWithPandoc` failure is converted to a standardized route failure (HTTP **500**) without bypassing the contract; nested failure-construction fallback remains available (Step 12.2.5).
+
+#### Checks re-run (this flow)
+
+- `api/backend/scripts/verify-e2e-to-asciidoc-success-contract.js`
+- `api/backend/scripts/verify-e2e-to-asciidoc-failure-contract.js`
+- `api/backend/scripts/verify-e2e-to-asciidoc-representative-scenarios.js`
+- `api/backend/scripts/verify-e2e-to-asciidoc-internal-error-contract.js`
+
+**Result:** all passed in a single chained run after a tiny verification-script stabilization (see below).
+
+#### Tiny follow-up fix (verification harness only)
+
+- **`verify-e2e-to-asciidoc-representative-scenarios.js`:** added explicit `process.exit(...)` with the same short delayed pattern used by other e2e scripts so chained verification runs do not hang waiting for the Node event loop to empty.
+
+#### Consolidation statement
+
+- The Step 12 backend/orchestrator layer for `POST /api/to-asciidoc` is **verified** to preserve standardized `ConversionResult` semantics for success and failure paths after Step 12.3.4, with structured `error` data intact and internal errors routed through the standardized failure builders.
+
+#### Step boundary
+
+This step completes backend/orchestrator verification/consolidation for Step 12 and does **not** start Step 12.4.1.
+
+### Step 12.4.1 — Identify the Real Frontend/UI Alignment Target (Step 12)
+
+- **Flow name:** Step 12 execution entry — Markdown → AsciiDoc (`POST /api/to-asciidoc`)
+- **Goal of this step:** identify the true frontend/UI target where Step 12 success/failure semantics are first consumed and where contract preservation can still drift.
+
+#### Frontend/UI layers involved (real Step 12 context)
+
+- **Wrapper conversion layer (Step 12 entry module from the Step 11 handoff):**
+  - `api/frontend/src/converters/markdown-to-asciidoc.ts` (`convertMarkdownToAsciiDoc(...)`)
+  - Calls `POST /api/to-asciidoc`, drives UI via setters (`setStatus`, `setOutput`, `setLoading`, `setNotification`, optional `setConversionMode`).
+- **App state/render layer (global UI owner):**
+  - `api/frontend/src/App.tsx` owns visible UI state (source/result panels, loading, notifications, modals, format selection) and wires conversion actions.
+- **Active general conversion path (reference boundary for the same endpoint):**
+  - `api/frontend/src/converters/generic-converter.ts` (`convertText(...)`) is invoked by `App.tsx` for the **simple** Markdown → AsciiDoc path (`sourceFormat === 'markdown'` && `targetFormat === 'asciidoc'`) and uses **`/api/to-asciidoc`** as the HTTP endpoint.
+
+#### Chosen frontend/UI alignment target
+
+- **Primary Step 12 frontend/UI alignment target:** `api/frontend/src/converters/markdown-to-asciidoc.ts` (`convertMarkdownToAsciiDoc(...)`)
+
+#### Why this is the correct focus
+
+- **It is the Step 12 selected execution surface from the Step 11 handoff package** and therefore the intended bounded migration/alignment unit for this cycle.
+- **It is the first consumption boundary for Step 12 backend contract semantics within this flow** (HTTP response parsing + mapping into UI state).
+- **It is where success/failure can still be locally reshaped** (legacy `data.asciidoc` focus, thrown HTTP errors, catch-branch messaging) before UI setters, making it the most relevant place to verify/preserve standardized semantics for this specific wrapper.
+- **Current runtime note:** the active app path for this format pair is still **`convertText(...)`** (`generic-converter.ts`), so Step 12 frontend alignment remains intentionally scoped to **wrapper-level** correctness (parallel to Step 10) before any broader routing consolidation.
+
+#### Step boundary
+
+This step identifies the frontend/UI alignment target only and does **not** start Step 12.4.2.
+
+### Step 12.4.2 — Frontend/UI Flow Map (Step 12 via 12.4.1 Target)
+
+- **Flow name:** Step 12 execution entry — Markdown → AsciiDoc (`POST /api/to-asciidoc`)
+- **Confirmed frontend/UI target:** `convertMarkdownToAsciiDoc(...)` in `api/frontend/src/converters/markdown-to-asciidoc.ts`
+
+#### Success flow (frontend/UI)
+
+1. **Wrapper entry:** `convertMarkdownToAsciiDoc(text, setStatus, setOutput, setLoading, setNotification, [setConversionMode])`.
+2. **Local precheck:** if `!text.trim()` → sets status string and **returns early** (no network call; no `ConversionResult` involved).
+3. **Pre-attempt UI:** sets status (“conversion in progress”), `loading=true`, optional `setConversionMode('md-to-adoc')`.
+4. **HTTP call:** `fetch(POST ${API_BASE}/api/to-asciidoc, { text })` with 30s abort timeout.
+5. **Success HTTP branch (`res.ok`):**
+   - `data = await res.json()`
+   - **Output extraction:** `setOutput(data.asciidoc ?? "")` (legacy top-level output field).
+   - **Backend `ConversionResult`:** present on success responses as `data.conversionResult`, but **not read or validated** in the current wrapper implementation.
+   - **User feedback:** success status string + success `setNotification`.
+
+#### Failure flow (frontend/UI)
+
+1. **HTTP non-OK (`!res.ok`):**
+   - Reads **raw** `res.text()` into `errorText`, then **throws** `Error("Erreur HTTP ...")` (stringly error path).
+   - Structured standardized failure JSON from the backend is **not parsed** as `ConversionResult` in this branch.
+2. **Abort / timeout:** `AbortError` → status + error notification (client-local message).
+3. **Network-ish errors:** substring match on `e.message` for `NetworkError` / `Failed to fetch` → dedicated messaging.
+4. **Other errors:** generic catch message `Erreur lors de l'appel à l'API : ...` from `e.message`.
+5. **Finally:** `setLoading(false)` always runs.
+
+#### Where the backend `ConversionResult` is first consumed (current wrapper)
+
+- **Success:** the first point the backend response is interpreted is `await res.json()`, but the wrapper **only** uses `data.asciidoc` for output. **`data.conversionResult` is not consumed** (not validated, not mapped, not forwarded to state beyond implicit coupling via the duplicate `asciidoc` string).
+- **Failure:** the first point is either raw `res.text()` (non-OK) or exception text in `catch`. **Structured `error` / `error.code` from standardized failure bodies are not consumed** as the source of truth.
+
+#### How state and rendering move (wrapper-level)
+
+- The wrapper has **no internal React state**; it only invokes **callbacks** passed from the parent:
+  - **`setOutput`** updates whatever the parent binds (typically result panel / AsciiDoc buffer).
+  - **`setStatus`**, **`setLoading`**, **`setNotification`** update chrome messaging and spinner behavior.
+  - Optional **`setConversionMode`** updates mode indicator when provided.
+- **Parent wiring (`App.tsx`) is not executed in this wrapper path** unless a caller explicitly uses this function; the active production path for the same endpoint is `convertText(...)` (see Step 12.4.1).
+
+#### Grounded frontend/UI risks (flattening / reshaping / ignoring / stale-state)
+
+- **Ignoring standardized success `conversionResult`:** success UI is driven by **`asciidoc` string only**, so contract fields (warnings/logs/meta/timing) are invisible at this layer.
+- **Flattening structured failures:** non-OK responses become a **single thrown string**; **`error.code` is not preserved** through to UI semantics.
+- **Stale output risk:** failure paths **do not clear** `setOutput`; if a prior attempt produced output, a failed attempt may leave **stale AsciiDoc visible** unless the parent clears it elsewhere.
+- **Envelope mismatch:** backend success nests `conversionResult` while failures are root-level + `detail`; the wrapper does not implement explicit dual-shape parsing.
+
+#### Step boundary
+
+This step maps frontend/UI runtime behavior only and does **not** start Step 12.4.3.
+
+### Step 12.4.3 — Frontend/UI Contract-Risk Points + Target Behavior (Step 12)
+
+- **Flow name:** Step 12 — legacy wrapper Markdown → AsciiDoc (`POST /api/to-asciidoc`)
+- **Confirmed frontend/UI target:** `api/frontend/src/converters/markdown-to-asciidoc.ts` → `convertMarkdownToAsciiDoc(...)`
+- **Basis:** Reuses the **Step 12.4.2** frontend/UI flow map (success/failure branches, first parse point, setter propagation). This step defines **risk** and **target behavior** only (no code changes).
+
+#### Contract-risk points (grounded)
+
+1. **Success: `conversionResult` ignored; output driven by `asciidoc` string only**
+   - **Where:** `res.ok` branch after `await res.json()`.
+   - **Risk:** **flattening** / **partial ignore** — warnings/logs/meta/timing and success validation (`success === true`) are not applied; UI can look “successful” from strings while contract semantics are unknown.
+
+2. **Failure: HTTP non-OK reduced to thrown string**
+   - **Where:** `!res.ok` → `res.text()` → `throw new Error(...)`.
+   - **Risk:** **flattening** — structured backend `error` / `error.code` / root-level `ConversionResult` not consumed; notifications reflect HTTP text only.
+
+3. **Stale output on failed attempts**
+   - **Where:** failure branches do not call `setOutput('')` or equivalent.
+   - **Risk:** **stale-state misuse** — previous AsciiDoc may remain visible after a failed attempt.
+
+4. **Envelope asymmetry not handled**
+   - **Where:** success expects `{ asciidoc, conversionResult }`; failures are root-level standardized result + `detail`.
+   - **Risk:** **reshaping** / **partial ignore** — no explicit dual-path JSON parsing; failures may never be interpreted as standardized objects.
+
+5. **Client-only error classification**
+   - **Where:** `catch` uses `AbortError`, network substring checks, generic `e.message`.
+   - **Risk:** **acceptable** for true client faults; **misleading** if a structured backend failure could have been parsed but was not attempted.
+
+6. **Dual-path drift vs `convertText(...)`**
+   - **Where:** `App.tsx` uses `convertText(...)` for the same endpoint pair; this wrapper is optional/legacy.
+   - **Risk:** **inconsistent** contract-first behavior for identical backend routes unless both paths are aligned and documented.
+
+7. **No callback for backend `ConversionResult` / app-level contract state**
+   - **Where:** wrapper only exposes string/status setters (no `setBackendConversionResult`-style hook in current signature).
+   - **Risk:** **partial ignore** at app level — structured results never reach global contract state when this wrapper is used.
+
+#### Points that already look safe / protective
+
+- **S1 — Loading lifecycle:** `setLoading(true)` for the attempt; `finally` always clears loading.
+- **S2 — Local empty precheck:** avoids a network call when input is empty (client-side guard; distinct from backend `EMPTY_INPUT`).
+- **S3 — Bounded timeout:** AbortController limits hung requests (client-side safety).
+
+#### Points that still need alignment work (before / during 12.4.4)
+
+- **A1 — Contract-first success:** validate `data.conversionResult` before treating the attempt as success; derive `output` from contract + `asciidoc` consistently.
+- **A2 — Contract-first failure:** parse JSON for standardized failure on non-OK before falling back to text.
+- **A3 — Stale output:** clear or mark invalid output at attempt start and/or on failure when integrated with the result panel.
+- **A4 — Dual path:** keep wrapper behavior aligned with `convertText(...)` for `/api/to-asciidoc`, or document intentional divergence.
+
+#### Target frontend/UI behavior (definition for Step 12 — basis for 12.4.4)
+
+##### Success handling
+
+- **Must** treat the attempt as successful only when the backend provides a standardized success `ConversionResult` (`success === true`, `error === null`) with required fields, carried under `data.conversionResult` for this route.
+- **Must** use `conversionResult` as the source of truth for success semantics; **must not** infer success from non-empty `asciidoc` alone.
+- **May** set visible AsciiDoc output from `data.asciidoc` **after** success semantics are validated (or from fields inside `conversionResult` when consistent).
+
+##### Failure handling
+
+- **Must** parse standardized failure JSON on non-OK HTTP when the body is JSON, preserving `error` and `error.code` when present.
+- **Must** use structured backend failures as the canonical failure record when available; use synthetic client failures only when no structured body exists.
+
+##### Idle / loading / success / error transitions
+
+- **Must** keep loading coherent: `true` during the attempt, `false` in `finally`.
+- **Should** avoid presenting a success notification when the backend success contract is not satisfied.
+- **Must not** leave prior attempt output visible as if it were the result of a failed attempt when the result panel is contract-integrated (stale-output rule).
+
+##### Acceptable interpretation
+
+- **Acceptable:** user-facing French strings in `setStatus` / `setNotification` as long as structured contract semantics remain available to the caller (via future callbacks or return shape in a later step).
+- **Acceptable:** bounded client-only messages for true timeout/network faults when no backend body exists.
+
+##### Unacceptable flattening or stale-state behavior
+
+- **Unacceptable:** treating HTTP 200 as success if `conversionResult` is missing or `conversionResult.success !== true`.
+- **Unacceptable:** discarding structured `error.code` when a standardized failure body is available.
+- **Unacceptable:** string-only failure UX when JSON `ConversionResult` failure was available to parse.
+- **Unacceptable:** showing stale AsciiDoc output after a failed attempt without explicit clearing or error-state marking.
+
+#### Step boundary
+
+This step defines frontend/UI risk and target behavior only and does **not** start Step 12.4.4.
+
+### Step 12.4.4 — Frontend/UI remediation (Markdown → AsciiDoc wrapper)
+
+- **Implemented in:** `api/frontend/src/converters/markdown-to-asciidoc.ts` → `convertMarkdownToAsciiDoc(...)`.
+- **English note:** Success is gated on backend `data.conversionResult` (`success === true`) before writing `asciidoc` output. Non-OK bodies are read once as text then JSON-parsed so structured `error` / `error.code` are preserved when present. Optional `setBackendConversionResult` and `setConversionUiState` align with the Step 10 wrapper; output and backend result are cleared at attempt start to avoid stale success/error UI.
+
+#### Step boundary
+
+This step implements Step 12 wrapper remediation only and does **not** start Step 12.4.5.
+
+### Step 12.4.5 — Verification + consolidation (Step 12 wrapper)
+
+- **Scope:** `api/frontend/src/converters/markdown-to-asciidoc.ts` → `convertMarkdownToAsciiDoc(...)` only.
+- **English verification note:** Success path requires `data.conversionResult` with `success === true` before `setOutput(data.asciidoc)`. HTTP failures use a single body read (`text` + `JSON.parse`); root-level standardized failures feed `createFailureResult` so `error.code` survives normalization; the structured branch stores the same normalized object as the return value. Each new attempt clears notification, output, and optional backend result, sets loading, then optional UI state `loading`; `finally` always clears loading. Client-only failures (empty precheck, timeout, network) emit synthetic `ConversionResultFailure` with explicit meta. Tiny follow-up: precheck clears notification to avoid a stale success toast; structured HTTP failure uses one normalized object for both callback and return.
+
+#### Step boundary
+
+This step records verification only and does **not** start Step 12.6.1.
+
+### Step 12.5.1 — Cross-flow comparison (Step 12 vs validated flows)
+
+**Step 12 scope (this comparison):** backend route `POST /api/to-asciidoc` plus frontend wrapper `api/frontend/src/converters/markdown-to-asciidoc.ts` → `convertMarkdownToAsciiDoc(...)`.
+
+**Validated / peer reference (already documented baseline):** the multi-flow baseline includes **Markdown → AsciiDoc** as the second migrated flow (see Step 7.6.2 / Step 8.6.2). The closest **wrapper-level** peer for frontend behavior is **Step 10** (`convertAsciiDocToMarkdown`, `POST /api/to-markdown`): same intentional pattern (contract-first wrapper, `App.tsx` still primarily uses `convertText(...)`). Other validated flows (**Text → Markdown**, Step 7; **`POST /api/from-html`** multi-target, Step 8) share the same high-level contract + layered verification posture but differ more in engine, envelope, or UI entry (`generic-converter` emphasis); they are referenced here for baseline completeness, while **Step 10 vs Step 12** is the tightest apples-to-apples wrapper comparison.
+
+#### Converter result construction
+
+| Aspect | Consistent | Different but acceptable |
+| --- | --- | --- |
+| Backend | `createSuccessResult(...)` / `createFailureResult(...)` (or route-specific builders such as `buildToAsciidocFailure`) produce canonical `ConversionResult` shapes at the HTTP boundary; success carries nested `conversionResult`, failures are root-level standardized objects + `detail`. | Engine and payload fields differ (Pandoc markdown→asciidoc vs downdoc/lazyload markdown output for `to-markdown`). |
+| Frontend wrapper | Local `createSuccessResult` / `createFailureResult` mirror backend fields into a normalized return value; empty client precheck returns synthetic `EMPTY_INPUT` failure. | Step 10’s wrapper includes optional **modal** parameters and extra branches (see below); Step 12’s wrapper does not—narrower surface. |
+
+#### Backend / orchestrator preservation
+
+- **Consistent:** Route-level preservation targets are explicit (`conversion.routes.js`); internal errors are classified and mapped to structured failures rather than string-only HTTP bodies; verification is script-backed (Step 12: `verify-e2e-to-asciidoc-*`; Step 10: `verify-e2e-to-markdown-*` and lazyload-oriented scripts).
+- **Acceptable difference:** `to-asciidoc` uses direct Pandoc orchestration and `classifyToAsciidocInternalError` + `collectAsciidocErrorMessages`; `to-markdown` uses lazy-loaded downdoc and different failure builders—topology matches the validated “path-specific engine” rule.
+
+#### Frontend / UI preservation
+
+- **Consistent:** Success is **not** inferred from raw output text alone: `data.conversionResult` must exist and `success === true` before success UI and primary output write (`asciidoc` / `markdown` respectively). Non-OK responses attempt structured JSON failure consumption first. New attempts clear prior output/notification (and optional backend result holder) to limit stale UI.
+- **Different but acceptable:** Step 10 wrapper wires **optional error modals** and a **code-driven** `shouldShowConversionErrorModalForCode` path plus grounded **output-shape** heuristics for known bad outputs. Step 12 wrapper has **no** modal setters—acceptable because the dominant failure modes differ and Step 12 remains wrapper-scoped.
+- **Noteworthy divergence (documented elsewhere):** For the same endpoints, **`App.tsx` uses `convertText(...)`** as the live path; dedicated wrappers (Step 10 / Step 12) are **parallel, verified** surfaces until routing consolidation is explicitly in scope.
+
+#### Error handling shape
+
+- **Consistent:** Structured backend failures keep `error` and, where grounded, **`error.code`** in UI messaging (e.g. notification suffix) and in normalized `ConversionResult` returns. Client-only failures (timeout, network, parse) use synthetic failures with explicit `meta.stage` / `uiWrapper` for traceability.
+- **Different but acceptable:** Step 12 non-OK handling uses a **single body read** (`text` then `JSON.parse`) to avoid consuming the response stream twice; Step 10’s implementation historically mixed `json`/`text` patterns in places—Step 12’s approach is a **local clarity improvement**, not a contract split.
+- **May need later attention:** Long-term **deduplication** of identical helper blocks (`normalizeError`, `createSuccessResult`, etc.) across wrappers to reduce drift—out of scope for Step 12.5.1.
+
+#### State handling
+
+- **Consistent:** `setLoading(true)` for attempts that enter the `try`; **`finally` always** `setLoading(false)`; failure paths clear `setOutput('')` when appropriate; optional `setConversionUiState('loading' | 'success' | 'error')` when provided.
+- **Different but acceptable:** Step 10 also clears optional modal state at attempt start; Step 12 has no modals—nothing to clear.
+
+#### Verification style
+
+- **Consistent:** **Layered** verification: backend e2e contract scripts (success, failure, representative scenarios, internal-error where applicable); frontend **documentation** of contract-first behavior and consolidation (Step 12.3.5 / 12.4.5 mirrors Step 10.3.5 / 10.4.x style).
+- **Different but acceptable:** Script **names and counts** differ per route; Step 10’s backend section references additional lazyload module probes—appropriate to `to-markdown`’s architecture.
+
+#### Summary: consistent vs acceptable vs later attention
+
+- **Consistent:** Standardized `ConversionResult` as the semantic source of truth at the boundary and in the wrapper return path; structured failures with `error.code` where the backend supplies them; coherent loading lifecycle; stale-output mitigation on new attempts; bounded e2e verification per route.
+- **Different but acceptable:** Engine/orchestration and path-specific scripts; Step 10 modal + heuristic UX vs Step 12 slimmer API; output field names (`asciidoc` vs `markdown`).
+- **May need later attention (non-blocking for Step 12):** App routing vs dedicated wrappers; shared frontend helper module to avoid duplicate `createSuccessResult` / `createFailureResult` definitions; optional alignment of `convertText` with every dedicated-wrapper behavior once routing is unified.
+
+#### Step boundary
+
+This step records cross-flow comparison only and does **not** start Step 12.5.2.
+
+### Step 12.5.2 — Step 6 migration playbook conformance (Step 12 flow)
+
+**Playbook reference:** Step **6.3.3** — *Required migration checklist (items 1–17)* and *Conditional / when-applicable* notes.
+
+**Step 12 evidence in this document:** Steps **12.1.x** through **12.5.1** (entry confirmation, scope freeze, runtime + payload mapping, backend alignment/remediation/verification, frontend alignment/remediation/verification, cross-flow comparison).
+
+#### Checklist mapping (items 1–17)
+
+| # | Playbook item | Step 12 evidence | Completion strength |
+| --- | --- | --- | --- |
+| 1 | Confirm candidate readiness (Step 6.2.2 minimum criteria) | **12.1.1** (entry flow + go/no-go from Step 11 handoff), **12.1.2** (scope freeze) | **Lighter but acceptable:** readiness is framed via Step 11 handoff + frozen scope rather than repeating Step 6.2.2 verbatim; intent matches the playbook gate. |
+| 2 | Map current runtime flow (success, failure, internal error) | **12.2.1** | **Clearly completed** |
+| 3 | Map payload fields into `createSuccessResult()` / `createFailureResult()` inputs | **12.2.2** | **Clearly completed** |
+| 4 | Integrate standardized success-path result construction | Backend route + helpers (see **12.3.x**); **12.3.4** where relevant | **Clearly completed** |
+| 5 | Integrate standardized failure-path result construction | Backend route + `buildToAsciidocFailure` pattern; **12.3.4** | **Clearly completed** |
+| 6 | Harmonize internal error behavior into structured failure semantics | **12.3.4** (`collectAsciidocErrorMessages`, `classifyToAsciidocInternalError`, `convert.js` cause chaining); **12.3.5** internal-error script | **Clearly completed** |
+| 7 | Run isolated converter/path verification (minimum kit) | **12.2.6**; e2e scripts listed in **12.3.5** | **Clearly completed** |
+| 8 | Identify backend/orchestrator alignment target | **12.3.1** | **Clearly completed** |
+| 9 | Map backend success/failure propagation and contract-risk points | **12.3.2**, **12.3.3** | **Clearly completed** |
+| 10 | Apply minimal backend remediation | **12.3.4** | **Clearly completed** |
+| 11 | Verify backend output boundary contract behavior | **12.3.5** | **Clearly completed** |
+| 12 | Identify frontend/UI alignment target (if user-facing) | **12.4.1** | **Clearly completed** (user-facing path exists; wrapper is the bounded alignment target—see conditional note below). |
+| 13 | Map frontend success/failure consumption and state behavior | **12.4.2**, **12.4.3** | **Clearly completed** |
+| 14 | Apply minimal frontend remediation | **12.4.4** | **Clearly completed** |
+| 15 | Verify UI boundary coherence + stale-state safeguards | **12.4.5** | **Clearly completed** |
+| 16 | Final cross-layer non-regression pass (minimum kit) | **12.3.5** + **12.4.5** + chained script re-run narrative | **Clearly completed** (backend scripts explicit; frontend verified via consolidation + typecheck expectation in handoff, not a separate Step 12 vitest chapter). |
+| 17 | Record path comparison/consolidation vs migrated flows | **12.5.1** | **Clearly completed** |
+
+#### Conditional playbook items (Step 6.3.3)
+
+- **User-facing frontend alignment:** Step 12 applies **12.4.x** to the **wrapper** (`markdown-to-asciidoc.ts`). **`App.tsx` still uses `convertText(...)`** for the same endpoint pair; this matches the **Step 10** pattern (wrapper-level alignment first, app routing consolidation deferred). **Classification:** **Lighter but acceptable** completion of items 12–15 relative to a hypothetical “only App.tsx” entry—still grounded and documented.
+- **Engine-specific internal-failure probes:** **12.3.5** references `verify-e2e-to-asciidoc-internal-error-contract.js`. **Classification:** **Clearly completed** (conditional satisfied where feasible).
+- **Compatibility-wrapper / legacy overlap:** `detail` + `asciidoc` top-level fields are documented; **12.4.x** addresses wrapper consumption. **Classification:** **Clearly completed** where applicable.
+
+#### Grounded deviations (non-blocking)
+
+1. **Readiness gate (item 1):** Expressed through **Step 11** handoff + **12.1.2** freeze rather than a standalone Step 6.2.2 re-checklist. **Classification:** acceptable sequencing; same intent as Step 7.5.2-style playbook notes.
+2. **Primary UI entry vs alignment target:** Product runtime uses **`convertText`**; Step 12 **remediated the dedicated wrapper** only. **Classification:** **grounded deviation** (routing), **acceptable** under playbook “conditional frontend” and prior Step 10 precedent; **may need later attention** if routing is unified.
+3. **Cross-layer pass (item 16):** Backend is script-driven; frontend consolidation is **documentary + verification narrative** in **12.4.5** rather than a separate “Step 12 frontend vitest suite” chapter. **Classification:** **lighter but acceptable**, aligned with Step 8.5.2-style wording where executable checks + consolidation evidence suffice.
+
+#### Overall conformance statement
+
+The Step 12 flow (**Markdown → AsciiDoc**, `POST /api/to-asciidoc` + `markdown-to-asciidoc.ts` wrapper) **conforms overall** to the **Step 6.3.3** migration playbook: **required items 1–17 are satisfied** with evidence in Steps **12.1.x–12.5.1**, and **no playbook stop/defer signal** from Step 6.3.3 is triggered for this bounded scope. Remaining gaps are **documented, bounded, and acceptable** (wrapper-first vs `App.tsx` routing; lightweight readiness framing).
+
+#### Step boundary
+
+This step records playbook conformance assessment only and does **not** start Step 12.5.3.
+
+### Step 12.5.3 — Execution observations (surprises, frictions, deviations, Step 12)
+
+This sub-step records **grounded** surprises and frictions observed while executing the Step 12 flow (**Markdown → AsciiDoc**, `POST /api/to-asciidoc` + `markdown-to-asciidoc.ts`), across converter migration, backend alignment, frontend alignment, and verification/consolidation. It does **not** reopen closed migration decisions; it preserves traceability for maintainers and future playbook refinement.
+
+#### Converter migration
+
+| Observation | Category | Notes |
+| --- | --- | --- |
+| **Dual transport fields on success** (`asciidoc` top-level string **and** nested `conversionResult`) | Path-specific behavior / contract friction | Consumers must treat **`conversionResult` as semantic source of truth**; the duplicate AsciiDoc string is legacy-friendly but creates a **dual-channel** risk if one is validated and the other ignored (mitigated in **12.4.4** for the wrapper). |
+| **Frontend helper duplication** (`createSuccessResult` / `createFailureResult` / `normalizeError` duplicated per wrapper module) | Later playbook refinement candidate | Same pattern as Step 10; increases drift risk on small edits. Acceptable for bounded Step 12 scope; **shared module** remains a future consolidation target (**12.5.1**). |
+
+#### Backend / orchestrator alignment
+
+| Observation | Category | Notes |
+| --- | --- | --- |
+| **Pandoc as an external runtime dependency** | Hidden dependency / operational surprise | Route behavior depends on a **working Pandoc install** and stable process execution; failures surface through engine-specific messages, requiring **classification** rather than a single generic string (**12.3.4**). |
+| **Error surface depth (wrapper rethrow + `cause` chain)** | Unexpected runtime complexity | Original Step 12 remediation required **`Error.cause` chaining** in `convert.js` and **`collectAsciidocErrorMessages`** so route classification sees the **full message chain**, not only the outer wrapper text (**12.3.4**). |
+| **`CONVERSION_FAILED` vs `INTERNAL_ERROR` boundary** | Error-shape / propagation friction | Classification is **message-heuristic**; grounded but sensitive to wording changes in lower layers—**must stay documented** for anyone tuning Pandoc error paths. |
+| **Root-level failure envelope + `detail`** | Acceptable compatibility pattern | Same as other migrated routes: clients may read `detail` while contract consumers use structured `error`; **not a defect** if both remain populated consistently (**12.3.3** / **12.3.5**). |
+
+#### Frontend / UI alignment
+
+| Observation | Category | Notes |
+| --- | --- | --- |
+| **`App.tsx` uses `convertText(...)`, not the Step 12 wrapper** | Grounded architectural friction | **Two ingestion surfaces** for the same endpoint (**12.4.1**); wrapper is verified in isolation. **Must stay documented** until routing is intentionally unified (**12.5.1**, **12.5.2**). |
+| **Success vs failure JSON envelope asymmetry** (nested `conversionResult` on success vs root-level failure) | Error-shape friction | Frontend must implement **dual-path parsing** (`!res.ok` vs `res.ok`); Step 12 wrapper addresses this explicitly (**12.4.3** / **12.4.4**). |
+| **Optional `setBackendConversionResult` / `setConversionUiState` not wired from `App.tsx` for this wrapper** | Verification / state gap (bounded) | Global contract state may **not** reflect wrapper attempts unless a caller passes setters—**acceptable** for legacy wrapper scope; **later refinement** if App switches to the wrapper. |
+
+#### Verification and consolidation
+
+| Observation | Category | Notes |
+| --- | --- | --- |
+| **Chained e2e run required a harness tweak** (`verify-e2e-to-asciidoc-representative-scenarios.js` + `process.exit` pattern) | Acceptable surprise | **Verification gap** in the script (event loop hang), not in product code (**12.3.5**). **Issue class** that should stay in release notes / contract doc for reproducible chained runs. |
+| **Frontend verification primarily documentary (12.4.5) vs dedicated vitest chapter** | Lighter completion | Executable backend scripts carry the heaviest automated proof; frontend consolidation is **evidence + narrative**—aligned with **12.5.2** deviation notes. **Later refinement:** optional wrapper-level tests if routing promotes the wrapper. |
+| **Internal-error probe depends on fault-injection feasibility** | Path-specific handling | Pandoc-path failure injection is **engine-specific**; playbook conditional item satisfied where safe (**12.3.5**). |
+
+#### Acceptable surprises (non-blocking)
+
+- **Dual field success payload** and **root + `detail` failure** are **documented compatibility** choices, not ad-hoc drift, as long as `ConversionResult` remains canonical.
+- **Wrapper-level-only** UI alignment matches **Step 10** precedent and frozen **12.1.2** scope.
+- **Representative-scenarios script exit behavior** fixed with a **tiny harness-only** change—acceptable operational friction.
+
+#### Later playbook refinement candidates
+
+- Explicit playbook bullet for **“shared frontend ConversionResult helper module”** after N wrappers duplicate the same blocks.
+- Explicit **“dual App entry vs dedicated wrapper”** checklist when the same `fetch` endpoint appears in `generic-converter` and a legacy wrapper.
+- **Chained e2e script** template (delayed `process.exit`) promoted to a **shared npm script** or doc snippet to avoid one-off hangs per route.
+
+#### Issues that must stay documented (until product changes)
+
+- **Two live ingestion paths** (`convertText` vs `convertMarkdownToAsciiDoc`) for **`/api/to-asciidoc`**.
+- **Heuristic internal-error classification** for Pandoc failures (`classifyToAsciidocInternalError` + message chain)—any change to error text upstream can shift codes.
+- **Verification harness** requirement for chained runs on **representative-scenarios** script (see **12.3.5**).
+
+#### Step boundary
+
+This step records execution observations only and does **not** start Step 12.5.4.
+
+### Step 12.5.4 — Step 12 cycle validation and closure readiness
+
+**Validation inputs used:** isolated verification (**12.2.6**), backend/orchestrator remediation verification (**12.3.5**), frontend/UI remediation verification (**12.4.5**), cross-flow comparison (**12.5.1**), playbook conformance (**12.5.2**), and execution observations (**12.5.3**).
+
+#### What is validated
+
+- **Flow migrated and standardized:** `POST /api/to-asciidoc` produces standardized success/failure `ConversionResult` shapes (nested `conversionResult` on success; root-level failure + `detail`); the Step 12 wrapper (`markdown-to-asciidoc.ts`) consumes and returns aligned `ConversionResult` semantics per **12.4.4** / **12.4.5**.
+- **Backend/orchestrator preservation works:** Route + engine path preserve structured success/failure, `error.code` for grounded cases, internal-error harmonization via classification + `cause` chaining (**12.3.4**, **12.3.5**); e2e scripts (`verify-e2e-to-asciidoc-success-contract.js`, `verify-e2e-to-asciidoc-failure-contract.js`, `verify-e2e-to-asciidoc-representative-scenarios.js`, `verify-e2e-to-asciidoc-internal-error-contract.js`) re-run and recorded **passing** in consolidation.
+- **Frontend/UI preservation works (Step 12 target):** Wrapper treats backend `conversionResult` as success source of truth, preserves structured failures (including `error.code`), coherent `loading`/attempt resets, optional `setBackendConversionResult` / `setConversionUiState` (**12.4.5**).
+- **Cross-flow comparison recorded:** **12.5.1** documents consistency vs Step 10 peer and validated baseline; acceptable path-specific differences are explicit.
+- **Playbook conformance recorded:** **12.5.2** maps Step **6.3.3** items 1–17 to Step 12 evidence; overall conformance **yes**, with bounded lightweight deviations documented.
+- **Execution observations recorded:** **12.5.3** captures grounded surprises/frictions; none constitute an unresolved **major** blocker for this cycle’s stated scope (**12.1.2**).
+- **Relevant checks pass:** Backend contract kit for this route is **explicit and green** in doc narrative; frontend verification is **consolidation + contract-first behavior** in the wrapper (**12.4.5**, **12.5.2** item 16 note)—aligned with the accepted Step 12 verification posture.
+- **No unresolved major blocker:** Stop/defer signals from Step **6.3.3** are **not** triggered for the frozen Step 12 scope; remaining items are **documented residual** differences, not blocking defects.
+
+#### What remains acceptable but non-blocking
+
+- **Dual frontend ingestion for the same endpoint:** `convertText(...)` remains the active `App.tsx` path while the Step 12 wrapper is aligned in isolation—**documented** (**12.4.1**, **12.5.1**, **12.5.3**), same pattern as Step 10.
+- **Success/failure envelope asymmetry** (nested success `conversionResult` vs root-level failure + `detail`)—**explicitly handled** in the wrapper; compatibility `detail` retained.
+- **Duplicated frontend helper blocks** across wrappers—**acceptable** for this cycle; **refinement candidate** (**12.5.3**).
+- **Pandoc-dependent runtime** and **heuristic internal-error classification**—**grounded and documented**; operators/maintainers must respect upstream error-text stability (**12.5.3**).
+- **Representative-scenarios e2e harness** required a **tiny `process.exit` stabilization**—harness-only; **documented** (**12.3.5**).
+- **Frontend proof emphasis** on backend e2e scripts + consolidation narrative rather than a standalone Step 12 vitest chapter—**non-blocking** per **12.5.2** / **12.5.3**.
+
+#### Closure decision
+
+- **Decision:** **The Step 12 cycle is clean enough for closure** under the frozen scope (**12.1.2**): Markdown → AsciiDoc (`POST /api/to-asciidoc`) + `convertMarkdownToAsciiDoc(...)` wrapper alignment and verification.
+- **Rationale:** Migration, backend preservation, frontend wrapper preservation, layered verification, cross-flow comparison, playbook conformance, and execution observations are **complete and recorded**; residual differences are **acceptable, explicit, and non-blocking**.
+
+### Step 12.6.1 — Step 12 execution summary (what actually ran)
+
+- **Executed flow:** Step 12 executed the bounded entry **Markdown → AsciiDoc** via **`POST /api/to-asciidoc`**, with the selected frontend surface **`api/frontend/src/converters/markdown-to-asciidoc.ts`** → **`convertMarkdownToAsciiDoc(...)`** (scope freeze **12.1.2**).
+
+#### Converter-level work
+
+- Confirmed **Pandoc** conversion via **`convertMarkdownWithPandoc`** behind the route; documented **helper payload mapping** into `createSuccessResult` / `createFailureResult` inputs (**12.2.2**).
+- **Standardized `ConversionResult`** at the route boundary for success and failure was the baseline; Step 12 work emphasized **preservation**, **internal-error context** (cause chain / classification), and **verification** rather than replacing the engine.
+
+#### Backend/orchestrator work
+
+- **Target:** `api/backend/routes/conversion.routes.js` **`/to-asciidoc`** + `api/backend/services/conversion/convert.js` (Pandoc path).
+- **Remediation (12.3.4):** **`Error.cause` chaining** on rethrow, **`collectAsciidocErrorMessages`**, **`classifyToAsciidocInternalError`** updates so route failures stay **structured** and codes stay **grounded** where possible.
+- **Verification (12.3.5):** Re-ran **`verify-e2e-to-asciidoc-success-contract.js`**, **`verify-e2e-to-asciidoc-failure-contract.js`**, **`verify-e2e-to-asciidoc-representative-scenarios.js`** (plus harness **`process.exit`** stabilization), **`verify-e2e-to-asciidoc-internal-error-contract.js`**.
+
+#### Frontend/UI work
+
+- **Target:** **`convertMarkdownToAsciiDoc(...)`** (**12.4.4**): contract-first **`data.conversionResult`** gating, structured non-OK JSON handling (single body read), **`error.code`** in UX where relevant, attempt-level stale-state mitigation, optional **`setBackendConversionResult`** / **`setConversionUiState`**.
+- **Consolidation (12.4.5):** Recorded wrapper verification narrative; **did not** rewire **`App.tsx`**—**`convertText(...)`** remains the active path for the same endpoint pair (**12.4.1**).
+
+#### Verification and consolidation work
+
+- **Isolated / flow checks:** **12.2.6** and backend e2e suite above (**12.3.5**).
+- **Cross-cutting:** **12.5.1** (comparison), **12.5.2** (Step **6.3.3** playbook), **12.5.3** (observations), **12.5.4** (closure readiness).
+
+#### What Step 12 confirmed
+
+- **Markdown → AsciiDoc** is **migrated and standardized** at the **HTTP boundary** and on the **Step 12 wrapper** for contract-first **`ConversionResult`** semantics within frozen scope.
+- **Backend preservation** and **wrapper-level frontend preservation** work as intended under verification; **residual dual entry** (`convertText` vs wrapper) is **documented**, not a silent drift.
+- The **Step 6** playbook applies to this cycle with **bounded, documented** deviations (**12.5.2**).
+
+#### What remains outside Step 12 scope
+
+- **`App.tsx` routing** unification with the dedicated wrapper (or full behavioral parity pass) as a **follow-on** item.
+- **`POST /api/convert`** broad family, **`POST /api/from-html`** / other deferred waves, **global** helper deduplication, **UI redesign**.
+- **Step 13** planning/execution—**not started** here.
+
+#### Step boundary
+
+This step records execution summary only and does **not** start Step 12.6.2.
+
+### Step 12.6.2 — Multi-flow baseline update (validated reference set includes Step 12)
+
+#### Validated reference set (expanded)
+
+The validated multi-flow baseline now explicitly includes **Step 12** as an additional **validated execution unit** for the **Markdown → AsciiDoc** path:
+
+- **Backend route (unchanged endpoint):** `POST /api/to-asciidoc` (Pandoc-backed) — already part of the baseline as the **second migrated flow** (see Step 7.6.2 / Step 8.6.2).
+- **Step 12 addition (new alignment surface):** the **legacy frontend wrapper** `api/frontend/src/converters/markdown-to-asciidoc.ts` (`convertMarkdownToAsciiDoc(...)`) is now **contract-aligned, verified, and accepted** as part of the reference set for this route.
+
+The baseline therefore includes, for **`/api/to-asciidoc`**, both **generic `convertText(...)` contract-first handling** (active app path) and a **direct, wrapper-level** contract preservation pattern—without adding a new backend conversion endpoint—mirroring the Step **10** pattern for **`/api/to-markdown`**.
+
+#### Previously validated flows (context)
+
+The broader validated set still includes the flows documented earlier: e.g. **AsciiDoc → Markdown** (`/api/to-markdown`, downdoc), **Markdown → AsciiDoc** at the endpoint (**`/api/to-asciidoc`**), **Text → Markdown** (Step 7), **`POST /api/from-html`** multi-target (Step 8), plus **Step 10**’s explicit **wrapper** validation on **`asciidoc-to-markdown.ts`**. **Step 12** extends the same idea on the **reverse-direction** dedicated route’s wrapper.
+
+#### What remains common across the validated flows
+
+- **Standardized `ConversionResult` semantics** on success and failure: structured `error` / `error.code` where applicable, required root fields (including `warnings`, `logs`, `meta` collections).
+- **Boundary-first preservation:** backend HTTP responses and ingestion layers (generic converter and/or dedicated wrappers where aligned) treat standardized results as the source of truth rather than ad-hoc flattened legacy shapes.
+- **Repeatable verification posture:** contract success/failure probes, representative scenarios where applicable, internal-error probes when grounded, plus cycle-level consolidation (playbook conformance, cross-flow comparison, execution observations).
+
+#### What remains path-specific but acceptable
+
+- **Engine topology:** Pandoc (`to-asciidoc`) vs downdoc/lazyload (`to-markdown`) vs text2markdown / multi-target HTML—expected under the bounded migration model.
+- **Frontend topology:** **Step 12** validates a **standalone wrapper** while **`App.tsx`** may still call **`convertText(...)`** for the same endpoint—dual surface is **documented** (same pattern as Step **10**).
+- **Envelope asymmetry** (nested success `conversionResult` vs root-level failure + `detail`) and **compatibility `detail`**—handled explicitly per flow.
+- **Verification emphasis:** backend e2e scripts carry strong automated proof for routes; wrapper cycles may rely additionally on **consolidation narrative** where acceptable (**12.4.5** / **12.5.2**).
+
+#### What this improves for future migration confidence
+
+- **Symmetric evidence:** both **primary text round-trip routes** (`/api/to-markdown` and `/api/to-asciidoc`) now have a **documented, verified wrapper-level** alignment story (Step **10** + Step **12**), not only endpoint + `convertText` behavior.
+- Reinforces that the **Step 6** playbook applies to **legacy wrapper modules** named in handoffs, for **Pandoc** as well as **downdoc** paths.
+- Makes **drift detection** easier: same endpoint, **two frontend ingestion surfaces** (`convertText` vs dedicated wrapper) is an explicit baseline comparison point for **Markdown → AsciiDoc** as it already was for **AsciiDoc → Markdown**.
+
+#### Step boundary
+
+This step records baseline expansion only and does **not** start Step 12.6.4.
+
+### Step 12.6.3 — Step 12 Definition of Done
+
+Step 12 is complete only if all criteria below are true:
+
+- The Step 12 entry flow was confirmed.
+- The Step 12 scope was frozen.
+- The runtime flow was mapped.
+- Helper payload mapping was documented.
+- Success-path integration was completed.
+- Failure-path integration was completed.
+- Internal-error harmonization was completed.
+- Isolated verification passed.
+- Backend/orchestrator alignment was completed.
+- Backend/orchestrator verification passed.
+- Frontend/UI alignment was completed.
+- Frontend/UI verification passed.
+- Cross-flow comparison was completed.
+- Playbook conformance was checked.
+- Execution observations were documented.
+- The cycle was validated as clean enough for closure.
+- The multi-flow baseline was updated.
+
+#### What Step 12 does not require
+
+- Broad `App.tsx` routing consolidation (active `convertText(...)` path vs dedicated wrapper unification) beyond documenting the dual surface.
+- Migration or redesign of the generic `POST /api/convert` family, `POST /api/from-html` deferred waves, or global helper-module extraction, except as explicitly out-of-scope notes.
+- Global UI redesign or cross-cutting architecture refactor.
+- Starting **Step 13** execution work from this Definition of Done alone.
+
+#### Step boundary
+
+This step records the Step 12 Definition of Done only and does **not** start Step 12.6.4.
+
+### Step 12.6.4 — Step 12 Closure
+
+## Step 12 Closure
+
+Step 12 executed **one additional real flow**: **Markdown → AsciiDoc** through **`POST /api/to-asciidoc`**, with the selected wrapper entry **`convertMarkdownToAsciiDoc(...)`** in **`api/frontend/src/converters/markdown-to-asciidoc.ts`** as the scoped execution surface (frozen scope **12.1.2**).
+
+**What Step 12 achieved:** **converter migration** was **completed** for that flow (standardized `ConversionResult` semantics preserved at the route boundary with Pandoc-backed conversion). **Backend/orchestrator alignment** was **completed** for that flow (route + engine error context, classification, verification **12.3.4** / **12.3.5**). **Frontend/UI alignment** was **completed** for that flow (wrapper contract-first consumption, stale-state safeguards, **12.4.4** / **12.4.5**). The flow was **verified** against the Step 12 checklist and **accepted for closure** (**12.5.4**).
+
+**Concrete result added to the validated flow set:** the **validated multi-flow baseline was expanded again** (**12.6.2**) to include **Step 12** as a **wrapper-level** validated execution unit on **`/api/to-asciidoc`**—mirroring the **Step 10** pattern for **`/api/to-markdown`** without adding a new backend endpoint.
+
+**What Step 12 confirms about the migration/alignment method:** the **Step 6** playbook applies to **legacy wrapper modules** and **Pandoc** paths, not only downdoc/lazyload; **boundary-first** `ConversionResult` preservation plus **layered verification** (isolated, backend e2e, frontend consolidation, cross-flow comparison **12.5.1**, playbook **12.5.2**, observations **12.5.3**) remains a repeatable, bounded recipe.
+
+**What remains outside Step 12 scope:** deferred migration waves (**`/api/convert`**, **`from-html`**, etc.), **App.tsx** routing consolidation vs the dedicated wrapper, **global** helper extraction, **UI** redesign, and **Step 13** planning/execution until explicitly started.
+
+**Transition note:** follow-on work may build on this **expanded baseline** as a **new phase**, without reopening **Step 12** scope or decisions already frozen under **12.1.2**.
+
+**Step 12 does not mean:**
+
+- all remaining flows are migrated,
+- broad redesign work is done, or
+- **Step 13** has already started.
+
+#### Step boundary
+
+This step records Step 12 official closure only and does **not** start Step 13.

@@ -1,17 +1,15 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.4.4-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.4.6-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.4.4)
+## Latest changes (v0.0.1.4.6)
 
-- **Stabilization & polish**
-  - Consistent source/result UI states (modified, editing, restore, clear).
-  - Consolidated frontend validation before conversion (empty source, max 2 MB).
-  - Clearer user-facing action modals.
-  - Frontend/backend version alignment and consistent displayed metadata.
+- **Contract & conversion pipeline**
+  - Extended `ConversionResult` contract documentation (Steps 10–11, Step 11 closure, handoff baseline).
+  - AsciiDoc → Markdown wrapper alignment and related e2e scripts (`/api/to-markdown`, representative scenarios).
 
 ## Overview
 
