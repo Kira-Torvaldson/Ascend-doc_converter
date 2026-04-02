@@ -147,14 +147,16 @@ async function main() {
 
   if (!allPassed) {
     process.exitCode = 1
+    setTimeout(() => process.exit(1), 500)
     return
   }
   console.log('[OK] representative e2e scenarios validated for /api/to-asciidoc')
+  setTimeout(() => process.exit(0), 500)
 }
 
 main().catch((error) => {
   console.error('[FAIL] representative scenario verification failed for /api/to-asciidoc')
   console.error(error && error.stack ? error.stack : String(error))
-  process.exitCode = 1
+  setTimeout(() => process.exit(1), 500)
 })
 

@@ -32,7 +32,7 @@ function buildToAsciidocFailure({
   details = null,
 }) {
   const finishedAt = new Date().toISOString()
-  return createFailureResult({
+  const failurePayload = {
     conversionId,
     converter: 'pandoc',
     pipeline: ['markdown->asciidoc'],
@@ -52,11 +52,26 @@ function buildToAsciidocFailure({
     warnings: [],
     logs: [],
     meta: { route: '/api/to-asciidoc', transport: 'in-memory' },
-  })
+  }
+  return createFailureResult(failurePayload)
+}
+
+function collectAsciidocErrorMessages(error) {
+  const parts = []
+  const seen = new Set()
+  let e = error
+  let depth = 0
+  while (e && depth < 8 && !seen.has(e)) {
+    seen.add(e)
+    if (e && typeof e.message === 'string' && e.message) parts.push(e.message)
+    e = e.cause
+    depth++
+  }
+  return parts.join(' | ')
 }
 
 function classifyToAsciidocInternalError(error) {
-  const rawMessage = error && error.message ? String(error.message) : String(error || '')
+  const rawMessage = collectAsciidocErrorMessages(error) || String(error || '')
   if (
     rawMessage.includes('Pandoc conversion failed') ||
     rawMessage.includes('Pandoc conversion timed out') ||
@@ -511,7 +526,7 @@ router.post(
     const finishedAt = new Date().toISOString()
     const durationMs = Date.now() - startedAtMs
 
-    const conversionResult = createSuccessResult({
+    const successPayload = {
       conversionId,
       converter: 'pandoc',
       pipeline: ['markdown->asciidoc'],
@@ -534,27 +549,46 @@ router.post(
       warnings: [],
       logs: [],
       meta: { route: '/api/to-asciidoc', transport: 'in-memory' },
-    })
+    }
+    const conversionResult = createSuccessResult(successPayload)
 
     console.log(`[INFO] Conversion successful: ${asciidoc.length} AsciiDoc characters generated`)
 
     return res.json({ asciidoc, conversionResult })
   } catch (error) {
     console.error('[ERROR] Error during Markdown → AsciiDoc conversion:', error)
-    const classified = classifyToAsciidocInternalError(error)
-    const failure = buildToAsciidocFailure({
-      conversionId,
-      startedAt,
-      startedAtMs,
-      inputText: req.body && req.body.text ? String(req.body.text) : '',
-      code: classified.code,
-      message: classified.message,
-      details: classified.details,
-    })
-    return res.status(500).json({
-      ...failure,
-      detail: failure.error.message,
-    })
+    try {
+      const classified = classifyToAsciidocInternalError(error)
+      const failure = buildToAsciidocFailure({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        inputText: req.body && req.body.text ? String(req.body.text) : '',
+        code: classified.code,
+        message: classified.message,
+        details: classified.details,
+      })
+      return res.status(500).json({
+        ...failure,
+        detail: failure.error.message,
+      })
+    } catch (fallbackError) {
+      const fallbackMessage = fallbackError && fallbackError.message ? String(fallbackError.message) : String(fallbackError || '')
+      console.error('[ERROR] Failed to build standardized to-asciidoc failure result:', fallbackError)
+      const failure = buildToAsciidocFailure({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        inputText: req.body && req.body.text ? String(req.body.text) : '',
+        code: 'INTERNAL_ERROR',
+        message: `Conversion error: ${fallbackMessage}`,
+        details: { stage: 'route-failure-fallback', fallbackMessage },
+      })
+      return res.status(500).json({
+        ...failure,
+        detail: failure.error.message,
+      })
+    }
   }
 })
 
