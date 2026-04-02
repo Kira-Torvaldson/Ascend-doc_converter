@@ -143,8 +143,10 @@ export async function convertText(
   const isMigratedAdocToMarkdown = sourceFormat === 'asciidoc' && targetFormat === 'markdown'
   const isMigratedMarkdownToAsciidoc = sourceFormat === 'markdown' && targetFormat === 'asciidoc'
   const isMigratedTextToMarkdown = sourceFormat === 'txt' && targetFormat === 'markdown'
+  // Step 8 flow: HTML -> * must preserve standardized backend semantics too.
+  const isMigratedHtmlToAny = sourceFormat === 'html'
   const isMigratedContractPath =
-    isMigratedAdocToMarkdown || isMigratedMarkdownToAsciidoc || isMigratedTextToMarkdown
+    isMigratedAdocToMarkdown || isMigratedMarkdownToAsciidoc || isMigratedTextToMarkdown || isMigratedHtmlToAny
 
   if (!text.trim()) {
     setStatus("Veuillez entrer du texte à convertir");
@@ -164,6 +166,10 @@ export async function convertText(
   if (setShowErrorModal) setShowErrorModal(false);
   if (setErrorMessage) setErrorMessage("");
   if (setBackendConversionResult) setBackendConversionResult(null);
+  // Prevent stale output from being presented as current attempt output on contract-first flows.
+  if (isMigratedContractPath) {
+    setOutput("");
+  }
 
   try {
     const controller = new AbortController();
@@ -374,6 +380,12 @@ export async function convertText(
         throw new Error('Invalid conversion response: missing asciidoc output')
       }
       result = data.asciidoc
+    } else if (isMigratedHtmlToAny) {
+      const out = (data as any)[targetFormat]
+      if (typeof out !== 'string') {
+        throw new Error(`Invalid conversion response: missing ${targetFormat} output`)
+      }
+      result = out
     } else {
       // Handle legacy/non-migrated responses according to endpoint
       result = data.markdown || data.asciidoc || data.result || "";

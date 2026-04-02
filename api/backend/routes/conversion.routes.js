@@ -240,7 +240,9 @@ function extractStandardizedFailureFromError(error) {
   return null
 }
 
-function buildFailureFromSuccessfulResult(result, { code, message, details = null }) {
+function buildFailureFromSuccessfulResult(result, { code, message, details = null, routeMeta = {} }) {
+  const baseMeta =
+    result.meta && typeof result.meta === 'object' && !Array.isArray(result.meta) ? { ...result.meta } : {}
   return createFailureResult({
     conversionId: result.conversionId,
     converter: result.converter,
@@ -255,8 +257,41 @@ function buildFailureFromSuccessfulResult(result, { code, message, details = nul
     warnings: result.warnings,
     logs: result.logs,
     error: routeFailureError(code, message, details),
-    meta: result.meta,
+    meta: { ...baseMeta, route: '/api/to-markdown', transport: 'in-memory', ...routeMeta },
   })
+}
+
+/**
+ * When lazyload returns a non-standard failure shape, build a full ConversionResult without
+ * dropping upstream logs when present.
+ */
+function coerceToMarkdownStandardizedFailure(result, routeCtx) {
+  const err = result && result.error
+  const message =
+    err && typeof err === 'object' && typeof err.message === 'string'
+      ? err.message
+      : typeof err === 'string'
+        ? err
+        : 'unknown conversion failure'
+  const code =
+    err && typeof err === 'object' && typeof err.code === 'string' && err.code.length > 0
+      ? err.code
+      : 'CONVERSION_FAILED'
+  const failure = buildToMarkdownFailure({
+    conversionId: result && result.conversionId ? result.conversionId : routeCtx.conversionId,
+    startedAt: routeCtx.startedAt,
+    startedAtMs: routeCtx.startedAtMs,
+    inputText: routeCtx.inputText,
+    code,
+    message,
+    details: { stage: 'route-coerce', reason: 'NON_STANDARD_LAZYLOAD_FAILURE' },
+    meta: { route: '/api/to-markdown', transport: 'in-memory', coercedFrom: 'lazyload' },
+  })
+  const upstreamLogs = Array.isArray(result && result.logs) ? result.logs : []
+  if (upstreamLogs.length > 0) {
+    failure.logs = [...failure.logs, ...upstreamLogs]
+  }
+  return failure
 }
 
 // Endpoint: AsciiDoc → Markdown (utilise lazy loader avec downdoc)
@@ -321,13 +356,24 @@ router.post(
     })
 
     if (!result.success) {
+      const standardizedFailure = isStandardizedFailureResult(result)
+        ? result
+        : coerceToMarkdownStandardizedFailure(result, {
+            conversionId,
+            startedAt,
+            startedAtMs,
+            inputText: processedText,
+          })
       const errorMessage =
-        result && result.error && typeof result.error === 'object'
-          ? result.error.message
-          : String(result && result.error ? result.error : 'unknown conversion failure')
+        standardizedFailure &&
+        standardizedFailure.error &&
+        typeof standardizedFailure.error === 'object' &&
+        typeof standardizedFailure.error.message === 'string'
+          ? standardizedFailure.error.message
+          : 'unknown conversion failure'
       console.error(`[ERROR] Conversion failed: ${errorMessage}`)
       return res.status(500).json({
-        ...result,
+        ...standardizedFailure,
         detail: errorMessage,
       })
     }
@@ -347,6 +393,7 @@ router.post(
         code: 'CONVERSION_FAILED',
         message: msg,
         details: { stage: 'route-output-validation', reason: 'OUTPUT_IS_INPUT' },
+        routeMeta: { stage: 'route-output-validation' },
       })
       return res.status(500).json({ ...failure, detail: msg })
     }
@@ -368,6 +415,7 @@ router.post(
         code: 'CONVERSION_FAILED',
         message: msg,
         details: { stage: 'route-output-validation', reason: 'OUTPUT_INVALID_FORMAT' },
+        routeMeta: { stage: 'route-output-validation' },
       })
       return res.status(500).json({ ...failure, detail: msg })
     }
@@ -384,8 +432,17 @@ router.post(
         code: 'INTERNAL_ERROR',
         message: `Conversion error: ${errMsg}`,
         details: { stage: 'route-postprocessing' },
+        routeMeta: { stage: 'route-postprocessing' },
       })
       return res.status(500).json({ ...failure, detail: failure.error.message })
+    }
+    const standardizedFailureFromError = extractStandardizedFailureFromError(error)
+    if (standardizedFailureFromError) {
+      const message =
+        standardizedFailureFromError.error && typeof standardizedFailureFromError.error.message === 'string'
+          ? standardizedFailureFromError.error.message
+          : `Conversion error: ${errMsg}`
+      return res.status(500).json({ ...standardizedFailureFromError, detail: message })
     }
     const failure = buildToMarkdownFailure({
       conversionId,
