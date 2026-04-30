@@ -281,7 +281,7 @@ describe('convertText (success consumption)', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(setStatus).toHaveBeenCalledWith('Veuillez entrer du texte à convertir')
     expect(setLoading).not.toHaveBeenCalled()
-    expect(setConversionUiState).not.toHaveBeenCalled()
+    expect(setConversionUiState).toHaveBeenCalledWith('idle')
     expect(setOutput).not.toHaveBeenCalled()
   })
 

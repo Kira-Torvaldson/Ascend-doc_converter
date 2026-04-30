@@ -149,12 +149,16 @@ export async function convertText(
     isMigratedAdocToMarkdown || isMigratedMarkdownToAsciidoc || isMigratedTextToMarkdown || isMigratedHtmlToAny
 
   if (!text.trim()) {
+    setNotification(null);
     setStatus("Veuillez entrer du texte à convertir");
+    if (setConversionUiState) setConversionUiState('idle');
     return;
   }
 
   if (sourceFormat === targetFormat) {
+    setNotification(null);
     setStatus("Les formats source et destination sont identiques");
+    if (setConversionUiState) setConversionUiState('idle');
     return;
   }
 
