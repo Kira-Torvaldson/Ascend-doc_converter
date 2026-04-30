@@ -143,6 +143,7 @@ export async function convertMarkdownToAsciiDoc(
   if (!text.trim()) {
     setNotification(null);
     setStatus('Veuillez entrer du texte à convertir');
+    if (setConversionUiState) setConversionUiState('idle');
     const nowIso = new Date().toISOString();
     return createFailureResult({
       conversionId: 'ui-precheck',

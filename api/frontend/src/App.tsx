@@ -227,6 +227,9 @@ function App() {
    * Used as the Step 3 success-path source of truth for the migrated path.
    */
   const [lastBackendConversionResult, setLastBackendConversionResult] = useState<any | null>(null);
+  /** Monotonic attempt id used to ignore stale async callback updates. */
+  const [, setLastAttemptId] = useState<number>(0);
+  const activeAttemptIdRef = useRef<number>(0);
 
   /** Flag to prevent certain actions immediately after conversion */
   const [justConverted, setJustConverted] = useState<boolean>(false);
@@ -1823,7 +1826,7 @@ function App() {
     setShowConversionModal(false);
 
     // Determine where to put result according to destination format
-    const setOutput = (result: string) => {
+    const setOutputByFormat = (result: string) => {
       if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
         setMdOutput(result);
       } else if (targetFormat === 'asciidoc') {
@@ -1847,28 +1850,40 @@ function App() {
     } else if (userSettings.conversion.defaultTocEnabled) {
       opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
     }
+    const attemptId = activeAttemptIdRef.current + 1;
+    activeAttemptIdRef.current = attemptId;
+    setLastAttemptId(attemptId);
+    const isActiveAttempt = () => activeAttemptIdRef.current === attemptId;
+    const guardedSetStatus = (value: string) => { if (isActiveAttempt()) setStatus(value); };
+    const guardedSetOutput = (value: string) => { if (isActiveAttempt()) setOutputByFormat(value); };
+    const guardedSetLoading = (value: boolean) => { if (isActiveAttempt()) setLoading(value); };
+    const guardedSetNotification = (value: { message: string; type: 'success' | 'error'; visible: boolean } | null) => { if (isActiveAttempt()) setNotification(value); };
+    const guardedSetShowConversionErrorModal = (value: boolean) => { if (isActiveAttempt()) setShowConversionErrorModal(value); };
+    const guardedSetConversionErrorMessage = (value: string) => { if (isActiveAttempt()) setConversionErrorMessage(value); };
+    const guardedSetLastBackendConversionResult = (value: any | null) => { if (isActiveAttempt()) setLastBackendConversionResult(value); };
+    const guardedSetConversionUiState = (value: 'idle' | 'loading' | 'success' | 'error') => { if (isActiveAttempt()) setConversionUiState(value); };
     setJustConverted(true);
     convertText(
       sourceText,
       pendingConversion.fromFormat,
       pendingConversion.toFormat,
-      setStatus,
-      setOutput,
-      setLoading,
-      setNotification,
+      guardedSetStatus,
+      guardedSetOutput,
+      guardedSetLoading,
+      guardedSetNotification,
       opts,
       confirmationToken,
-      setShowConversionErrorModal,
-      setConversionErrorMessage,
-      setLastBackendConversionResult,
-      setConversionUiState
+      guardedSetShowConversionErrorModal,
+      guardedSetConversionErrorMessage,
+      guardedSetLastBackendConversionResult,
+      guardedSetConversionUiState
     );
     setTimeout(() => {
       setJustConverted(false);
       setConfirmationToken(null);
       setPendingConversion(null);
     }, 2000);
-  }, [confirmationToken, pendingConversion, targetFormat, conversionOptions, userSettings, setNotification, sourceFormat, adocInput, mdOutput]);
+  }, [confirmationToken, pendingConversion, targetFormat, conversionOptions, userSettings, sourceFormat, adocInput, mdOutput]);
 
   // ==========================================================================
   // EFFECT: SAVE TO HISTORY AFTER SUCCESSFUL CONVERSION
@@ -2113,6 +2128,9 @@ function App() {
    * For complex conversions (via /convert), requests a confirmation token.
    */
   const handleConvert = useCallback(() => {
+    if (loading) {
+      return;
+    }
     if (isEditingResult) {
       setStatus("Sauvegardez ou annulez l'édition du résultat avant de convertir");
       setNotification({
@@ -2195,7 +2213,7 @@ function App() {
       }
 
       // Determine where to put result according to destination format
-      const setOutput = (result: string) => {
+      const setOutputByFormat = (result: string) => {
         if (targetFormat === 'markdown') {
           setMdOutput(result);
         } else if (targetFormat === 'asciidoc') {
@@ -2212,24 +2230,36 @@ function App() {
       } else if (userSettings.conversion.defaultTocEnabled) {
         opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
       }
+      const attemptId = activeAttemptIdRef.current + 1;
+      activeAttemptIdRef.current = attemptId;
+      setLastAttemptId(attemptId);
+      const isActiveAttempt = () => activeAttemptIdRef.current === attemptId;
+      const guardedSetStatus = (value: string) => { if (isActiveAttempt()) setStatus(value); };
+      const guardedSetOutput = (value: string) => { if (isActiveAttempt()) setOutputByFormat(value); };
+      const guardedSetLoading = (value: boolean) => { if (isActiveAttempt()) setLoading(value); };
+      const guardedSetNotification = (value: { message: string; type: 'success' | 'error'; visible: boolean } | null) => { if (isActiveAttempt()) setNotification(value); };
+      const guardedSetShowConversionErrorModal = (value: boolean) => { if (isActiveAttempt()) setShowConversionErrorModal(value); };
+      const guardedSetConversionErrorMessage = (value: string) => { if (isActiveAttempt()) setConversionErrorMessage(value); };
+      const guardedSetLastBackendConversionResult = (value: any | null) => { if (isActiveAttempt()) setLastBackendConversionResult(value); };
+      const guardedSetConversionUiState = (value: 'idle' | 'loading' | 'success' | 'error') => { if (isActiveAttempt()) setConversionUiState(value); };
       setJustConverted(true);
       convertText(
         sourceText,
         sourceFormat,
         targetFormat,
-        setStatus,
-        setOutput,
-        setLoading,
-        setNotification,
+        guardedSetStatus,
+        guardedSetOutput,
+        guardedSetLoading,
+        guardedSetNotification,
         opts,
         null,
-        setShowConversionErrorModal,
-        setConversionErrorMessage,
-        setLastBackendConversionResult,
-        setConversionUiState
+        guardedSetShowConversionErrorModal,
+        guardedSetConversionErrorMessage,
+        guardedSetLastBackendConversionResult,
+        guardedSetConversionUiState
       );
     }
-  }, [requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, setNotification, isEditingResult]);
+  }, [loading, requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, isEditingResult]);
 
   // ==========================================================================
   // HELPERS: CONTENT MANAGEMENT BY FORMAT
