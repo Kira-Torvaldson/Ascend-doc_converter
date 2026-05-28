@@ -1,4 +1,5 @@
 import { API_BASE } from './api';
+import { getErrorMessageForCode } from './error-code-messages';
 
 /**
  * ============================================================================
@@ -279,8 +280,12 @@ export async function convertText(
         }
 
         setStatus("Erreur de conversion");
+        const uiErrorMessage = getErrorMessageForCode(
+          backendCode,
+          `Erreur de conversion${backendCode ? ` (${backendCode})` : ''}`
+        );
         setNotification({
-          message: `Erreur de conversion${backendCode ? ` (${backendCode})` : ''}`,
+          message: uiErrorMessage,
           type: 'error',
           visible: true
         });
@@ -356,8 +361,12 @@ export async function convertText(
         }
 
         setStatus("Erreur de conversion");
+        const uiErrorMessage = getErrorMessageForCode(
+          backendCode,
+          `Erreur de conversion${backendCode ? ` (${backendCode})` : ''}`
+        );
         setNotification({
-          message: `Erreur de conversion${backendCode ? ` (${backendCode})` : ''}`,
+          message: uiErrorMessage,
           type: 'error',
           visible: true
         });
