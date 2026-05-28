@@ -1,4 +1,5 @@
 import { API_BASE } from './api';
+import { getErrorMessageForCode } from './error-code-messages';
 
 type ConversionResultSuccess = {
   success: true;
@@ -249,8 +250,12 @@ export async function convertAsciiDocToMarkdown(
         }
 
         setStatus("Erreur de conversion");
+        const uiErrorMessage = getErrorMessageForCode(
+          backendCode,
+          `Erreur de conversion${backendCode ? ` (${backendCode})` : ''}`
+        );
         setNotification({
-          message: `Erreur de conversion${backendCode ? ` (${backendCode})` : ''}`,
+          message: uiErrorMessage,
           type: 'error',
           visible: true
         });

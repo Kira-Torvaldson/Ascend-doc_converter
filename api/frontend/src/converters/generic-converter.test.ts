@@ -123,7 +123,7 @@ describe('convertText (success consumption)', () => {
     expect(setNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'error',
-        message: expect.stringContaining('CONVERSION_FAILED'),
+        message: 'La conversion a échoué.',
       })
     )
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
@@ -250,7 +250,7 @@ describe('convertText (success consumption)', () => {
     expect(setErrorMessage).toHaveBeenCalledWith('Output appears to be AsciiDoc instead of Markdown')
     expect(setNotification).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining('CONVERSION_FAILED'),
+        message: 'La conversion a échoué.',
         type: 'error',
       })
     )
@@ -327,7 +327,7 @@ describe('convertText (success consumption)', () => {
     expect(setShowErrorModal).toHaveBeenCalledWith(false)
     expect(setNotification).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining('INVALID_INPUT'),
+        message: "Le contenu source n'est pas valide pour cette conversion.",
         type: 'error',
       })
     )
@@ -420,7 +420,7 @@ describe('convertText (success consumption)', () => {
     expect(ui.output).toBe('')
     expect(ui.showErrorModal).toBe(true)
     expect(ui.notification?.type).toBe('error')
-    expect(ui.notification?.message).toContain('CONVERSION_FAILED')
+    expect(ui.notification?.message).toBe('La conversion a échoué.')
     expect(ui.backendResult).toEqual(
       expect.objectContaining({
         success: false,
@@ -925,7 +925,7 @@ describe('convertText (success consumption)', () => {
     expect(setNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'error',
-        message: expect.stringContaining('EMPTY_INPUT'),
+        message: 'Le texte source est vide.',
       })
     )
   })

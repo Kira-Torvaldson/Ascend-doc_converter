@@ -13,6 +13,11 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.4.7 (2026-05-28)
+
+#### Changed
+- Release alignment update for frontend/backend package versions, lockfiles, README badge, and displayed app metadata.
+
 ### 0.0.1.4.6 (2026-04-02)
 
 #### Changed

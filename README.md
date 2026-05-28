@@ -1,11 +1,11 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.4.6-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.4.7-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.4.6)
+## Latest changes (v0.0.1.4.7)
 
 - **Contract & conversion pipeline**
   - Extended `ConversionResult` contract documentation (Steps 10–11, Step 11 closure, handoff baseline).
