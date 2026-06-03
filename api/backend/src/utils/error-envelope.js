@@ -45,6 +45,13 @@ const HINT_BY_CODE = Object.freeze({
   OUTPUT_INVALID: 'Vérifiez la source : le résultat obtenu n’est pas un format valide.',
   OUTPUT_IS_INPUT: 'La conversion n’a pas transformé le document ; ajustez la source.',
   INTERNAL_ERROR: 'Réessayez plus tard ou contactez l’administrateur avec l’identifiant de conversion.',
+  MIME_MISMATCH: 'Vérifiez l’extension et le contenu du fichier source.',
+  PATH_TRAVERSAL: 'Utilisez un fichier dans un répertoire autorisé.',
+  SYMLINK_REJECTED: 'Fournissez un fichier direct, sans lien symbolique.',
+  NETWORK_ACCESS_DENIED: 'Retirez les références externes ou utilisez un contenu local.',
+  WORKER_CRASH: 'Relancez la conversion ; si le problème persiste, consultez les logs.',
+  RESOURCE_LIMIT_EXCEEDED: 'Réduisez la taille ou la complexité du document.',
+  PATH_NOT_FOUND: 'Vérifiez que tous les fichiers référencés existent.',
 })
 
 function mapCodeToCategory(code) {

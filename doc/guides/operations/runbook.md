@@ -2,7 +2,7 @@
 
 Guide pour démarrer la stack, diagnostiquer les conversions et valider une release en local ou Docker.
 
-**Version documentée :** `0.0.1.4.7+` (backend / frontend alignés via `npm run check:version`).
+**Version documentée :** `0.0.1.4.8` (backend / frontend alignés via `npm run check:version`).
 
 ---
 

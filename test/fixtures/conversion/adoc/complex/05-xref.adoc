@@ -1,0 +1,8 @@
+= Cross Reference Test
+
+See <<target-section>> for details.
+
+[[target-section]]
+== Target Section
+
+Content of the target section.
