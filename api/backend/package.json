@@ -9,7 +9,9 @@
     "dev": "node --watch server.js",
     "lint": "eslint \"scripts/**/*.js\"",
     "lint:full": "eslint \"**/*.js\" --ignore-pattern \"node_modules/**\" --ignore-pattern \"logs/**\" --ignore-pattern \"tmp/**\"",
-    "test:smoke": "node scripts/smoke-api.js"
+    "test:smoke": "node scripts/smoke-api.js",
+    "test:golden": "node scripts/verify-golden-corpus.js",
+    "test:roundtrip": "node scripts/verify-roundtrip-adoc-md.js"
   },
   "keywords": [
     "asciidoc",

@@ -1,5 +1,5 @@
-import { API_BASE } from './api';
-import { getErrorMessageForCode } from './error-code-messages';
+import { API_BASE, buildConversionFetchHeaders } from './api';
+import { formatConversionErrorForUi } from './error-code-messages';
 
 type ConversionResultSuccess = {
   success: true;
@@ -191,9 +191,7 @@ export async function convertAsciiDocToMarkdown(
 
     const res = await fetch(`${API_BASE}/api/to-markdown`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: buildConversionFetchHeaders(),
       body: JSON.stringify({ text }),
       signal: controller.signal
     });
@@ -250,9 +248,10 @@ export async function convertAsciiDocToMarkdown(
         }
 
         setStatus("Erreur de conversion");
-        const uiErrorMessage = getErrorMessageForCode(
+        const uiErrorMessage = formatConversionErrorForUi(
           backendCode,
-          `Erreur de conversion${backendCode ? ` (${backendCode})` : ''}`
+          `Erreur de conversion${backendCode ? ` (${backendCode})` : ''}`,
+          typeof backendError.hint === 'string' ? backendError.hint : null
         );
         setNotification({
           message: uiErrorMessage,

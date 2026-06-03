@@ -23,6 +23,8 @@ const {
   readLog,
   listLogs
 } = require('../services/logging/structured-logger.js')
+const { getLimitsSnapshot } = require('../services/config/conversion-limits.js')
+const { getMetricsSnapshot } = require('../services/metrics/conversion-metrics.js')
 
 // Confirmation token request endpoint
 router.post(
@@ -186,6 +188,23 @@ router.get('/logs', (req, res) => {
       error: 'Failed to list logs'
     })
   }
+})
+
+// ASC-008 — Public limits snapshot for UI alignment
+router.get('/config/limits', (req, res) => {
+  return res.json(getLimitsSnapshot())
+})
+
+// ASC-007 — Conversion metrics (restrict in production when API_KEY is set)
+router.get('/metrics', (req, res) => {
+  const expectedKey = (process.env.API_KEY || '').trim()
+  if (process.env.NODE_ENV === 'production' && expectedKey) {
+    const provided = String(req.get('X-API-Key') || '').trim()
+    if (provided !== expectedKey) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+  }
+  return res.json(getMetricsSnapshot())
 })
 
 module.exports = router

@@ -39,9 +39,14 @@ app.use(corsMiddleware)
 // Security headers
 app.use(helmetMiddleware)
 
-// Body parsing
-app.use(express.json({ limit: '50mb' }))
-app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+// Request correlation (before routes and body parsing)
+app.use(require('./middleware/request-id.middleware.js'))
+
+// Body parsing (limit aligned with EnvMap MAX_INPUT_SIZE_MB + margin)
+const { getExpressBodyLimitString } = require('./services/config/conversion-limits.js')
+const bodyLimit = getExpressBodyLimitString()
+app.use(express.json({ limit: bodyLimit }))
+app.use(express.urlencoded({ extended: true, limit: bodyLimit }))
 
 // Static files
 app.use('/static', express.static(path.join(__dirname, 'static')))

@@ -43,6 +43,12 @@ function assertFailureConversionResult(result) {
   assert.ok(result.error && typeof result.error === 'object')
   assert.strictEqual(typeof result.error.code, 'string')
   assert.ok(result.error.code.length > 0)
+  assert.strictEqual(typeof result.error.category, 'string')
+  assert.ok(result.error.category.length > 0)
+  assert.ok(
+    result.error.hint === null || typeof result.error.hint === 'string',
+    'error.hint must be string or null'
+  )
   assert.ok(result.meta && typeof result.meta === 'object' && !Array.isArray(result.meta))
 }
 
@@ -77,6 +83,9 @@ async function main() {
     const emptyBody = await emptyResponse.json()
     assertFailureConversionResult(emptyBody)
     assert.strictEqual(emptyBody.error.code, 'EMPTY_INPUT')
+    assert.strictEqual(emptyBody.error.category, 'VALIDATION_ERROR')
+    assert.strictEqual(typeof emptyBody.error.hint, 'string')
+    assert.ok(emptyBody.error.hint.length > 0)
     assert.strictEqual(typeof emptyBody.detail, 'string')
     assert.strictEqual(emptyBody.detail, emptyBody.error.message)
 

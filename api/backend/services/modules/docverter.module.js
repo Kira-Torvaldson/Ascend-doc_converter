@@ -16,15 +16,13 @@
 
 const { readFileSync, writeFileSync, statSync, existsSync, unlinkSync } = require('fs')
 const path = require('path')
+const { getMaxInputSizeBytes } = require('../config/conversion-limits.js')
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-const MODULE_CONFIG = {
-  // Maximum file size limit (50 MB by default)
-  MAX_FILE_SIZE: 50 * 1024 * 1024
-}
+const MODULE_CONFIG = {}
 
 // ============================================================================
 // DOCVERTER MODULE
@@ -93,13 +91,13 @@ const docverterModule = {
       // Check file size
       try {
         const stats = statSync(inputPath)
-        if (stats.size > MODULE_CONFIG.MAX_FILE_SIZE) {
+        if (stats.size > getMaxInputSizeBytes()) {
           const duration = (Date.now() - startTime) / 1000
           logs.push(`[${conversionId}] Validation failed: File size exceeds limit`)
           return {
             success: false,
             logs: logs,
-            error: `File size (${stats.size} bytes) exceeds maximum allowed size (${MODULE_CONFIG.MAX_FILE_SIZE} bytes)`,
+            error: `File size (${stats.size} bytes) exceeds maximum allowed size (${getMaxInputSizeBytes()} bytes)`,
             duration: duration
           }
         }

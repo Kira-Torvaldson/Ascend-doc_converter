@@ -1,5 +1,10 @@
 FROM node:20-alpine
 
+# Install Pandoc (required for Markdown -> AsciiDoc and HTML conversions via safeSpawn('pandoc', ...))
+# On recent Alpine (3.21/3.22, base of node:20-alpine), the 'pandoc' executable is provided
+# by the 'pandoc-cli' package (community repo), not by a bare 'pandoc' package.
+RUN apk add --no-cache pandoc-cli
+
 WORKDIR /app/api/backend
 
 # Install production dependencies

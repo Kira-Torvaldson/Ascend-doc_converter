@@ -22,6 +22,7 @@ const path = require('path')
 const { adaptForBookStack } = require('../../../shared/adapters/bookstack-adapter.js')
 const { convertAsciiDocWithPandoc } = require('../conversion/convert.js')
 const { createSuccessResult, createFailureResult } = require('../../src/utils/conversion-result.js')
+const { getMaxInputSizeBytes } = require('../config/conversion-limits.js')
 
 // Load downdoc library with absolute path resolution
 const libPath = path.resolve(__dirname, '../../../../lib/index.js')
@@ -44,8 +45,7 @@ try {
 // ============================================================================
 
 const MODULE_CONFIG = {
-  // Maximum file size limit (50 MB by default)
-  MAX_FILE_SIZE: 50 * 1024 * 1024,
+  // Maximum file size: EnvMap MAX_INPUT_SIZE_MB (see conversion-limits.js)
   
   // Accepted AsciiDoc extensions
   ALLOWED_EXTENSIONS: ['.adoc', '.asciidoc']
@@ -261,10 +261,10 @@ function validateInput(inputPath) {
   // Check file size
   try {
     const stats = statSync(inputPath)
-    if (stats.size > MODULE_CONFIG.MAX_FILE_SIZE) {
+    if (stats.size > getMaxInputSizeBytes()) {
       return {
         valid: false,
-        error: `File size (${stats.size} bytes) exceeds maximum allowed size (${MODULE_CONFIG.MAX_FILE_SIZE} bytes)`
+        error: `File size (${stats.size} bytes) exceeds maximum allowed size (${getMaxInputSizeBytes()} bytes)`
       }
     }
 
