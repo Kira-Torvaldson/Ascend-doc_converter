@@ -16,15 +16,13 @@
 
 const { readFileSync, writeFileSync, statSync, existsSync, unlinkSync } = require('fs')
 const path = require('path')
+const { getMaxInputSizeBytes } = require('../config/conversion-limits.js')
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
 const MODULE_CONFIG = {
-  // Maximum file size limit (50 MB by default)
-  MAX_FILE_SIZE: 50 * 1024 * 1024,
-  
   // Accepted text file extensions
   ALLOWED_EXTENSIONS: ['.txt', '.text']
 }
@@ -221,10 +219,10 @@ function validateInput(inputPath) {
   // Check file size
   try {
     const stats = statSync(inputPath)
-    if (stats.size > MODULE_CONFIG.MAX_FILE_SIZE) {
+    if (stats.size > getMaxInputSizeBytes()) {
       return {
         valid: false,
-        error: `File size (${stats.size} bytes) exceeds maximum allowed size (${MODULE_CONFIG.MAX_FILE_SIZE} bytes)`
+        error: `File size (${stats.size} bytes) exceeds maximum allowed size (${getMaxInputSizeBytes()} bytes)`
       }
     }
 

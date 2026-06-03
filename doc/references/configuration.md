@@ -6,6 +6,33 @@ This document defines the canonical configuration references for Ascend, includi
 
 ---
 
+## Production Limits Matrix (Ascend 0.0.1.4.7+)
+
+This section reflects **implemented** limits after ASC-008 (single source via EnvMap). Aspirational profile tables below may differ; treat this matrix as authoritative for runtime behavior.
+
+| Layer | Default | Bytes (if applicable) | Source |
+|-------|---------|----------------------|--------|
+| Conversion input (`MAX_INPUT_SIZE_MB`) | **5 MB** | 5_242_880 | `envmap.module.js` → `conversion-limits.js` |
+| Module file checks (`MAX_FILE_SIZE`) | **5 MB** | same as EnvMap | `adoc-to-md`, `text2markdown`, `docverter`, `panwriter` |
+| Express `express.json` limit | **~6 MB** | margin ~20% over input | `app.js` via `getExpressBodyLimitString()` |
+| Frontend source validation | **5 MB** | from API | `GET /api/config/limits` → `App.tsx` |
+| Nginx upload (Docker) | **6m** | — | `container/docker-compose.yml` (`NGINX_CLIENT_MAX_BODY_SIZE`) |
+| Conversion route pre-check | **5 MB** | `PAYLOAD_TOO_LARGE` | `conversion.routes.js` |
+| Rate limit | **100 req / 15 min / IP** | — | `rate-limit.middleware.js` |
+| Conversion timeout | **30 s** | — | `CONVERSION_TIMEOUT_MS` (EnvMap) |
+| UI fetch timeout | **30 s** | — | `generic-converter.ts` |
+
+**Override:** set `MAX_INPUT_SIZE_MB` and optionally `CONVERSION_TIMEOUT_MS` in the environment (see `container/.env.example`). Express and UI limits follow the backend snapshot.
+
+**API discovery:**
+
+- `GET /api/config/limits` — limits exposed to the UI
+- `GET /api/metrics` — conversion counters (requires `X-API-Key` when `API_KEY` is set in production)
+
+**Operational runbook:** `doc/guides/operations/runbook.md`
+
+---
+
 ## Execution Profiles
 
 ### Purpose
@@ -88,7 +115,7 @@ This section defines the canonical resource limits enforced by the Ascend pipeli
 |------------|---------------|---------------|-------------|
 | Per-Conversion Memory | 512 MB | 2 GB | Process monitoring + termination |
 | Total System Memory | 2 GB | 4 GB | Graceful degradation |
-| Input File Size | 10 MB | 50 MB | Pre-validation |
+| Input File Size | **5 MB** | 100 MB (EnvMap max) | Pre-validation via `MAX_INPUT_SIZE_MB` |
 
 #### CPU Limits
 
@@ -506,6 +533,8 @@ Each environment variable in the schema defines:
 
 #### Security and Resource Limits
 
+- **`MAX_INPUT_SIZE_MB`**: Maximum conversion input size in megabytes (number, default: **5**, range: 1-100) — **canonical** for UI, routes, modules, and Express body margin
+- **`CONVERSION_TIMEOUT_MS`**: Per-request conversion timeout in milliseconds (number, default: **30000**, range: 1000-600000)
 - **`MAX_CONCURRENT_CONVERSIONS`**: Maximum concurrent conversions (number, default: 5, range: 1-50)
 - **`MAX_CPU_TIME_MS`**: Maximum CPU time per conversion in milliseconds (number, default: 30000, range: 1000-300000)
 - **`MAX_MEMORY_MB`**: Maximum memory per conversion in MB (number, default: 512, range: 64-4096)
@@ -751,7 +780,7 @@ Options are organized into 7 main categories:
 #### `maxFileSize`
 
 - **Type**: `number`
-- **Default**: `10485760` (10 MB)
+- **Default**: `5242880` (5 MB — aligned with `MAX_INPUT_SIZE_MB`)
 - **Description**: Maximum file size in bytes
 
 #### `conversionTimeout`

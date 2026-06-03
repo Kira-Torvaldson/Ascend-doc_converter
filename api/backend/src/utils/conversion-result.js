@@ -4,6 +4,8 @@
  * semantic guarantees defined by the contract.
  */
 
+const { normalizeErrorObject } = require('./error-envelope.js')
+
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -55,7 +57,7 @@ function createFailureResult(payload) {
     finishedAt: input.finishedAt,
     warnings: normalizeArray(input.warnings),
     logs: normalizeArray(input.logs),
-    error: input.error,
+    error: normalizeErrorObject(input.error),
     meta: normalizeMeta(input.meta),
   };
 }

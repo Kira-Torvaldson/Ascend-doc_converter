@@ -1,0 +1,8 @@
+= Admonition Test
+
+NOTE: This is a note block.
+
+[WARNING]
+====
+Watch out for edge cases.
+====

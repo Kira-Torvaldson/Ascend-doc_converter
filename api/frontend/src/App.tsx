@@ -61,13 +61,14 @@ import { FormatType, ConversionHistoryItem } from "./types";
 import { HistoryModalV2, useNewHistoryModal } from "./components/HistoryModalV2";
 import { removeExperimentalTag } from "./utils/asciidocHelpers";
 import packageJson from "../package.json";
+import { fetchConversionLimits } from "./converters/api";
 
 type UserPreferences = { displayName: string; organization: string; defaultLanguage: 'fr' | 'en' | 'es' | 'de' };
 type SettingsValidationErrors = { displayName?: string; organization?: string };
 const USER_PREFS_KEY = 'ascend_user_prefs';
 const MAX_DISPLAY_NAME = 100;
 const MAX_ORGANIZATION = 100;
-const MAX_SOURCE_SIZE_MB = 2;
+const DEFAULT_MAX_SOURCE_SIZE_MB = 5;
 
 function validateUserPrefs(prefs: UserPreferences): SettingsValidationErrors {
   const err: SettingsValidationErrors = {};
@@ -197,6 +198,13 @@ function loadUserSettings(): UserSettings {
  */
 
 function App() {
+  const [maxSourceSizeMb, setMaxSourceSizeMb] = useState(DEFAULT_MAX_SOURCE_SIZE_MB);
+
+  useEffect(() => {
+    fetchConversionLimits().then((limits) => {
+      setMaxSourceSizeMb(limits.maxSourceUiMb || limits.maxInputSizeMb || DEFAULT_MAX_SOURCE_SIZE_MB);
+    });
+  }, []);
   // ==========================================================================
   // STATES: PANEL CONTENT
   // ==========================================================================
@@ -1751,10 +1759,10 @@ function App() {
     }
 
     const sourceSizeBytes = new Blob([sourceText]).size;
-    if (sourceSizeBytes > MAX_SOURCE_SIZE_MB * 1024 * 1024) {
-      setStatus(`Document trop volumineux (max ${MAX_SOURCE_SIZE_MB} Mo)`);
+    if (sourceSizeBytes > maxSourceSizeMb * 1024 * 1024) {
+      setStatus(`Document trop volumineux (max ${maxSourceSizeMb} Mo)`);
       setNotification({
-        message: `Le document dépasse la taille maximale (${MAX_SOURCE_SIZE_MB} Mo). Réduisez le contenu ou divisez le fichier.`,
+        message: `Le document dépasse la taille maximale (${maxSourceSizeMb} Mo). Réduisez le contenu ou divisez le fichier.`,
         type: 'error',
         visible: true
       });
@@ -2192,10 +2200,10 @@ function App() {
       }
 
       const sourceSizeBytes = new Blob([sourceText]).size;
-      if (sourceSizeBytes > MAX_SOURCE_SIZE_MB * 1024 * 1024) {
-        setStatus(`Document trop volumineux (max ${MAX_SOURCE_SIZE_MB} Mo)`);
+      if (sourceSizeBytes > maxSourceSizeMb * 1024 * 1024) {
+        setStatus(`Document trop volumineux (max ${maxSourceSizeMb} Mo)`);
         setNotification({
-          message: `Le document dépasse la taille maximale (${MAX_SOURCE_SIZE_MB} Mo). Réduisez le contenu ou divisez le fichier.`,
+          message: `Le document dépasse la taille maximale (${maxSourceSizeMb} Mo). Réduisez le contenu ou divisez le fichier.`,
           type: 'error',
           visible: true
         });

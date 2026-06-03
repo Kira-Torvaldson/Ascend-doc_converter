@@ -17,9 +17,15 @@ const { convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, tex
 const { z } = require('zod')
 const { validate } = require('../middleware/security/validate.middleware.js')
 const { createFailureResult, createSuccessResult } = require('../src/utils/conversion-result.js')
+const { buildRouteError } = require('../src/utils/error-envelope.js')
+const { getMaxInputSizeBytes } = require('../services/config/conversion-limits.js')
 
 function routeFailureError(code, message, details = null, recoverable = false) {
-  return { code, message, details, recoverable: Boolean(recoverable) }
+  return buildRouteError(code, message, details, recoverable)
+}
+
+function isTextPayloadTooLarge(text) {
+  return Buffer.byteLength(String(text || ''), 'utf8') > getMaxInputSizeBytes()
 }
 
 function buildToAsciidocFailure({
@@ -73,8 +79,17 @@ function collectAsciidocErrorMessages(error) {
 function classifyToAsciidocInternalError(error) {
   const rawMessage = collectAsciidocErrorMessages(error) || String(error || '')
   if (
-    rawMessage.includes('Pandoc conversion failed') ||
     rawMessage.includes('Pandoc conversion timed out') ||
+    rawMessage.includes('CONVERSION_TIMEOUT')
+  ) {
+    return {
+      code: 'CONVERSION_TIMEOUT',
+      message: `Conversion error: ${rawMessage}`,
+      details: { stage: 'pandoc-execution', rawMessage },
+    }
+  }
+  if (
+    rawMessage.includes('Pandoc conversion failed') ||
     rawMessage.includes('Failed to execute Pandoc conversion')
   ) {
     return {
@@ -343,6 +358,19 @@ router.post(
       return res.status(400).json({ ...failure, detail: failure.error.message })
     }
 
+    if (isTextPayloadTooLarge(text)) {
+      const failure = buildToMarkdownFailure({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        inputText: text,
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Request payload is too large',
+        details: { stage: 'route-precheck', maxBytes: getMaxInputSizeBytes() },
+      })
+      return res.status(400).json({ ...failure, detail: failure.error.message })
+    }
+
     // Check if Parsedown is enabled in options
     const useParsedown = options?.formatSpecific?.markdown?.parsedown || false
     const mode = useParsedown ? 'bookstack' : 'default'
@@ -519,6 +547,19 @@ router.post(
       })
     }
 
+    if (isTextPayloadTooLarge(text)) {
+      const failure = buildToAsciidocFailure({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        inputText: text,
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Request payload is too large',
+        details: { stage: 'route-precheck', maxBytes: getMaxInputSizeBytes() },
+      })
+      return res.status(400).json({ ...failure, detail: failure.error.message })
+    }
+
     console.log(`[INFO] Converting ${text.length} characters (Markdown → AsciiDoc) with Pandoc`)
 
     // Use Pandoc for conversion (default)
@@ -618,6 +659,20 @@ router.post(
         code: 'EMPTY_INPUT',
         message: 'The HTML text to convert is empty',
         details: { stage: 'route-precheck' },
+      })
+      return res.status(400).json({ ...failure, detail: failure.error.message })
+    }
+
+    if (isTextPayloadTooLarge(text)) {
+      const failure = buildFromHtmlFailure({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        inputText: text,
+        targetFormat: to,
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Request payload is too large',
+        details: { stage: 'route-precheck', maxBytes: getMaxInputSizeBytes() },
       })
       return res.status(400).json({ ...failure, detail: failure.error.message })
     }
@@ -736,6 +791,19 @@ router.post(
         code: 'EMPTY_INPUT',
         message: 'The text to convert is empty',
         details: { stage: 'route-precheck' },
+      })
+      return res.status(400).json({ ...failure, detail: failure.error.message })
+    }
+
+    if (isTextPayloadTooLarge(text)) {
+      const failure = buildTextToMarkdownFailure({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        inputText: text,
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Request payload is too large',
+        details: { stage: 'route-precheck', maxBytes: getMaxInputSizeBytes() },
       })
       return res.status(400).json({ ...failure, detail: failure.error.message })
     }

@@ -1,0 +1,7 @@
+# Source Block
+
+```javascript
+function greet(name) {
+  return 'Hello, ' + name;
+}
+```

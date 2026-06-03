@@ -6,13 +6,30 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.3 Rise  
-**Status:** Active development  
-**Focus:** Core functionality and stability
+**Version:** 0.0.1.4.7+ (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** Active development — release industrialisée et qualité conversion  
+**Focus:** Non-régression (golden / roundtrip), limites harmonisées, observabilité (`requestId`, métriques), CI Ascend
+
+> Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.2.1 alpha (Current)
+### 0.0.1.4.7 (Current — Ascend)
+
+**Delivered (axes ASC-001 → ASC-009):**
+- Scripts `release:bump` / `check:version` (7 zones de version)
+- CI job `ascend` (golden, roundtrip, e2e, `test:abuse`)
+- Corpus golden + roundtrip sémantique adoc ↔ md
+- Enveloppe d’erreur (`error.code`, `category`, `hint`) + UI
+- `X-Request-Id` / `meta.requestId`
+- `GET /api/metrics`, `GET /api/config/limits`
+- Limite entrée unifiée **5 Mo** (EnvMap, Express, modules, UI, Nginx 6m)
+- Pandoc dans image Docker `container/backend`
+- Tests d’abus API (`npm run test:abuse`)
+
+**Docs:** `doc/specs/axes-ameliorations-0.0.1.4.7.md`, `doc/guides/operations/runbook.md`
+
+### 0.0.1.2.1 alpha
 
 **Features:**
 - AsciiDoc ↔ Markdown conversion

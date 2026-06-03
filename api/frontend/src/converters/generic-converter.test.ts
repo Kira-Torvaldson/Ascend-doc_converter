@@ -123,10 +123,49 @@ describe('convertText (success consumption)', () => {
     expect(setNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'error',
-        message: 'La conversion a échoué.',
+        message: expect.stringMatching(/échoué.*relancez/i),
       })
     )
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
+    expect(setConversionUiState).toHaveBeenCalledWith('error')
+  })
+
+  it('shows EMPTY_INPUT message with actionable hint on HTTP 400', async () => {
+    ;(globalThis as any).fetch = vi.fn().mockResolvedValue(
+      makeErrorResponse(400, {
+        success: false,
+        error: {
+          code: 'EMPTY_INPUT',
+          message: 'The text to convert is empty',
+          category: 'VALIDATION_ERROR',
+          hint: 'Saisissez du contenu dans le panneau source.',
+        },
+        detail: 'The text to convert is empty',
+      })
+    )
+
+    await convertText(
+      '= Title',
+      'asciidoc',
+      'markdown',
+      setStatus,
+      setOutput,
+      setLoading,
+      setNotification,
+      {},
+      null,
+      undefined,
+      undefined,
+      setBackendConversionResult,
+      setConversionUiState
+    )
+
+    expect(setNotification).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringMatching(/vide.*panneau source/i),
+      })
+    )
     expect(setConversionUiState).toHaveBeenCalledWith('error')
   })
 
@@ -248,9 +287,9 @@ describe('convertText (success consumption)', () => {
     expect(setOutput).toHaveBeenCalledWith('')
     expect(setShowErrorModal).toHaveBeenCalledWith(true)
     expect(setErrorMessage).toHaveBeenCalledWith('Output appears to be AsciiDoc instead of Markdown')
-    expect(setNotification).toHaveBeenCalledWith(
+    expect(setNotification).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        message: 'La conversion a échoué.',
+        message: expect.stringMatching(/échoué.*relancez/i),
         type: 'error',
       })
     )
@@ -325,9 +364,9 @@ describe('convertText (success consumption)', () => {
     )
     // For non-modal code, keep modal closed while still exposing structured code in notification.
     expect(setShowErrorModal).toHaveBeenCalledWith(false)
-    expect(setNotification).toHaveBeenCalledWith(
+    expect(setNotification).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        message: "Le contenu source n'est pas valide pour cette conversion.",
+        message: expect.stringMatching(/pas valide.*format/i),
         type: 'error',
       })
     )
@@ -420,7 +459,7 @@ describe('convertText (success consumption)', () => {
     expect(ui.output).toBe('')
     expect(ui.showErrorModal).toBe(true)
     expect(ui.notification?.type).toBe('error')
-    expect(ui.notification?.message).toBe('La conversion a échoué.')
+    expect(ui.notification?.message).toMatch(/échoué.*relancez/i)
     expect(ui.backendResult).toEqual(
       expect.objectContaining({
         success: false,
@@ -922,10 +961,10 @@ describe('convertText (success consumption)', () => {
     expect(setOutput).toHaveBeenCalledWith('')
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
     expect(setConversionUiState).toHaveBeenCalledWith('error')
-    expect(setNotification).toHaveBeenCalledWith(
+    expect(setNotification).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: 'error',
-        message: 'Le texte source est vide.',
+        message: expect.stringMatching(/vide.*panneau source/i),
       })
     )
   })
