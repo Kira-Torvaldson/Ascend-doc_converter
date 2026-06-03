@@ -26,8 +26,19 @@ Each entry includes:
 
 ### 0.0.1.4.7 (2026-05-28)
 
+#### Added
+- Scripts `release:bump` and `check:version` (7 version zones).
+- CI job **ascend** (golden corpus, roundtrip, e2e, API abuse tests).
+- Golden corpus and semantic adoc ↔ md roundtrip tests.
+- Structured error envelope (`error.code`, `category`, `hint`) and UI messages.
+- `X-Request-Id` / `meta.requestId` correlation.
+- `GET /api/metrics` and `GET /api/config/limits`.
+- Pandoc in `container/backend` Docker image.
+- Operations runbook (`doc/guides/operations/runbook.md`).
+
 #### Changed
-- Release alignment update for frontend/backend package versions, lockfiles, README badge, and displayed app metadata.
+- Unified input limit **5 MB** (EnvMap, Express, modules, UI, Nginx 6m).
+- Release alignment for frontend/backend package versions, lockfiles, README badge, and app metadata.
 
 ### 0.0.1.4.6 (2026-04-02)
 
