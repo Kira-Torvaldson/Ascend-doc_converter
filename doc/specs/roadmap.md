@@ -6,17 +6,27 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.4.7+ (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** Active development — release industrialisée et qualité conversion  
-**Focus:** Non-régression (golden / roundtrip), limites harmonisées, observabilité (`requestId`, métriques), CI Ascend
+**Version:** 0.0.1.4.8 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** Active development — clôture DoD 4.7 + CI e2e étendue  
+**Focus:** Corpus golden spec (xref, table), erreurs sécurité UI, e2e text/html en CI
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.4.7 (Current — Ascend)
+### 0.0.1.4.8 (Current — Ascend)
 
-**Delivered (axes ASC-001 → ASC-009):**
+**In progress (ASC-011 → ASC-014):**
+- Fixtures golden spec (`05-xref`, `06-utf8`, `01-table.md`)
+- CI e2e text-to-markdown et from-html
+- Messages UI pour tous les codes sécurité
+- Changelog et doc axes 4.8
+
+**Docs:** `doc/specs/axes-ameliorations-0.0.1.4.8.md`
+
+### 0.0.1.4.7
+
+**Delivered (axes ASC-001 → ASC-010):**
 - Scripts `release:bump` / `check:version` (7 zones de version)
 - CI job `ascend` (golden, roundtrip, e2e, `test:abuse`)
 - Corpus golden + roundtrip sémantique adoc ↔ md
@@ -26,8 +36,9 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 - Limite entrée unifiée **5 Mo** (EnvMap, Express, modules, UI, Nginx 6m)
 - Pandoc dans image Docker `container/backend`
 - Tests d’abus API (`npm run test:abuse`)
+- Runbook opérations (`doc/guides/operations/runbook.md`)
 
-**Docs:** `doc/specs/axes-ameliorations-0.0.1.4.7.md`, `doc/guides/operations/runbook.md`
+**Docs:** `doc/specs/axes-ameliorations-0.0.1.4.7.md`
 
 ### 0.0.1.2.1 alpha
 

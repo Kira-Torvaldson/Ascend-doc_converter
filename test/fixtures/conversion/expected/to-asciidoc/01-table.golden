@@ -1,0 +1,10 @@
+== Table Test
+
+[cols=",",options="header",]
+|===
+|Name |Value
+|Alpha |1
+|Beta |2
+|===
+
+Paragraph after the table.

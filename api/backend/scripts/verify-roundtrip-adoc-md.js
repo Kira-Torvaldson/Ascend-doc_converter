@@ -45,11 +45,14 @@ const RULES_BY_FILE = {
     assert.ok(/\[source/i.test(roundtrip) || /^----/m.test(roundtrip), 'source block delimiter')
     assert.ok(/greet\s*\(/i.test(roundtrip), 'code content preserved')
   },
-  '05-utf8.adoc': ({ roundtrip, title }) => {
+  '05-xref.adoc': ({ roundtrip, title }) => {
     assert.match(roundtrip, /^=+ /m, 'level-1 heading')
     assert.ok(roundtrip.includes(title), `title preserved: ${title}`)
-    assert.ok(/é/.test(roundtrip), 'accent char é')
-    assert.ok(/€/.test(roundtrip), 'euro symbol')
+    assert.ok(
+      /<<[^>]+>>/m.test(roundtrip) || /link:/.test(roundtrip) || /xref:/.test(roundtrip),
+      'cross reference preserved'
+    )
+    assert.ok(/Target Section/i.test(roundtrip), 'xref target section preserved')
   },
 }
 

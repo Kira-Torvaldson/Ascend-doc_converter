@@ -10,6 +10,13 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   PAYLOAD_TOO_LARGE: 'Le document dépasse la taille maximale autorisée.',
   FORMAT_UNSUPPORTED: 'Cette conversion de formats n’est pas supportée.',
   ENCODING_INVALID: 'L’encodage du fichier source est invalide.',
+  MIME_MISMATCH: 'Le type de fichier ne correspond pas au contenu.',
+  PATH_TRAVERSAL: 'Le chemin du fichier n’est pas autorisé.',
+  SYMLINK_REJECTED: 'Les liens symboliques ne sont pas acceptés.',
+  NETWORK_ACCESS_DENIED: 'L’accès réseau est refusé pour cette conversion.',
+  WORKER_CRASH: 'Le moteur de conversion s’est arrêté de façon inattendue.',
+  RESOURCE_LIMIT_EXCEEDED: 'Les limites de ressources ont été dépassées.',
+  PATH_NOT_FOUND: 'Un fichier requis est introuvable.',
 };
 
 const ERROR_HINTS: Record<string, string> = {
@@ -24,6 +31,13 @@ const ERROR_HINTS: Record<string, string> = {
   OUTPUT_INVALID: 'Vérifiez la source : le résultat obtenu n’est pas un format valide.',
   OUTPUT_IS_INPUT: 'La conversion n’a pas transformé le document ; ajustez la source.',
   INTERNAL_ERROR: 'Réessayez plus tard ou contactez l’administrateur avec l’identifiant de conversion.',
+  MIME_MISMATCH: 'Vérifiez l’extension et le contenu du fichier source.',
+  PATH_TRAVERSAL: 'Utilisez un fichier dans un répertoire autorisé.',
+  SYMLINK_REJECTED: 'Fournissez un fichier direct, sans lien symbolique.',
+  NETWORK_ACCESS_DENIED: 'Retirez les références externes ou utilisez un contenu local.',
+  WORKER_CRASH: 'Relancez la conversion ; si le problème persiste, consultez les logs.',
+  RESOURCE_LIMIT_EXCEEDED: 'Réduisez la taille ou la complexité du document.',
+  PATH_NOT_FOUND: 'Vérifiez que tous les fichiers référencés existent.',
 };
 
 export function getErrorMessageForCode(code: string | undefined, fallback: string): string {

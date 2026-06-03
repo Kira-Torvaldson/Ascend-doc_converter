@@ -169,6 +169,81 @@ describe('convertText (success consumption)', () => {
     expect(setConversionUiState).toHaveBeenCalledWith('error')
   })
 
+  it('shows PAYLOAD_TOO_LARGE message with hint on HTTP 400', async () => {
+    ;(globalThis as any).fetch = vi.fn().mockResolvedValue(
+      makeErrorResponse(400, {
+        success: false,
+        error: {
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Request payload is too large',
+          category: 'VALIDATION_ERROR',
+          hint: 'Réduisez la taille du document ou divisez-le en plusieurs parties.',
+        },
+      })
+    )
+
+    await convertText(
+      'x'.repeat(100),
+      'asciidoc',
+      'markdown',
+      setStatus,
+      setOutput,
+      setLoading,
+      setNotification,
+      {},
+      null,
+      undefined,
+      undefined,
+      setBackendConversionResult,
+      setConversionUiState
+    )
+
+    expect(setNotification).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringMatching(/taille maximale.*divisez/i),
+      })
+    )
+  })
+
+  it('shows CONVERSION_TIMEOUT message with hint on structured HTTP failure', async () => {
+    ;(globalThis as any).fetch = vi.fn().mockResolvedValue(
+      makeErrorResponse(500, {
+        success: false,
+        detail: 'Conversion timed out',
+        error: {
+          code: 'CONVERSION_TIMEOUT',
+          message: 'Conversion timed out',
+          category: 'TIMEOUT_ERROR',
+          hint: 'Réessayez avec un document plus court ou simplifiez le contenu.',
+        },
+      })
+    )
+
+    await convertText(
+      '= Title\n\nBody',
+      'asciidoc',
+      'markdown',
+      setStatus,
+      setOutput,
+      setLoading,
+      setNotification,
+      {},
+      null,
+      undefined,
+      undefined,
+      setBackendConversionResult,
+      setConversionUiState
+    )
+
+    expect(setNotification).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringMatching(/délai maximal.*document plus court/i),
+      })
+    )
+  })
+
   it('preserves structured failure semantics when HTTP 200 carries conversionResult.success=false (markdown->asciidoc)', async () => {
     ;(globalThis as any).fetch = vi.fn().mockResolvedValue(
       makeOkResponse({

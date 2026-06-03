@@ -13,6 +13,17 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.4.8 (2026-06-03)
+
+#### Added
+- Golden fixture `adoc/complex/05-xref.adoc` and `adoc/simple/06-utf8.adoc`; Markdown fixture `markdown/complex/01-table.md`.
+- CI e2e for `/api/text-to-markdown` and `/api/from-html` (representative + failure contracts).
+- French UI messages and hints for all `SECURITY_ERROR_CODES`.
+
+#### Changed
+- Roundtrip semantic checks target cross-references (`05-xref`) instead of UTF-8 in the complex set.
+- Version alignment across frontend/backend packages, lockfiles, README badge, and app metadata.
+
 ### 0.0.1.4.7 (2026-05-28)
 
 #### Changed
