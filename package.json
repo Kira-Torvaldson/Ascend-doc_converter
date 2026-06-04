@@ -25,6 +25,7 @@
     "coverage": "nyc _mocha",
     "release:bump": "node scripts/release-bump.js",
     "check:version": "node scripts/check-version-sync.js",
+    "check:ascend": "node scripts/check-version-sync.js && npm --prefix api/frontend run test && npm --prefix api/backend run test:golden && npm --prefix api/backend run test:roundtrip && npm run test:abuse",
     "generate:golden": "node scripts/generate-golden-corpus.js",
     "build": "npm test && npm run lint",
     "format": "node npm/format.js lib,test,npm",

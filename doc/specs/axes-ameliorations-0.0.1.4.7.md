@@ -11,7 +11,23 @@
 
 ---
 
-## 1. Matrice des limites (état réel — à corriger)
+## 1. Matrice des limites
+
+### État effectif (≥ `0.0.1.4.7`, ASC-008 livré)
+
+| Couche | Valeur effective | Source |
+|--------|-------------------|--------|
+| EnvMap / modules / routes | **5 Mo** | `MAX_INPUT_SIZE_MB` → `conversion-limits.js` |
+| UI validation source | **5 Mo** | `GET /api/config/limits` → `App.tsx` |
+| Express JSON body | **~6 Mo** (marge) | `getExpressBodyLimitString()` dans `app.js` |
+| Nginx Docker | **6m** défaut | `container/docker-compose.yml` |
+| Rate limit API | **100 req / 15 min / IP** | `rate-limit.middleware.js` |
+| Timeout conversion | **30 s** | `CONVERSION_TIMEOUT_MS` |
+| Timeout fetch UI | **30 s** | `generic-converter.ts` |
+
+Référence canonique : `doc/references/configuration.md` (section Production Limits Matrix).
+
+### Historique audit (pré-ASC-008 — obsolète)
 
 | Couche | Valeur | Octets | Fichier | Ligne(s) / clé |
 |--------|--------|--------|---------|----------------|

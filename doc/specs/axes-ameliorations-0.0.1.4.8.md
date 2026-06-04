@@ -6,6 +6,7 @@
 | Base | `0.0.1.4.7` + commit qualité ASC-001–010 |
 | Branche | `release-0.0.1.4.8` |
 | Prochaine version | `0.0.1.4.9` (patch) ou `0.0.2.0` (beta) |
+| Statut | **En cours** — branche `release-0.0.1.4.8` |
 
 ---
 
@@ -17,14 +18,14 @@ Compléter les **DoD restants de 4.7** et stabiliser la release avant montée en
 
 ## Tickets `0.0.1.4.8`
 
-### ASC-011 — Corpus golden aligné spec (P0)
+### ASC-011 — Corpus golden aligné spec (P0) ✅
 
 - `adoc/complex/05-xref.adoc` + golden
 - `adoc/simple/06-utf8.adoc` (UTF-8 hors set roundtrip complex)
 - `markdown/complex/01-table.md` + golden to-asciidoc
 - **DoD :** `npm --prefix api/backend run test:golden` → 16+ scénarios OK
 
-### ASC-012 — CI e2e étendue (P0)
+### ASC-012 — CI e2e étendue (P0) ✅
 
 - `verify-e2e-text-to-markdown-representative-scenarios.js`
 - `verify-e2e-text-to-markdown-failure-contract.js`
@@ -32,17 +33,19 @@ Compléter les **DoD restants de 4.7** et stabiliser la release avant montée en
 - `verify-e2e-from-html-failure-contract.js`
 - **DoD :** job `ascend` vert sur GitHub
 
-### ASC-013 — Erreurs sécurité UI (P1)
+### ASC-013 — Erreurs sécurité UI (P1) ✅
 
 - Tous les `SECURITY_ERROR_CODES` dans `error-code-messages.ts` + `error-envelope.js`
 - 3 tests Vitest hints (`EMPTY_INPUT`, `PAYLOAD_TOO_LARGE`, `CONVERSION_TIMEOUT`)
 - **DoD :** `npm --prefix api/frontend run test` vert
 
-### ASC-014 — Changelog & doc (P2)
+### ASC-014 — Changelog & doc (P2) ✅
 
 - Entrée `changelog.md` 0.0.1.4.8 descriptive
 - `doc/specs/roadmap.md` → version courante 4.8
 - Mise à jour §1 de `axes-ameliorations-0.0.1.4.7.md` (état post-limites)
+- `npm run check:ascend` (validation locale unifiée)
+- `doc/releases/v0.0.1.4.8-notes.md`
 
 ---
 

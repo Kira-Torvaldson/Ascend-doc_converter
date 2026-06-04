@@ -69,6 +69,8 @@ npm --prefix api/backend run test:smoke
 ### 5. Suite de validation complète (post-changements)
 
 ```bash
+npm run check:ascend
+# ou détaillé :
 npm run check:version
 npm --prefix api/backend run test:golden
 npm --prefix api/backend run test:roundtrip
