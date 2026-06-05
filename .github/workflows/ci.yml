@@ -58,33 +58,13 @@ jobs:
       uses: actions/setup-node@v3
       with:
         node-version: '20'
-    - name: Check Ascend version sync
-      run: node scripts/check-version-sync.js
     - name: Install Pandoc
       run: sudo apt-get update && sudo apt-get install -y pandoc
+    - name: Install root dependencies (Mocha abuse tests)
+      run: npm ci
     - name: Install backend dependencies
       run: npm --prefix api/backend ci
     - name: Install frontend dependencies
       run: npm --prefix api/frontend ci
-    - name: Frontend unit tests
-      run: npm --prefix api/frontend run test
-    - name: Backend e2e (AsciiDoc -> Markdown, downdoc)
-      run: |
-        node api/backend/scripts/verify-e2e-to-markdown-representative-scenarios.js
-        node api/backend/scripts/verify-e2e-to-markdown-failure-contract.js
-    - name: Backend e2e (Markdown -> AsciiDoc, Pandoc)
-      run: node api/backend/scripts/verify-e2e-to-asciidoc-representative-scenarios.js
-    - name: Backend e2e (Text -> Markdown)
-      run: |
-        node api/backend/scripts/verify-e2e-text-to-markdown-representative-scenarios.js
-        node api/backend/scripts/verify-e2e-text-to-markdown-failure-contract.js
-    - name: Backend e2e (HTML conversions)
-      run: |
-        node api/backend/scripts/verify-e2e-from-html-representative-scenarios.js
-        node api/backend/scripts/verify-e2e-from-html-failure-contract.js
-    - name: Golden corpus (non-regression)
-      run: npm --prefix api/backend run test:golden
-    - name: Roundtrip adoc-md-adoc (semantic)
-      run: npm --prefix api/backend run test:roundtrip
-    - name: API abuse tests
-      run: npm run test:abuse
+    - name: Ascend full validation (check:ascend:ci)
+      run: npm run check:ascend:ci

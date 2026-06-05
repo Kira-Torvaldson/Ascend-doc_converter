@@ -6,15 +6,23 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.4.8 (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** Release candidate — ASC-011→014 livrés, clôture GitHub en attente  
-**Focus:** Publication releases `v0.0.1.4.7` / `v0.0.1.4.8`, alignement `main`
+**Version:** 0.0.1.4.9 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** Patch stabilisation — clôture série `0.0.1.4.x` avant beta  
+**Focus:** `check:ascend:ci` en CI, validation unifiée
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.4.8 (Current — Ascend)
+### 0.0.1.4.9 (Current — Ascend)
+
+**Delivered (ASC-015 → ASC-016):**
+- `check:ascend:ci` et CI `ascend` unifiée (root `npm ci` + une commande)
+- Notes release, changelog, axes 4.9, runbook
+
+**Docs:** `doc/specs/axes-ameliorations-0.0.1.4.9.md`
+
+### 0.0.1.4.8
 
 **Delivered (ASC-011 → ASC-014):**
 - Fixtures golden spec (`05-xref`, `06-utf8`, `01-table.md`) — 16 scénarios
