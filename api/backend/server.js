@@ -1,243 +1,32 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
-const { convertAsciiDoc, convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown } = require('../convert.js');
-const { mergeOptions, validateOptions } = require('../conversion-options.js');
+'use strict'
 
-// __dirname est automatiquement disponible en CommonJS
-const PROJECT_ROOT = path.join(__dirname, '..', '..');
+/**
+ * SERVER ENTRY POINT
+ * 
+ * Starts the Express server
+ */
 
-const app = express();
-const PORT = 3003;
+const app = require('./app.js')
 
-// Middleware
-app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3003",
-    "http://127.0.0.1:3003",
-  ],
-  credentials: true,
-}));
+const PORT = process.env.PORT || 3003
 
-app.use(express.json({ limit: '50mb' })); // Augmenter la limite pour les gros fichiers
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Servir les fichiers statiques
-app.use('/static', express.static(path.join(__dirname, 'static')));
-app.use('/public', express.static(path.join(__dirname, 'public')));
-
-// Route racine - Page HTML simple
-app.get('/', (req, res) => {
-  try {
-    const htmlPath = path.join(__dirname, 'static', 'index.html');
-    const html = fs.readFileSync(htmlPath, 'utf-8');
-    res.send(html);
-  } catch (error) {
-    res.status(500).send('Erreur lors du chargement de la page');
-  }
-});
-
-// Endpoint: AsciiDoc → Markdown (utilise downdoc uniquement)
-app.post('/to-markdown', async (req, res) => {
-  try {
-    const { text, options } = req.body;
-
-    if (!text || typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({
-        detail: "Le texte à convertir est vide"
-      });
-    }
-
-    // Vérifier si Parsedown est activé dans les options
-    const useParsedown = options?.formatSpecific?.markdown?.parsedown || false;
-    const mode = useParsedown ? 'bookstack' : 'default';
-
-    console.log(`[INFO] Conversion de ${text.length} caractères (AsciiDoc → Markdown) avec downdoc${useParsedown ? ' (mode Parsedown/BookStack)' : ''}`);
-
-    // Utiliser downdoc avec le mode approprié
-    const markdown = await convertAsciiDoc(text, mode);
-
-    console.log(`[INFO] Conversion réussie: ${markdown.length} caractères de Markdown générés`);
-
-    return res.json({ markdown });
-  } catch (error) {
-    console.error('[ERROR] Erreur lors de la conversion AsciiDoc → Markdown:', error);
-    return res.status(500).json({
-      detail: `Erreur lors de la conversion: ${error.message || String(error)}`
-    });
-  }
-});
-
-// Endpoint: Markdown → AsciiDoc (utilise Pandoc par défaut)
-app.post('/to-asciidoc', async (req, res) => {
-  try {
-    const { text } = req.body;
-
-    if (!text || typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({
-        detail: "Le texte à convertir est vide"
-      });
-    }
-
-    console.log(`[INFO] Conversion de ${text.length} caractères (Markdown → AsciiDoc) avec Pandoc`);
-
-    // Utiliser Pandoc pour la conversion (par défaut)
-    const asciidoc = await convertMarkdownWithPandoc(text);
-
-    console.log(`[INFO] Conversion réussie: ${asciidoc.length} caractères d'AsciiDoc générés`);
-
-    return res.json({ asciidoc });
-  } catch (error) {
-    console.error('[ERROR] Erreur lors de la conversion Markdown → AsciiDoc:', error);
-    return res.status(500).json({
-      detail: `Erreur lors de la conversion: ${error.message || String(error)}`
-    });
-  }
-});
-
-// Endpoint: HTML → Autres formats (utilise Pandoc)
-// Format de sortie à définir (markdown, asciidoc, etc.)
-app.post('/from-html', async (req, res) => {
-  try {
-    const { text, to } = req.body;
-
-    if (!text || typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({
-        detail: "Le texte HTML à convertir est vide"
-      });
-    }
-
-    if (!to || typeof to !== 'string') {
-      return res.status(400).json({
-        detail: "Le format de sortie (to) doit être spécifié"
-      });
-    }
-
-    console.log(`[INFO] Conversion de ${text.length} caractères (HTML → ${to}) avec Pandoc`);
-
-    // Utiliser Pandoc pour la conversion HTML
-    const result = await convertHtmlWithPandoc(text, to);
-
-    console.log(`[INFO] Conversion réussie: ${result.length} caractères générés`);
-
-    return res.json({ result, format: to });
-  } catch (error) {
-    console.error('[ERROR] Erreur lors de la conversion HTML:', error);
-    return res.status(500).json({
-      detail: `Erreur lors de la conversion: ${error.message || String(error)}`
-    });
-  }
-});
-
-// Endpoint: Texte brut → Markdown (utilise text2markdown)
-app.post('/text-to-markdown', async (req, res) => {
-  try {
-    const { text } = req.body;
-
-    if (!text || typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({
-        detail: "Le texte à convertir est vide"
-      });
-    }
-
-    console.log(`[INFO] Conversion de ${text.length} caractères (Texte → Markdown) avec text2markdown`);
-
-    // Utiliser text2markdown pour la conversion
-    const markdown = text2markdown(text);
-
-    console.log(`[INFO] Conversion réussie: ${markdown.length} caractères de Markdown générés`);
-
-    return res.json({ markdown });
-  } catch (error) {
-    console.error('[ERROR] Erreur lors de la conversion Texte → Markdown:', error);
-    return res.status(500).json({
-      detail: `Erreur lors de la conversion: ${error.message || String(error)}`
-    });
-  }
-});
-
-// Endpoint générique: Conversion depuis n'importe quel format vers n'importe quel autre format (utilise Pandoc)
-app.post('/convert', async (req, res) => {
-  try {
-    const { text, from, to, options } = req.body;
-
-    if (!text || typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({
-        detail: "Le texte à convertir est vide"
-      });
-    }
-
-    if (!from || typeof from !== 'string') {
-      return res.status(400).json({
-        detail: "Le format source (from) doit être spécifié"
-      });
-    }
-
-    if (!to || typeof to !== 'string') {
-      return res.status(400).json({
-        detail: "Le format de sortie (to) doit être spécifié"
-      });
-    }
-
-    // Fusionner et valider les options de conversion
-    const conversionOptions = mergeOptions(options || {});
-    const validation = validateOptions(conversionOptions);
-    
-    if (!validation.valid) {
-      return res.status(400).json({
-        detail: "Options de conversion invalides",
-        errors: validation.errors
-      });
-    }
-
-    // Vérifier la taille du fichier
-    const textSize = Buffer.byteLength(text, 'utf8');
-    if (textSize > conversionOptions.security.maxFileSize) {
-      return res.status(400).json({
-        detail: `Fichier trop volumineux (${textSize} octets). Taille maximale: ${conversionOptions.security.maxFileSize} octets`
-      });
-    }
-
-    console.log(`[INFO] Conversion de ${text.length} caractères (${from} → ${to}) avec options:`, {
-      analysisMode: conversionOptions.contentAnalysis.analysisMode,
-      debugMode: conversionOptions.developer.debugMode
-    });
-
-    // Si conversion TXT → Markdown, utiliser text2markdown pour une meilleure détection
-    if (from.toLowerCase() === 'txt' && to.toLowerCase() === 'markdown') {
-      const markdown = text2markdown(text);
-      console.log(`[INFO] Conversion réussie avec text2markdown: ${markdown.length} caractères générés`);
-      return res.json({ result: markdown, format: to, options: conversionOptions });
-    }
-
-    // Utiliser Pandoc pour les autres conversions
-    const result = await convertWithPandoc(text, from, to);
-
-    console.log(`[INFO] Conversion réussie: ${result.length} caractères générés`);
-
-    return res.json({ result, format: to, options: conversionOptions });
-  } catch (error) {
-    console.error('[ERROR] Erreur lors de la conversion:', error);
-    return res.status(500).json({
-      detail: `Erreur lors de la conversion: ${error.message || String(error)}`
-    });
-  }
-});
-
-// Démarrer le serveur
+// Start server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Serveur backend démarré sur http://0.0.0.0:${PORT}`);
-  console.log(`📝 API disponible sur http://localhost:${PORT}`);
-  console.log(`🔄 Endpoints:`);
-  console.log(`   POST /to-markdown - Convertir AsciiDoc → Markdown (downdoc)`);
-  console.log(`   POST /to-asciidoc - Convertir Markdown → AsciiDoc (Pandoc)`);
-  console.log(`   POST /from-html - Convertir HTML → autres formats (Pandoc)`);
-  console.log(`   POST /text-to-markdown - Convertir Texte brut → Markdown (text2markdown)`);
-  console.log(`   POST /convert - Convertir depuis n'importe quel format vers un autre (Pandoc/text2markdown)`);
-});
-
+  console.log(`\n${'='.repeat(60)}`)
+  console.log(`🚀 Ascend Backend Server`)
+  console.log(`${'='.repeat(60)}`)
+  console.log(`   Server running on http://0.0.0.0:${PORT}`)
+  console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`)
+  console.log(`\n📋 Available endpoints:`)
+  console.log(`   GET  /                    - API documentation page`)
+  console.log(`   POST /api/to-markdown     - Convert AsciiDoc → Markdown (downdoc)`)
+  console.log(`   POST /api/to-asciidoc     - Convert Markdown → AsciiDoc (Pandoc)`)
+  console.log(`   POST /api/from-html       - Convert HTML → Other formats (Pandoc)`)
+  console.log(`   POST /api/text-to-markdown - Convert Text → Markdown (text2markdown)`)
+  console.log(`   POST /api/confirmation/request - Request confirmation token`)
+  console.log(`   GET  /api/confirmation/stats    - Get token statistics`)
+  console.log(`   POST /api/convert              - Generic conversion with token`)
+  console.log(`   GET  /api/logs/:conversionId    - Get conversion log`)
+  console.log(`   GET  /api/logs                 - List all conversion logs`)
+  console.log(`${'='.repeat(60)}\n`)
+})

@@ -1,0 +1,93 @@
+# Force GitHub to detect TypeScript and React
+*.tsx linguist-language=TypeScript
+*.ts linguist-language=TypeScript
+*.jsx linguist-language=TypeScript
+*.js linguist-language=JavaScript
+
+# Mark React files explicitly as TypeScript
+api/frontend/src/*.tsx linguist-language=TypeScript
+api/frontend/src/*.ts linguist-language=TypeScript
+api/frontend/**/*.js linguist-language=TypeScript
+
+# Backend JavaScript files (not React)
+api/backend/**/*.js linguist-language=JavaScript
+api/convert.js linguist-language=JavaScript
+api/*.js linguist-language=JavaScript
+lib/**/*.js linguist-language=JavaScript
+bin/**/*.js linguist-language=JavaScript
+
+# Ensure CSS is detected
+*.css linguist-language=CSS
+
+# Ensure JSON is detected (but exclude package-lock.json from stats)
+*.json linguist-language=JSON
+package-lock.json linguist-vendored=true
+**/package-lock.json linguist-vendored=true
+
+# Markdown files - explicitly mark as Markdown and exclude node_modules
+README.md linguist-language=Markdown
+CHANGELOG.md linguist-language=Markdown
+CHANGELOG.adoc linguist-language=Text
+api/conversion-options.md linguist-language=Markdown
+api/encoding-options.md linguist-language=Markdown
+api/normalization-advanced-options.md linguist-language=Markdown
+api/backend/README.md linguist-language=Markdown
+*.md linguist-language=Markdown
+
+# Exclude ALL node_modules files (including .md) from statistics
+**/node_modules/** linguist-vendored=true
+**/node_modules/** linguist-detectable=false
+
+# Exclude generated files and build artifacts
+**/dist/** linguist-vendored=true
+**/build/** linguist-vendored=true
+**/.vite/** linguist-vendored=true
+**/.nyc_output/** linguist-vendored=true
+**/reports/** linguist-vendored=true
+
+# Exclude lock files
+*.lock linguist-vendored=true
+package-lock.json linguist-vendored=true
+yarn.lock linguist-vendored=true
+pnpm-lock.yaml linguist-vendored=true
+
+# Exclude log files
+*.log linguist-vendored=true
+npm-debug.log* linguist-vendored=true
+yarn-debug.log* linguist-vendored=true
+yarn-error.log* linguist-vendored=true
+
+# Exclude IDE and OS files
+.vscode/** linguist-vendored=true
+.idea/** linguist-vendored=true
+*.swp linguist-vendored=true
+*.swo linguist-vendored=true
+.DS_Store linguist-vendored=true
+Thumbs.db linguist-vendored=true
+
+# Exclude environment files
+.env linguist-vendored=true
+.env.* linguist-vendored=true
+
+# Exclude test coverage and reports
+coverage/** linguist-vendored=true
+.nyc_output/** linguist-vendored=true
+
+# Exclude test files from statistics (they're mostly JavaScript)
+test/**/*.js linguist-vendored=true
+**/*.test.js linguist-vendored=true
+**/*.spec.js linguist-vendored=true
+
+# Exclude configuration and tooling files
+*.config.js linguist-vendored=true
+vite.config.* linguist-vendored=true
+rollup.config.* linguist-vendored=true
+webpack.config.* linguist-vendored=true
+.mocharc.js linguist-vendored=true
+
+# Exclude other non-code files that might appear in "Other"
+*.adoc linguist-vendored=true
+*.txt linguist-vendored=true
+*.sh linguist-vendored=true
+*.bat linguist-vendored=true
+*.ps1 linguist-vendored=true

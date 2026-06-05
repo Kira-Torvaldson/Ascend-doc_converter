@@ -16,5 +16,16 @@
     "prefer-regex-literals": "off",
     "spaced-comment": "off",
     "radix": ["error", "always"]
-  }
+  },
+  "overrides": [
+    {
+      "files": [
+        "api/backend/services/conversion/**/*.js",
+        "api/backend/services/modules/**/*.js"
+      ],
+      "rules": {
+        "no-process-env": "error"
+      }
+    }
+  ]
 }

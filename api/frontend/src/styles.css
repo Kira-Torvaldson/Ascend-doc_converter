@@ -1,15 +1,94 @@
 /* ============================================
-   RESET ET CONFIGURATION GLOBALE
+   THEMES: default, dark
    ============================================ */
 
-/* Réinitialisation du box-sizing pour tous les éléments */
+/* Default theme: translucent (glass effect on dark background), black text */
+:root {
+  --theme-bg: #0b1120;
+  --theme-text: #0f172a;
+  --theme-text-muted: #334155;
+  --theme-header-bg: rgba(255, 255, 255, 0.12);
+  --theme-header-border: rgba(229, 231, 235, 0.25);
+  --theme-sidebar-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.1) 100%);
+  --theme-sidebar-border: rgba(229, 231, 235, 0.28);
+  --theme-sidebar-section-bg: rgba(255, 255, 255, 0.08);
+  --theme-sidebar-section-border: rgba(229, 231, 235, 0.2);
+  --theme-input-bg: rgba(255, 255, 255, 0.08);
+  --theme-input-border: rgba(229, 231, 235, 0.25);
+  --theme-input-text: #0f172a;
+  --theme-content-section-bg: rgba(0, 0, 0, 0.06);
+  --theme-content-section-border: rgba(229, 231, 235, 0.22);
+  --theme-content-section-content-bg: rgba(0, 0, 0, 0.04);
+  --theme-modal-overlay: rgba(0, 0, 0, 0.35);
+  --theme-modal-bg: rgba(255, 255, 255, 0.92);
+  --theme-modal-border: rgba(229, 231, 235, 0.25);
+  --theme-modal-text: #1f2937;
+  --theme-modal-text-muted: #6b7280;
+  --theme-panel-bg: rgba(255, 255, 255, 0.12);
+  --theme-panel-border: rgba(229, 231, 235, 0.2);
+}
+
+/* Dark theme: dark translucent overlays so Rafale background remains visible, light text */
+:root[data-theme="dark"] {
+  --theme-bg: #0b1120;
+  --theme-text: #f8fafc;
+  --theme-text-muted: #94a3b8;
+  --theme-header-bg: rgba(15, 23, 42, 0.72);
+  --theme-header-border: rgba(148, 163, 184, 0.28);
+  --theme-sidebar-bg: linear-gradient(180deg, rgba(15, 23, 42, 0.78) 0%, rgba(15, 23, 42, 0.65) 100%);
+  --theme-sidebar-border: rgba(148, 163, 184, 0.25);
+  --theme-sidebar-section-bg: rgba(30, 41, 59, 0.5);
+  --theme-sidebar-section-border: rgba(148, 163, 184, 0.2);
+  --theme-input-bg: rgba(30, 41, 59, 0.55);
+  --theme-input-border: rgba(148, 163, 184, 0.28);
+  --theme-input-text: #f8fafc;
+  --theme-content-section-bg: rgba(30, 41, 59, 0.45);
+  --theme-content-section-border: rgba(148, 163, 184, 0.2);
+  --theme-content-section-content-bg: rgba(30, 41, 59, 0.3);
+  /* Modal/panel overrides for full dark UI */
+  --theme-modal-overlay: rgba(0, 0, 0, 0.55);
+  --theme-modal-bg: rgba(15, 23, 42, 0.95);
+  --theme-modal-border: rgba(148, 163, 184, 0.28);
+  --theme-modal-text: #f8fafc;
+  --theme-modal-text-muted: #94a3b8;
+  --theme-panel-bg: rgba(15, 23, 42, 0.75);
+  --theme-panel-border: rgba(148, 163, 184, 0.22);
+}
+
+/* UI preferences (applied when user clicks Apply) */
+[data-editor-word-wrap="true"] .result-textarea,
+[data-editor-word-wrap="true"] .source-textarea {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+[data-reduce-motion="true"] * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+[data-tab-size="2"] .result-textarea,
+[data-tab-size="2"] .source-textarea {
+  tab-size: 2;
+  -moz-tab-size: 2;
+}
+[data-tab-size="4"] .result-textarea,
+[data-tab-size="4"] .source-textarea {
+  tab-size: 4;
+  -moz-tab-size: 4;
+}
+
+/* ============================================
+   RESET AND GLOBAL CONFIGURATION
+   ============================================ */
+
+/* Reset box-sizing for all elements */
 *,
 *::before,
 *::after {
   box-sizing: border-box;
 }
 
-/* Empêcher la sélection de texte partout sauf dans les textarea */
+/* Prevent text selection everywhere except in textareas */
 * {
   user-select: none;
   -webkit-user-select: none;
@@ -17,7 +96,7 @@
   -ms-user-select: none;
 }
 
-/* Permettre la sélection et la saisie uniquement dans les textarea */
+/* Allow selection and input only in textareas */
 textarea,
 input[type="text"],
 input[type="email"],
@@ -32,44 +111,46 @@ input[type="url"],
 }
 
 /* ============================================
-   STRUCTURE DE BASE
+   BASE STRUCTURE
    ============================================ */
 
-/* Styles de base pour le body */
+/* Base styles for body */
 body {
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
-  /* Fond clair sous le fond image pour éviter les flashs blancs */
-  background: #0b1120;
-  color: #111827;
+  background: var(--theme-bg);
+  color: var(--theme-text);
 }
 
-/* Conteneur principal de la page avec fond d'image */
+/* Main page container with background image */
 .page {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   width: 100%;
-  /* Rafale en fond pour le front, servie par le backend */
-  background-image: url("http://localhost:3003/public/rafale.jpg");
+  /* Background image served by backend (/public). */
+  background-image: url("/public/rafale.jpg");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   background-attachment: fixed;
   position: relative;
+  background-color: var(--theme-bg);
 }
 
 /* ============================================
-   EN-TÊTE (HEADER)
+   HEADER
    ============================================ */
 
-/* Barre d'en-tête avec logo et titre */
+/* Header bar with logo and title */
 .header {
-  padding: 1.25rem 2rem;
-  background: rgba(255, 255, 255, 0.15);
+  padding: 0.5rem 1rem;
+  height: 80px;
+  box-sizing: border-box;
+  background: var(--theme-header-bg);
   backdrop-filter: blur(3px);
-  border-bottom: 1px solid rgba(229, 231, 235, 0.2);
+  border-bottom: 1px solid var(--theme-header-border);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -79,7 +160,7 @@ body {
   transform: translateZ(0);
 }
 
-/* Conteneur principal de l'en-tête */
+/* Main header container */
 .header-main {
   width: 100%;
   display: flex;
@@ -88,16 +169,17 @@ body {
   gap: 1rem;
 }
 
-/* Titre principal dans l'en-tête "Ascend - Convertisseur de documents" */
+/* Main title in header "Ascend - Document Converter" */
 .header h1 {
   font-size: 1.3rem;
   margin: 0;
+  color: var(--theme-text);
 }
 
-/* Bouton d'engrenage pour ouvrir les paramètres */
+/* Gear button to open settings */
 .settings-button {
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(229, 231, 235, 0.25);
+  background: var(--theme-input-bg);
+  border: 1px solid var(--theme-input-border);
   border-radius: 0.625rem;
   padding: 0.625rem;
   cursor: pointer;
@@ -105,7 +187,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #4b5563;
+  color: var(--theme-text-muted);
   width: 2.75rem;
   height: 2.75rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -113,7 +195,7 @@ body {
   overflow: hidden;
 }
 
-/* Effet de vague au survol du bouton paramètres */
+/* Wave effect on settings button hover */
 .settings-button::before {
   content: '';
   position: absolute;
@@ -132,7 +214,7 @@ body {
   height: 100%;
 }
 
-/* État hover du bouton paramètres : rotation et changement de couleur */
+/* Hover state of settings button: rotation and color change */
 .settings-button:hover {
   background: rgba(255, 255, 255, 0.2);
   border-color: rgba(59, 130, 246, 0.4);
@@ -141,13 +223,13 @@ body {
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
-/* État actif (clic) du bouton paramètres : légère réduction */
+/* Active state (click) of settings button: slight reduction */
 .settings-button:active {
   transform: rotate(90deg) scale(0.92);
   box-shadow: 0 2px 6px rgba(59, 130, 246, 0.15);
 }
 
-/* Icône SVG de l'engrenage dans le bouton paramètres */
+/* SVG gear icon in settings button */
 .settings-button svg {
   position: relative;
   z-index: 1;
@@ -155,99 +237,268 @@ body {
 }
 
 /* ============================================
-   PANEL DE PARAMÈTRES
+   SETTINGS PANEL (style fenêtre historique)
    ============================================ */
 
-/* Overlay semi-transparent pour le panneau de paramètres */
+/* Overlay: same style as history-modal-v2 */
 .settings-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.15);
+  inset: 0;
   z-index: 10000;
-  backdrop-filter: blur(4px);
-  animation: fadeInOverlay 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: fadeInOverlay 0.2s ease-out;
 }
 
-/* Panneau de paramètres flottant qui s'ouvre depuis le coin supérieur droit */
+/* Draggable panel, history-modal style */
 .settings-panel {
   position: fixed;
-  top: 80px;
-  right: 1.5rem;
-  width: 400px;
-  max-width: 90vw;
-  max-height: calc(100vh - 100px);
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-  border-radius: 0.75rem;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(229, 231, 235, 0.3);
-  z-index: 10001;
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(229, 231, 235, 0.25);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.2);
   overflow: hidden;
-  animation: slideInFromTopRight 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-  transform-origin: top right;
+  z-index: 10001;
+  animation: settings-modal-slide 0.25s ease-out;
 }
 
-/* En-tête du panneau de paramètres avec titre et bouton de fermeture */
+@keyframes settings-modal-slide {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Header: same look as history-modal-v2-header, draggable */
 .settings-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
   padding: 1rem 1.25rem;
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%);
   border-bottom: 1px solid rgba(229, 231, 235, 0.3);
+  flex-shrink: 0;
 }
 
-/* Titre "Paramètres" dans l'en-tête du panneau */
 .settings-panel-header h3 {
-  font-size: 1rem;
+  margin: 0;
+  font-size: 0.9375rem;
   font-weight: 700;
   color: #1f2937;
-  margin: 0;
   letter-spacing: 0.02em;
 }
 
-/* Bouton de fermeture (croix) dans l'en-tête du panneau */
+/* Close button: history-modal-v2-btn style */
 .settings-close-btn {
-  background: transparent;
-  border: none;
-  font-size: 1.5rem;
-  color: #6b7280;
-  cursor: pointer;
   width: 2rem;
   height: 2rem;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: none;
   border-radius: 0.375rem;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform, background-color, color;
-  transform: translateZ(0);
 }
 
-/* État hover du bouton de fermeture : fond rouge clair */
 .settings-close-btn:hover {
   background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  color: #b31f1f;
 }
 
-/* Zone de contenu scrollable du panneau de paramètres */
+/* Scrollable content: history-modal-v2-list style */
 .settings-panel-content {
-  padding: 1.25rem;
-  overflow-y: auto;
   flex: 1;
+  min-height: 0;
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+}
+.settings-panel-content::-webkit-scrollbar { width: 8px; }
+.settings-panel-content::-webkit-scrollbar-track { background: transparent; border-radius: 4px; }
+.settings-panel-content::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 4px; }
+.settings-panel-content::-webkit-scrollbar-thumb:hover { background: rgba(107, 114, 128, 0.7); }
+
+/* Settings: sections in the list */
+.settings-param-section {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(229, 231, 235, 0.5);
+  border-radius: 0.5rem;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+}
+.settings-param-section button.settings-param-header {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  color: #1f2937;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: background 0.15s ease;
+}
+.settings-param-section button.settings-param-header:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+.settings-param-section .settings-param-body {
+  padding: 0 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-top: 1px solid rgba(229, 231, 235, 0.4);
+}
+.settings-param-section .settings-param-body .option-group {
+  margin-top: 0.5rem;
+}
+.settings-param-section .settings-param-body .option-group:first-child {
+  margin-top: 0.75rem;
+}
+.settings-param-section .settings-param-arrow {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+.settings-param-apply-btn,
+.settings-param-reset-btn {
+  height: 2.25rem;
+  padding: 0 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
 }
 
-/* Section individuelle dans le panneau de paramètres */
+.settings-param-apply-btn {
+  border-color: #3b82f6;
+  background: #3b82f6;
+  color: white;
+}
+.settings-param-apply-btn:hover {
+  background: #2563eb;
+}
+.settings-param-apply-btn:active {
+  transform: scale(0.98);
+}
+
+.settings-param-reset-btn {
+  border-color: #94a3b8;
+  background: transparent;
+  color: #64748b;
+}
+.settings-param-reset-btn:hover {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: #64748b;
+  color: #475569;
+}
+.settings-param-reset-btn:active {
+  transform: scale(0.98);
+}
+
+/* Draggable header */
+.settings-panel-header-draggable {
+  cursor: move;
+  user-select: none;
+}
+.settings-panel-header-draggable:active {
+  cursor: grabbing;
+}
+
+/* Settings panel resize and drag */
+.settings-panel-resizing,
+.settings-panel-dragging {
+  transition: none;
+  user-select: none;
+}
+.settings-panel-dragging {
+  cursor: move;
+}
+.settings-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 0%, transparent 40%, rgba(156, 163, 175, 0.3) 40%, rgba(156, 163, 175, 0.3) 45%, transparent 45%, transparent 55%, rgba(156, 163, 175, 0.3) 55%, rgba(156, 163, 175, 0.3) 60%, transparent 60%);
+  z-index: 10;
+  border-bottom-right-radius: 0.75rem;
+}
+.settings-resize-handle:hover {
+  background: linear-gradient(135deg, transparent 0%, transparent 40%, rgba(59, 130, 246, 0.5) 40%, rgba(59, 130, 246, 0.5) 45%, transparent 45%, transparent 55%, rgba(59, 130, 246, 0.5) 55%, rgba(59, 130, 246, 0.5) 60%, transparent 60%);
+}
+
+.settings-param-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+/* Labels and fields in the Settings panel */
+.settings-param-body .option-label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #475569;
+  margin-bottom: 0.25rem;
+}
+.settings-param-body .option-input,
+.settings-param-body .option-select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 0.375rem;
+  background: var(--theme-input-bg);
+  color: var(--theme-input-text);
+  font-size: 0.875rem;
+}
+.settings-param-body .option-input:focus,
+.settings-param-body .option-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+.settings-param-body .option-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--theme-text-muted);
+}
+.settings-param-body .option-checkbox {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #3b82f6;
+}
+
+/* Individual section in settings panel */
 .settings-section {
   margin-bottom: 1.5rem;
 }
 
-/* Titre de section dans le panneau de paramètres */
+/* Section title in settings panel */
 .settings-section h4 {
   font-size: 0.9375rem;
   font-weight: 600;
@@ -255,14 +506,14 @@ body {
   margin: 0 0 0.5rem 0;
 }
 
-/* Sous-titre optionnel dans les sections */
+/* Optional subtitle in sections */
 .subtitle {
   margin: 0.15rem 0 0;
   font-size: 0.85rem;
   color: #6b7280;
 }
 
-/* Badge ou étiquette dans les sections */
+/* Badge or label in sections */
 .badge {
   font-size: 0.8rem;
   padding: 0.3rem 0.7rem;
@@ -273,22 +524,22 @@ body {
 }
 
 /* ============================================
-   LAYOUT PRINCIPAL ET SIDEBAR
+   MAIN LAYOUT AND SIDEBAR
    ============================================ */
 
-/* Conteneur principal avec sidebar et contenu */
+/* Main container with sidebar and content */
 .main-layout {
   display: flex;
   flex: 1;
   min-height: 0;
 }
 
-/* Barre latérale verticale avec options de conversion */
+/* Vertical sidebar with conversion options */
 .sidebar {
   width: 320px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.08) 100%);
+  background: var(--theme-sidebar-bg);
   backdrop-filter: blur(12px);
-  border-right: 1px solid rgba(229, 231, 235, 0.2);
+  border-right: 1px solid var(--theme-sidebar-border);
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
@@ -300,18 +551,18 @@ body {
   scrollbar-color: rgba(156, 163, 175, 0.4) transparent;
 }
 
-/* Personnalisation de la scrollbar WebKit dans la sidebar */
+/* WebKit scrollbar styling in sidebar */
 .sidebar::-webkit-scrollbar {
   width: 8px;
 }
 
-/* Piste de la scrollbar (fond) */
+/* Scrollbar track (background) */
 .sidebar::-webkit-scrollbar-track {
   background: transparent;
   border-radius: 4px;
 }
 
-/* Poignée de la scrollbar (thumb) */
+/* Scrollbar thumb (handle) */
 .sidebar::-webkit-scrollbar-thumb {
   background: rgba(156, 163, 175, 0.4);
   border-radius: 4px;
@@ -319,37 +570,37 @@ body {
   background-clip: padding-box;
 }
 
-/* État hover de la poignée de scrollbar */
+/* Hover state of scrollbar thumb */
 .sidebar::-webkit-scrollbar-thumb:hover {
   background: rgba(107, 114, 128, 0.6);
   background-clip: padding-box;
 }
 
-/* Section individuelle dans la sidebar (ex: "Options de conversion") */
+/* Individual section in sidebar (e.g., "Conversion options") */
 .sidebar-section {
   display: flex;
   flex-direction: column;
   gap: 0.875rem;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--theme-sidebar-section-bg);
   border-radius: 0.625rem;
   padding: 1rem;
-  border: 1px solid rgba(229, 231, 235, 0.15);
+  border: 1px solid var(--theme-sidebar-section-border);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .sidebar-section:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(229, 231, 235, 0.25);
+  background: var(--theme-sidebar-section-bg);
+  border-color: var(--theme-sidebar-border);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
 }
 
-/* Titre de section dans la sidebar (ex: "OPTIONS DE CONVERSION") */
+/* Section title in sidebar (e.g., "CONVERSION OPTIONS") */
 .sidebar-title {
   font-size: 0.7rem;
   font-weight: 700;
-  color: #4b5563;
+  color: var(--theme-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.12em;
   margin: 0;
@@ -360,7 +611,7 @@ body {
   gap: 0.5rem;
 }
 
-/* Barre verticale bleue avant le titre de section */
+/* Blue vertical bar before section title */
 .sidebar-title::before {
   content: '';
   width: 4px;
@@ -370,7 +621,7 @@ body {
   flex-shrink: 0;
 }
 
-/* Contenu d'une section dans la sidebar (contenu sous le titre) */
+/* Content of a section in sidebar (content under title) */
 .sidebar-content {
   display: flex;
   flex-direction: column;
@@ -378,28 +629,28 @@ body {
 }
 
 /* ============================================
-   SÉLECTEURS DE FORMAT
+   FORMAT SELECTORS
    ============================================ */
 
-/* Groupe contenant un label et un select pour les formats */
+/* Group containing a label and select for formats */
 .format-selector-group {
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
 }
 
-/* Séparateur entre les groupes de sélection de format (sauf le dernier) */
+/* Separator between format selection groups (except last) */
 .format-selector-group:not(:last-child) {
   margin-bottom: 0.5rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid rgba(229, 231, 235, 0.15);
 }
 
-/* Label au-dessus des selects de format (ex: "FORMAT SOURCE", "FORMAT DESTINATION") */
+/* Label above format selects (e.g., "SOURCE FORMAT", "DESTINATION FORMAT") */
 .format-label {
   font-size: 0.7rem;
   font-weight: 700;
-  color: #030712;
+  color: var(--theme-text);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 0.375rem;
@@ -407,88 +658,59 @@ body {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-/* Select dropdown pour choisir le format (source ou destination) */
-/* Affiche les extensions : adoc, md, html, pdf, yaml, json, txt */
+/* Select dropdown to choose format (source or destination) */
+/* Displays extensions: adoc, md, html, pdf, yaml, json, txt */
 .format-select {
   padding: 0.625rem 0.875rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(209, 213, 219, 0.3);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.5) 100%);
+  border: 1px solid var(--theme-input-border);
+  background: var(--theme-input-bg);
   backdrop-filter: blur(12px);
   font-size: 0.8125rem;
-  color: #030712;
+  color: var(--theme-text);
   cursor: pointer;
   font-weight: 700;
   letter-spacing: 0.02em;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   width: 100%;
   appearance: none;
-  
-  /* Flèche SVG personnalisée à droite */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23030712' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.75rem center;
   padding-right: 2.5rem;
-  box-shadow: 
-    0 1px 2px rgba(0, 0, 0, 0.05),
-    inset 0 1px 1px rgba(255, 255, 255, 0.8),
-    0 0 0 1px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-/* État hover du select de format : légère élévation et bordure bleue */
 .format-select:hover {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.65) 100%);
   border-color: rgba(59, 130, 246, 0.35);
-  box-shadow: 
-    0 2px 4px rgba(0, 0, 0, 0.08),
-    inset 0 1px 1px rgba(255, 255, 255, 0.9),
-    0 0 0 1px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
   transform: translateY(-0.5px);
 }
 
-/* État focus du select de format : ring bleu et fond plus clair */
 .format-select:focus {
   outline: none;
   border-color: #3b82f6;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.7) 100%);
-  box-shadow: 
-    0 0 0 3px rgba(59, 130, 246, 0.12),
-    0 3px 6px rgba(0, 0, 0, 0.1),
-    inset 0 1px 1px rgba(255, 255, 255, 1);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
   transform: translateY(-0.5px);
 }
 
-/* Options dans le dropdown du select de format */
 .format-select option {
-  background: #ffffff;
-  color: #030712;
+  background: var(--theme-input-bg);
+  color: var(--theme-text);
   padding: 0.625rem 0.875rem;
   font-weight: 600;
   font-size: 0.8125rem;
   border: none;
 }
 
-/* État hover d'une option dans le dropdown */
-.format-select option:hover {
-  background: #f3f4f6;
-}
-
-/* Option sélectionnée dans le dropdown : fond bleu dégradé */
 .format-select option:checked {
   background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: white;
   font-weight: 600;
 }
 
-/* Duplication pour compatibilité navigateurs */
-.format-select option {
-  background: white;
-  color: #111827;
-  padding: 0.5rem;
-}
-
-/* Flèche décorative entre les selects (non utilisée actuellement) */
+/* Decorative arrow between selects (not currently used) */
 .format-arrow {
   text-align: center;
   font-size: 1.5rem;
@@ -498,10 +720,10 @@ body {
 }
 
 /* ============================================
-   NAVIGATION DANS LE FICHIER
+   FILE NAVIGATION
    ============================================ */
 
-/* Label pour la case à cocher de navigation */
+/* Label for navigation checkbox */
 .navigation-checkbox-label {
   display: flex;
   align-items: center;
@@ -516,14 +738,14 @@ body {
   will-change: transform, background-color, border-color;
 }
 
-/* État hover du label de navigation : déplacement et bordure bleue */
+/* Hover state of navigation label: displacement and blue border */
 .navigation-checkbox-label:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(59, 130, 246, 0.25);
   transform: translateX(1px);
 }
 
-/* Case à cocher pour activer/désactiver la navigation */
+/* Checkbox to enable/disable navigation */
 .navigation-checkbox {
   width: 1.125rem;
   height: 1.125rem;
@@ -533,7 +755,7 @@ body {
   border-radius: 0.25rem;
 }
 
-/* Texte du label de navigation (ex: "Navigation dans le fichier") */
+/* Navigation label text (e.g., "File navigation") */
 .navigation-checkbox-label span:not(.navigation-count) {
   flex: 1;
   font-size: 0.8125rem;
@@ -542,7 +764,7 @@ body {
   line-height: 1.4;
 }
 
-/* Badge affichant le nombre de sections trouvées (ex: "5 sections") */
+/* Badge displaying number of sections found (e.g., "5 sections") */
 .navigation-count {
   font-size: 0.7rem;
   color: #3b82f6;
@@ -554,8 +776,8 @@ body {
   flex-shrink: 0;
 }
 
-/* Conteneur scrollable pour la liste de navigation dans le fichier */
-/* Utilisé dans la sidebar et dans la fenêtre de navigation */
+/* Scrollable container for file navigation list */
+/* Used in sidebar and navigation window */
 .file-navigation-container {
   margin-top: 0.75rem;
   max-height: 400px;
@@ -584,7 +806,7 @@ body {
   background: rgba(156, 163, 175, 0.7);
 }
 
-/* Liste <ul> contenant tous les éléments de navigation */
+/* <ul> list containing all navigation items */
 .file-navigation-list {
   list-style: none;
   padding: 0.5rem;
@@ -594,15 +816,15 @@ body {
   gap: 0.125rem;
 }
 
-/* Élément <li> individuel dans la liste de navigation */
+/* Individual <li> element in navigation list */
 .file-nav-item {
   margin: 0;
   padding: 0;
   position: relative;
 }
 
-/* Lien cliquable pour un heading dans la navigation */
-/* Contient : indicateur, texte, numéro de ligne */
+/* Clickable link for a heading in navigation */
+/* Contains: indicator, text, line number */
 .file-nav-link {
   display: flex;
   align-items: center;
@@ -618,14 +840,14 @@ body {
   will-change: transform, background-color, border-color;
 }
 
-/* État hover d'un lien de navigation : fond bleu clair et bordure */
+/* Hover state of navigation link: light blue background and border */
 .file-nav-link:hover {
   background: rgba(59, 130, 246, 0.08);
   border-left-color: #3b82f6;
   color: #111827;
 }
 
-/* Point indicateur circulaire à gauche du texte du heading */
+/* Circular indicator point to the left of heading text */
 .file-nav-indicator {
   width: 4px;
   height: 4px;
@@ -635,7 +857,7 @@ body {
   transition: all 0.2s ease;
 }
 
-/* Texte du heading dans la navigation (titre de section) */
+/* Heading text in navigation (section title) */
 .file-nav-text {
   flex: 1;
   overflow: hidden;
@@ -646,7 +868,7 @@ body {
   overflow-wrap: break-word;
 }
 
-/* Numéro de ligne affiché à droite du texte */
+/* Line number displayed to the right of text */
 .file-nav-line {
   font-size: 0.7rem;
   color: #9ca3af;
@@ -655,7 +877,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Styles pour les headings de niveau 1 (H1) : plus gros, bleu foncé */
+/* Styles for level 1 headings (H1): larger, dark blue */
 .file-nav-level-1 .file-nav-link {
   font-weight: 600;
   font-size: 0.875rem;
@@ -674,7 +896,7 @@ body {
   color: #3b82f6;
 }
 
-/* Styles pour les headings de niveau 2 (H2) : bleu moyen, indenté */
+/* Styles for level 2 headings (H2): medium blue, indented */
 .file-nav-level-2 .file-nav-link {
   font-weight: 500;
   font-size: 0.8125rem;
@@ -691,7 +913,7 @@ body {
   color: #60a5fa;
 }
 
-/* Styles pour les headings de niveau 3 (H3) : bleu clair, plus indenté */
+/* Styles for level 3 headings (H3): light blue, more indented */
 .file-nav-level-3 .file-nav-link {
   font-weight: 500;
   font-size: 0.75rem;
@@ -708,7 +930,7 @@ body {
   color: #93c5fd;
 }
 
-/* Styles pour les headings de niveau 4-6 (H4-H6) : bleu très clair, très indenté */
+/* Styles for level 4-6 headings (H4-H6): very light blue, very indented */
 .file-nav-level-4 .file-nav-link,
 .file-nav-level-5 .file-nav-link,
 .file-nav-level-6 .file-nav-link {
@@ -725,7 +947,7 @@ body {
   background: #bfdbfe;
 }
 
-/* Liste des enfants (headings imbriqués) dans la navigation */
+/* List of children (nested headings) in navigation */
 .file-nav-children {
   list-style: none;
   padding: 0;
@@ -736,21 +958,21 @@ body {
 }
 
 /* ============================================
-   FENÊTRE DE NAVIGATION (DRAGGABLE/RESIZABLE)
+   NAVIGATION WINDOW (DRAGGABLE/RESIZABLE)
    ============================================ */
 
-/* Fenêtre flottante de navigation avec headings */
+/* Floating navigation window with headings */
 .navigation-window {
   position: fixed;
   width: 500px;
   height: 400px;
   max-width: 90vw;
   max-height: 90vh;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(14px);
   border-radius: 0.75rem;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(229, 231, 235, 0.3);
+  border: 1px solid rgba(229, 231, 235, 0.25);
   display: flex;
   flex-direction: column;
   z-index: 10000;
@@ -763,26 +985,26 @@ body {
   -webkit-font-smoothing: subpixel-antialiased;
 }
 
-/* État de la fenêtre lors du déplacement (dragging) */
+/* Window state during dragging */
 .navigation-window.dragging {
   transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 25px 70px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.3);
   cursor: move;
 }
 
-/* État de la fenêtre lors du redimensionnement */
+/* Window state during resizing */
 .navigation-window.resizing {
   transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   will-change: width, height;
 }
 
-/* État minimisé de la fenêtre : masquée, visible dans la taskbar */
+/* Minimized window state: hidden, visible in taskbar */
 .navigation-window.minimized {
   height: auto;
   max-height: none;
 }
 
-/* État maximisé de la fenêtre : plein écran centré */
+/* Maximized window state: full screen centered */
 .navigation-window.maximized {
   width: 95vw;
   height: 95vh;
@@ -793,7 +1015,7 @@ body {
   transform: translate(-50%, -50%);
 }
 
-/* En-tête de la fenêtre de navigation : zone de drag et contrôles */
+/* Navigation window header: drag zone and controls */
 .navigation-window-header {
   display: flex;
   align-items: center;
@@ -805,7 +1027,7 @@ body {
   user-select: none;
 }
 
-/* Conteneur du titre et du compteur dans l'en-tête */
+/* Container for title and counter in header */
 .navigation-window-title {
   display: flex;
   align-items: center;
@@ -813,7 +1035,7 @@ body {
   flex: 1;
 }
 
-/* Titre "Navigation" dans l'en-tête de la fenêtre */
+/* "Navigation" title in window header */
 .navigation-window-title span:first-child {
   font-size: 0.9375rem;
   font-weight: 700;
@@ -821,7 +1043,7 @@ body {
   letter-spacing: 0.02em;
 }
 
-/* Badge affichant le nombre de sections (ex: "5 sections") */
+/* Badge displaying number of sections (e.g., "5 sections") */
 .navigation-window-count {
   font-size: 0.75rem;
   color: #3b82f6;
@@ -832,14 +1054,14 @@ body {
   border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
-/* Conteneur des boutons de contrôle (minimiser, maximiser, fermer) */
+/* Container for control buttons (minimize, maximize, close) */
 .navigation-window-controls {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-/* Bouton générique de contrôle de la fenêtre (minimiser, maximiser, fermer) */
+/* Generic window control button (minimize, maximize, close) */
 .navigation-window-btn {
   width: 2rem;
   height: 2rem;
@@ -858,31 +1080,31 @@ body {
   will-change: transform, background-color, color;
 }
 
-/* État hover générique des boutons de contrôle */
+/* Generic hover state of control buttons */
 .navigation-window-btn:hover {
   background: rgba(0, 0, 0, 0.05);
   color: #111827;
 }
 
-/* État hover spécifique du bouton minimiser : bleu */
+/* Specific hover state of minimize button: blue */
 .minimize-btn:hover {
   background: rgba(59, 130, 246, 0.1);
   color: #3b82f6;
 }
 
-/* État hover spécifique du bouton maximiser : vert */
+/* Specific hover state of maximize button: green */
 .maximize-btn:hover {
   background: rgba(16, 185, 129, 0.1);
   color: #10b981;
 }
 
-/* État hover spécifique du bouton fermer : rouge */
+/* Specific hover state of close button: red */
 .close-btn:hover {
   background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  color: #b31f1f;
 }
 
-/* Zone de contenu de la fenêtre de navigation (scrollable) */
+/* Navigation window content area (scrollable) */
 .navigation-window-content {
   flex: 1;
   overflow: hidden;
@@ -893,7 +1115,7 @@ body {
   contain: layout style paint;
 }
 
-/* Adaptation du conteneur de navigation dans la fenêtre */
+/* Navigation container adaptation in window */
 .navigation-window .file-navigation-container {
   flex: 1;
   margin-top: 0;
@@ -904,13 +1126,13 @@ body {
   overflow-y: auto;
 }
 
-/* Hauteur maximale du conteneur quand la fenêtre est maximisée */
+/* Maximum height of container when window is maximized */
 .navigation-window.maximized .file-navigation-container {
   max-height: calc(95vh - 80px);
 }
 
-/* Poignée de redimensionnement en bas à droite de la fenêtre */
-/* Affiche un motif diagonal pour indiquer qu'on peut redimensionner */
+/* Resize handle at bottom right of window */
+/* Displays diagonal pattern to indicate resizing is possible */
 .navigation-window-resize-handle {
   position: absolute;
   bottom: 0;
@@ -936,10 +1158,10 @@ body {
 }
 
 /* ============================================
-   BARRE DE TÂCHES
+   TASKBAR
    ============================================ */
 
-/* Barre de tâches en bas de l'écran pour les fenêtres réduites */
+/* Taskbar at bottom of screen for minimized windows */
 .taskbar {
   position: fixed;
   bottom: 0;
@@ -957,7 +1179,7 @@ body {
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
 }
 
-/* Élément individuel dans la barre de tâches (fenêtre réduite) */
+/* Individual item in taskbar (minimized window) */
 .taskbar-item {
   display: flex;
   align-items: center;
@@ -972,7 +1194,7 @@ body {
   min-width: 120px;
 }
 
-/* État hover d'un élément de la taskbar : élévation et fond bleu */
+/* Hover state of taskbar item: elevation and blue background */
 .taskbar-item:hover {
   background: rgba(59, 130, 246, 0.1);
   border-color: rgba(59, 130, 246, 0.3);
@@ -980,18 +1202,18 @@ body {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* État actif (clic) d'un élément de la taskbar */
+/* Active state (click) of taskbar item */
 .taskbar-item:active {
   transform: translateY(0);
 }
 
-/* Icône emoji dans la taskbar (ex: 📋) */
+/* Emoji icon in taskbar (e.g., 📋) */
 .taskbar-icon {
   font-size: 1.25rem;
   line-height: 1;
 }
 
-/* Label texte dans la taskbar (ex: "Navigation") */
+/* Text label in taskbar (e.g., "Navigation") */
 .taskbar-label {
   font-size: 0.8125rem;
   font-weight: 600;
@@ -999,34 +1221,34 @@ body {
 }
 
 /* ============================================
-   OPTIONS DE CONVERSION (MENU "AUTRES OPTIONS")
+   CONVERSION OPTIONS (MENU "OTHER OPTIONS")
    ============================================ */
 
-/* Conteneur pour toutes les options de conversion */
+/* Container for all conversion options */
 .conversion-options-container {
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
 }
 
-/* Section repliable dans le menu "Autres options" (ex: "Analyse du contenu") */
+/* Collapsible section in "Other options" menu (e.g., "Content analysis") */
 .option-section {
-  border: 1px solid rgba(229, 231, 235, 0.2);
+  border: 1px solid var(--theme-content-section-border);
   border-radius: 0.5rem;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--theme-content-section-bg);
   backdrop-filter: blur(6px);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   will-change: transform, background-color, border-color;
 }
 
-/* État hover d'une section d'option : bordure plus visible */
+/* Hover state of option section: more visible border */
 .option-section:hover {
-  border-color: rgba(229, 231, 235, 0.3);
-  background: rgba(0, 0, 0, 0.08);
+  border-color: var(--theme-sidebar-border);
+  background: var(--theme-content-section-bg);
 }
 
-/* En-tête cliquable d'une section d'option (pour replier/déplier) */
+/* Clickable header of option section (to collapse/expand) */
 .option-section-header {
   width: 100%;
   padding: 0.75rem 0.875rem;
@@ -1038,7 +1260,7 @@ body {
   cursor: pointer;
   font-size: 0.8125rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--theme-text);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   text-align: left;
   will-change: background-color, color;
@@ -1054,33 +1276,33 @@ body {
   overflow-wrap: break-word;
 }
 
-/* État hover de l'en-tête de section */
+/* Hover state of section header */
 .option-section-header:hover {
-  background: rgba(0, 0, 0, 0.1);
-  color: #111827;
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--theme-text);
 }
 
-/* Flèche indiquant l'état replié/déplié de la section */
+/* Arrow indicating collapsed/expanded state of section */
 .option-section-arrow {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--theme-text-muted);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   will-change: transform;
 }
 
-/* Contenu d'une section d'option (visible quand dépliée) */
+/* Content of option section (visible when expanded) */
 .option-section-content {
   padding: 0.875rem;
   display: flex;
   flex-direction: column;
   gap: 0.875rem;
-  border-top: 1px solid rgba(229, 231, 235, 0.18);
-  background: rgba(0, 0, 0, 0.04);
+  border-top: 1px solid var(--theme-content-section-border);
+  background: var(--theme-content-section-content-bg);
   animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   will-change: transform, opacity;
 }
 
-/* Animation pour le dépliage des sections */
+/* Animation for section expansion */
 @keyframes slideDown {
   from {
     opacity: 0;
@@ -1092,36 +1314,36 @@ body {
   }
 }
 
-/* Groupe d'options (label + input/select) dans une section */
+/* Option group (label + input/select) in a section */
 .option-group {
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
 }
 
-/* Label au-dessus d'un input/select dans les options */
+/* Label above input/select in options */
 .option-label {
   font-size: 0.7rem;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--theme-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-/* Select dropdown dans les options de conversion (ex: "Flavor Markdown") */
+/* Select dropdown in conversion options (e.g., "Markdown Flavor") */
 .option-select {
   padding: 0.5rem 0.75rem;
   border-radius: 0.375rem;
-  border: 1px solid rgba(209, 213, 219, 0.3);
-  background: #ffffff;
+  border: 1px solid var(--theme-input-border);
+  background: var(--theme-input-bg);
   font-size: 0.8125rem;
-  color: #111827;
+  color: var(--theme-input-text);
   cursor: pointer;
   font-weight: 500;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   width: 100%;
   appearance: none;
-  /* Flèche SVG personnalisée */
+  /* Custom SVG arrow */
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%236b7280' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.625rem center;
@@ -1131,7 +1353,7 @@ body {
 }
 
 .option-select:hover {
-  background-color: #ffffff;
+  background-color: var(--theme-input-bg);
   border-color: rgba(59, 130, 246, 0.4);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   transform: translateY(-1px);
@@ -1140,37 +1362,37 @@ body {
 .option-select:focus {
   outline: none;
   border-color: #3b82f6;
-  background-color: #ffffff;
+  background-color: var(--theme-input-bg);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1), 0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
-/* Input texte dans les options de conversion (ex: taille max fichier) */
+/* Text input in conversion options (e.g. max file size) */
 .option-input {
   padding: 0.5rem 0.75rem;
   border-radius: 0.375rem;
-  border: 1px solid rgba(209, 213, 219, 0.2);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--theme-input-border);
+  background: var(--theme-input-bg);
   backdrop-filter: blur(6px);
   font-size: 0.8125rem;
-  color: #111827;
+  color: var(--theme-input-text);
   font-weight: 500;
   transition: all 0.15s ease;
   width: 100%;
 }
 
 .option-input:hover {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--theme-input-bg);
   border-color: rgba(59, 130, 246, 0.25);
 }
 
 .option-input:focus {
   outline: none;
   border-color: #3b82f6;
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: var(--theme-input-bg);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-/* Label cliquable pour une checkbox dans les options */
+/* Clickable label for a checkbox in options */
 .option-checkbox-label {
   display: flex;
   align-items: center;
@@ -1195,14 +1417,14 @@ body {
   overflow-wrap: break-word;
 }
 
-/* État hover du label de checkbox */
+/* Hover state of checkbox label */
 .option-checkbox-label:hover {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(59, 130, 246, 0.2);
   transform: translateX(2px);
 }
 
-/* Case à cocher dans les options */
+/* Checkbox in options */
 .option-checkbox {
   width: 1rem;
   height: 1rem;
@@ -1211,7 +1433,7 @@ body {
   flex-shrink: 0;
 }
 
-/* Texte du label de checkbox */
+/* Checkbox label text */
 .option-checkbox-label span {
   font-size: 0.8125rem;
   font-weight: 500;
@@ -1220,10 +1442,10 @@ body {
 }
 
 /* ============================================
-   CONTENU PRINCIPAL ET PANNEAUX
+   MAIN CONTENT AND PANELS
    ============================================ */
 
-/* Zone de contenu principal (sans la sidebar) */
+/* Main content area (without sidebar) */
 .main-content {
   flex: 1;
   display: flex;
@@ -1231,14 +1453,14 @@ body {
   min-width: 0;
 }
 
-/* Grille contenant les panneaux source et résultat */
+/* Grid containing source and result panels */
 .grid {
   flex: 1;
   padding: 1.5rem 2rem 1.5rem;
   display: flex;
   align-items: stretch;
   gap: 1rem;
-  /* léger voile pour garder la lisibilité sur le fond image */
+  /* slight veil to maintain readability over background image */
   background: radial-gradient(
       circle at top,
       rgba(15, 23, 42, 0.35),
@@ -1254,10 +1476,10 @@ body {
   contain: layout style paint;
 }
 
-/* Panneau source ou résultat : carte transparente avec fond d'image visible */
-/* Contient : en-tête, toolbar, textarea, navigation (optionnel) */
+/* Source or result panel: transparent card with visible background image */
+/* Contains: header, toolbar, textarea, navigation (optional) */
 .panel {
-  /* carte très transparente pour voir le rafale entièrement */
+  /* very transparent card to see rafale entirely */
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(3px);
   border-radius: 1rem;
@@ -1266,7 +1488,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.875rem;
-  /* prendre toute la hauteur disponible dans la grille */
+  /* take all available height in grid */
   flex: 1 1 0;
   box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.03), 0 1px 2px -1px rgba(0, 0, 0, 0.02);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1277,26 +1499,92 @@ body {
   backface-visibility: hidden;
 }
 
-/* Panneau source : remonter le contenu interne */
+/* Source panel: move internal content up */
 .panel:first-child {
   padding-top: 0.375rem;
 }
 
-/* État hover d'un panneau : plus opaque et légère élévation */
+/* Hover state of panel: more opaque and slight elevation */
 .panel:hover {
   background: rgba(255, 255, 255, 0.2);
   box-shadow: 0 6px 12px -2px rgba(0, 0, 0, 0.08), 0 3px 6px -1px rgba(0, 0, 0, 0.05);
   transform: translateY(-3px) translateZ(0);
 }
 
-/* Colonne centrale avec le bouton d'inversion des formats */
+/* --- Locked result area after conversion --- */
+/* Locked: read-only, cursor hidden on hover, no selection */
+.panel.result-locked .result-textarea {
+  cursor: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+}
+.panel.result-locked .result-textarea::selection {
+  background: transparent;
+}
+.panel.result-locked .result-textarea::-moz-selection {
+  background: transparent;
+}
+/* Indicateur visuel : zone inactive */
+.panel.result-locked {
+  border-left: 3px solid rgba(107, 114, 128, 0.6);
+}
+.panel.result-locked .result-textarea {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* Edit mode: editable area, normal cursor and selection */
+.panel.result-editing .result-textarea {
+  cursor: text !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+}
+/* Indicateur visuel : zone active */
+.panel.result-editing {
+  border-left: 3px solid rgba(16, 185, 129, 0.9);
+}
+.panel.result-editing .result-textarea {
+  background: rgba(16, 185, 129, 0.04);
+}
+
+/* Locked / Editing state badges */
+.panel-modified-badge {
+  font-size: 0.875rem;
+  color: #f59e0b;
+  margin-left: 0.25rem;
+  font-weight: 700;
+}
+:root[data-theme="dark"] .panel-modified-badge {
+  color: #fbbf24;
+}
+.result-zone-state {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+.result-zone-locked {
+  color: #6b7280;
+  background: rgba(107, 114, 128, 0.2);
+}
+.result-zone-editing {
+  color: #059669;
+  background: rgba(16, 185, 129, 0.2);
+}
+
+/* Central column with format swap button */
 .swap-column {
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* Bouton pour inverser les formats source et destination */
+/* Button to swap source and destination formats */
 .swap-button {
   border-radius: 999px;
   padding: 0.6rem 0.9rem;
@@ -1329,7 +1617,7 @@ body {
   font-size: 1.1rem;
 }
 
-/* En-tête d'un panneau (source ou résultat) - Classe de base */
+/* Panel header (source or result) - Base class */
 .panel-header {
   display: flex;
   justify-content: space-between;
@@ -1341,8 +1629,8 @@ body {
   box-sizing: border-box;
 }
 
-/* En-tête du panneau source */
-/* Hauteur fixe pour garantir l'alignement parfait avec le panneau résultat */
+/* Source panel header */
+/* Fixed height to guarantee perfect alignment with result panel */
 .panel-header-source {
   display: flex !important;
   justify-content: space-between;
@@ -1361,8 +1649,8 @@ body {
   position: relative;
 }
 
-/* En-tête du panneau résultat */
-/* Hauteur fixe identique au panneau source pour un alignement parfait */
+/* Result panel header */
+/* Fixed height identical to source panel for perfect alignment */
 .panel-header-result {
   display: flex !important;
   justify-content: space-between;
@@ -1380,8 +1668,8 @@ body {
   position: relative;
 }
 
-/* Titre du panneau (ex: "AsciiDoc", "Markdown") */
-/* Alignement vertical parfait pour les deux panneaux */
+/* Panel title (e.g., "AsciiDoc", "Markdown") */
+/* Perfect vertical alignment for both panels */
 .panel-header h2,
 .panel-header-source h2,
 .panel-header-result h2 {
@@ -1401,8 +1689,8 @@ body {
   vertical-align: middle;
 }
 
-/* Conteneur des boutons dans l'en-tête du panneau */
-/* Garantit que tous les boutons sont alignés verticalement */
+/* Button container in panel header */
+/* Guarantees all buttons are vertically aligned */
 .panel-header > div,
 .panel-header-source > div,
 .panel-header-result > div {
@@ -1419,8 +1707,8 @@ body {
   align-self: center;
 }
 
-/* Boutons dans l'en-tête du panneau */
-/* Hauteur uniforme pour tous les boutons, même avec styles inline */
+/* Buttons in panel header */
+/* Uniform height for all buttons, even with inline styles */
 .panel-header button,
 .panel-header-source button,
 .panel-header-result button {
@@ -1436,26 +1724,26 @@ body {
   vertical-align: middle;
 }
 
-/* Titre avec icône à côté */
+/* Title with icon beside */
 .title-with-icon {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
 }
 
-/* Icône de petite taille */
+/* Small size icon */
 .icon {
   width: 16px;
   height: 16px;
 }
 
-/* Icône de grande taille */
+/* Large size icon */
 .icon-large {
   width: 22px;
   height: 22px;
 }
 
-/* Barre d'outils dans le panneau (boutons : fichier, convertir, copier, effacer) */
+/* Toolbar in panel (buttons: file, convert, copy, clear) */
 .panel-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1466,11 +1754,11 @@ body {
 }
 
 /* ============================================
-   GESTION DES FICHIERS
+   FILE MANAGEMENT
    ============================================ */
 
-/* Label stylisé pour l'input de fichier */
-/* Hauteur identique aux boutons pour un alignement parfait */
+/* Styled label for file input */
+/* Height identical to buttons for perfect alignment */
 .file-input-label {
   position: relative;
   overflow: hidden;
@@ -1518,7 +1806,7 @@ body {
   cursor: pointer;
 }
 
-/* Nom de fichier tronqué avec ellipsis si trop long */
+/* Truncated filename with ellipsis if too long */
 .file-name {
   max-width: 250px;
   white-space: nowrap;
@@ -1526,7 +1814,7 @@ body {
   overflow: hidden;
 }
 
-/* Conteneur pour sélectionner un fichier dans un dossier */
+/* Container to select a file from a folder */
 .file-selector {
   padding: 0.875rem 1.125rem;
   margin: 0.5rem 0;
@@ -1538,14 +1826,14 @@ body {
   transition: all 0.2s ease;
 }
 
-/* État hover du sélecteur de fichier */
+/* Hover state of file selector */
 .file-selector:hover {
   background: rgba(255, 255, 255, 0.2);
   box-shadow: 0 2px 3px rgba(0, 0, 0, 0.05);
   border-color: rgba(209, 213, 219, 0.4);
 }
 
-/* Label du sélecteur de fichier (ex: "Fichier sélectionné") */
+/* File selector label (e.g., "Selected file") */
 .file-selector-label {
   display: flex;
   align-items: center;
@@ -1630,7 +1918,7 @@ body {
   background: rgba(156, 163, 175, 0.8);
 }
 
-/* En-tête sticky de la liste des headings dans le panneau source */
+/* Sticky header of headings list in source panel */
 .headings-header {
   display: flex;
   align-items: center;
@@ -1645,14 +1933,14 @@ body {
   border-radius: 0.75rem 0.75rem 0 0;
 }
 
-/* Zone droite de l'en-tête (compteur et bouton fermer) */
+/* Right area of header (counter and close button) */
 .headings-header-right {
   display: flex;
   align-items: center;
   gap: 0.75rem;
 }
 
-/* Titre "Navigation" dans l'en-tête de la liste */
+/* "Navigation" title in list header */
 .headings-title {
   color: #1f2937;
   font-weight: 600;
@@ -1660,7 +1948,7 @@ body {
   letter-spacing: 0.02em;
 }
 
-/* Badge affichant le nombre de headings trouvés */
+/* Badge displaying number of headings found */
 .headings-count {
   color: #6b7280;
   font-size: 0.75rem;
@@ -1670,7 +1958,7 @@ body {
   border-radius: 0.375rem;
 }
 
-/* Bouton pour fermer la navigation dans le panneau */
+/* Button to close navigation in panel */
 .navigation-toggle {
   background: transparent;
   border: 1px solid rgba(229, 231, 235, 0.3);
@@ -1687,11 +1975,11 @@ body {
   height: 1.75rem;
 }
 
-/* État hover du bouton de fermeture : rouge */
+/* Hover state of close button: red */
 .navigation-toggle:hover {
   background: rgba(239, 68, 68, 0.1);
   border-color: rgba(239, 68, 68, 0.3);
-  color: #ef4444;
+  color:#b31f1f;
 }
 
 .navigation-toggle-header {
@@ -1709,15 +1997,20 @@ body {
   top: 1.5rem;
   right: 1.5rem;
   z-index: 10000;
-  min-width: 300px;
+  min-width: 320px;
   max-width: 500px;
   border-radius: 0.75rem;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.1);
-  animation: slideInRight 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-  backdrop-filter: blur(8px);
+  animation: slideInRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  backdrop-filter: blur(10px);
   will-change: transform, opacity;
   transform: translateZ(0);
   backface-visibility: hidden;
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
+.notification:not(.notification-visible) {
+  animation: slideOutRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 .notification-success {
@@ -1734,6 +2027,7 @@ body {
   display: flex;
   align-items: center;
   padding: 1rem 1.25rem;
+  gap: 0.75rem;
 }
 
 .notification-message {
@@ -1755,6 +2049,17 @@ body {
   to {
     transform: translateX(0) translateZ(0);
     opacity: 1;
+  }
+}
+
+@keyframes slideOutRight {
+  from {
+    transform: translateX(0) translateZ(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%) translateZ(0);
+    opacity: 0;
   }
 }
 
@@ -1796,7 +2101,7 @@ body {
   overflow-y: auto;
 }
 
-/* Liste des enfants (headings imbriqués) dans la liste */
+/* List of children (nested headings) in list */
 .heading-children {
   list-style: none;
   padding: 0;
@@ -1809,14 +2114,14 @@ body {
   margin-left: 0.5rem;
 }
 
-/* Élément <li> dans la liste des headings */
+/* <li> element in headings list */
 .headings li {
   margin: 0;
   padding: 0;
   position: relative;
 }
 
-/* Item cliquable d'un heading dans la liste */
+/* Clickable heading item in list */
 .heading-item {
   cursor: pointer;
   padding: 0.625rem 0.75rem;
@@ -1833,7 +2138,7 @@ body {
   border-left: 2px solid transparent;
 }
 
-/* Point indicateur à gauche du heading */
+/* Indicator point to the left of heading */
 .heading-indicator {
   width: 3px;
   height: 3px;
@@ -1843,7 +2148,7 @@ body {
   transition: all 0.2s ease;
 }
 
-/* Conteneur du contenu du heading (numéro + texte) */
+/* Heading content container (number + text) */
 .heading-content {
   display: flex;
   align-items: center;
@@ -1852,7 +2157,7 @@ body {
   min-width: 0;
 }
 
-/* Numéro de ligne à droite du texte */
+/* Line number to the right of text */
 .heading-number {
   font-size: 0.7rem;
   color: #9ca3af;
@@ -1863,7 +2168,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Texte du heading (titre de section) */
+/* Heading text (section title) */
 .heading-text {
   flex: 1;
   overflow: hidden;
@@ -1995,13 +2300,18 @@ textarea {
   padding: 0.875rem;
   border: 1px solid rgba(209, 213, 219, 0.2);
 
-  /* zones de texte très transparentes pour voir le rafale */
+  /* very transparent text areas to see rafale */
 
   background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(2px);
   color: #111827;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    "Liberation Mono", "Courier New", monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco,
+    "Cascadia Mono", "Cascadia Code",
+    "Segoe UI Mono",
+    Consolas,
+    "Lucida Console",
+    "Courier New",
+    monospace;
   font-size: 0.9rem;
   line-height: 1.6;
   transition: all 0.2s ease;
@@ -2022,6 +2332,13 @@ textarea:focus {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25), inset 0 1px 1px rgba(0, 0, 0, 0.03);
   background: rgba(255, 255, 255, 0.15);
+}
+
+/* No focus highlight on result when source is empty */
+.panel.result-no-source textarea:focus {
+  border-color: rgba(209, 213, 219, 0.2);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.03);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 textarea::placeholder {
@@ -2106,32 +2423,100 @@ button:disabled:hover {
    PIED DE PAGE (FOOTER)
    ============================================ */
 
-/* Barre de pied de page avec version et auteur */
+/* Barre de pied de page avec version et licence */
 .footer {
-  padding: 0.75rem 2rem 1.25rem;
-  font-size: 0.8rem;
+  padding: 1rem 2rem;
+  font-size: 0.8125rem;
   color: #6b7280;
-  border-top: 1px solid rgba(229, 231, 235, 0.2);
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(3px);
+  border-top: 1px solid rgba(229, 231, 235, 0.3);
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  backdrop-filter: blur(8px);
+  position: relative;
+  margin-top: auto;
+}
+
+.footer-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.footer-copyright,
+.footer-license-info {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  position: relative;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.footer-brand {
+  font-weight: 600;
+  color: rgba(107, 114, 128, 0.95);
+  letter-spacing: 0.025em;
 }
 
 .footer-version {
   font-weight: 500;
-  color: rgba(107, 114, 128, 0.9);
+  color: rgba(107, 114, 128, 0.85);
+  font-size: 0.8125rem;
+  padding: 0.125rem 0.5rem;
+  background: rgba(107, 114, 128, 0.1);
+  border-radius: 0.25rem;
   letter-spacing: 0.02em;
 }
 
-.footer-author {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+.footer-separator {
+  color: rgba(107, 114, 128, 0.4);
+  font-weight: 300;
+  margin: 0 0.125rem;
+}
+
+.footer-license {
   font-weight: 500;
   color: rgba(107, 114, 128, 0.9);
+  letter-spacing: 0.01em;
+}
+
+.footer-note {
+  font-weight: 400;
+  color: rgba(107, 114, 128, 0.7);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.footer-author {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.25rem;
+}
+
+.footer-author-text {
+  font-weight: 400;
+  color: rgba(107, 114, 128, 0.75);
+  font-size: 0.75rem;
+  letter-spacing: 0.01em;
+}
+
+/* Responsive: adjustments for small screens */
+@media (max-width: 768px) {
+  .footer {
+    padding: 0.875rem 1.5rem;
+  }
+  
+  .footer-content {
+    gap: 0.625rem;
+  }
+  
+  .footer-copyright,
+  .footer-license-info {
+    flex-wrap: wrap;
+    text-align: center;
+  }
 }
 
 /* Modale de confirmation */
@@ -2204,6 +2589,7 @@ button:disabled:hover {
   display: flex;
   gap: 0.75rem;
   width: 100%;
+  align-items: stretch;
 }
 
 .modal-buttons button {
@@ -2211,13 +2597,14 @@ button:disabled:hover {
   padding: 0.625rem 1.25rem;
   font-size: 0.9rem;
   font-weight: 500;
+  justify-content: center;
 }
 
 /* ============================================
-   RESPONSIVE (MÉDIAS QUERIES)
+   RESPONSIVE (MEDIA QUERIES)
    ============================================ */
 
-/* Styles pour les écrans de petite taille */
+/* Styles for small screens */
 @media (max-width: 900px) {
   .grid {
     padding-inline: 1rem;
@@ -2241,6 +2628,696 @@ button:disabled:hover {
     padding: 1.5rem;
     max-width: 90%;
   }
+}
+
+/* ============================================
+   LOADING SPINNER AND PROGRESS BAR ANIMATIONS
+   ============================================ */
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.spinner {
+  display: inline-block;
+}
+
+.progress-bar {
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  animation: shimmer 3s linear infinite;
+}
+
+/* ============================================
+   HistoryModalV2 – conversion history window
+   Visual style aligned with navigation window
+   ============================================ */
+
+.history-modal-v2-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: history-modal-v2-fade-in 0.2s ease-out;
+  cursor: default;
+}
+
+@keyframes history-modal-v2-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.history-modal-v2-panel {
+  width: 100%;
+  max-width: 500px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(229, 231, 235, 0.25);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  user-select: none;
+}
+
+.history-modal-v2-panel.history-modal-v2-window {
+  animation: none;
+  transition: box-shadow 0.2s ease;
+}
+
+.history-modal-v2-panel.history-modal-v2-dragging {
+  transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.3);
+  cursor: move;
+}
+
+.history-modal-v2-panel.history-modal-v2-resizing {
+  transition: box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: width, height;
+}
+
+.history-modal-v2-panel.history-modal-v2-minimized {
+  height: auto;
+  max-height: none;
+}
+
+@keyframes history-modal-v2-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Header: same look as navigation-window-header */
+.history-modal-v2-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.3);
+  flex-shrink: 0;
+}
+
+.history-modal-v2-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.history-modal-v2-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #1f2937;
+  letter-spacing: 0.02em;
+}
+
+/* Count badge: same as navigation-window-count */
+.history-modal-v2-count {
+  font-size: 0.75rem;
+  color: #3b82f6;
+  padding: 0.25rem 0.625rem;
+  background: rgba(59, 130, 246, 0.15);
+  border-radius: 999px;
+  font-weight: 600;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  flex-shrink: 0;
+}
+
+.history-modal-v2-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.history-modal-v2-header-draggable {
+  cursor: move;
+  user-select: none;
+}
+
+.history-modal-v2-header-draggable:active {
+  cursor: grabbing;
+}
+
+/* Window control buttons (minimize, maximize, close, restore) */
+.history-modal-v2-btn {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.history-modal-v2-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #111827;
+}
+
+.history-modal-v2-btn-minimize:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+.history-modal-v2-btn-maximize:hover {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.history-modal-v2-btn-close:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #b31f1f;
+}
+
+.history-modal-v2-btn-restore:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+.history-modal-v2-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 1.25rem;
+  border-bottom: 1px solid rgba(229, 231, 235, 0.2);
+  flex-shrink: 0;
+}
+
+.history-modal-v2-btn-clear {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 0.375rem;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.history-modal-v2-btn-clear:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #b31f1f;
+}
+
+/* List container: same as file-navigation-container in navigation window */
+.history-modal-v2-list {
+  flex: 1;
+  min-height: 0;
+  margin: 1rem 1.25rem;
+  padding: 0.5rem;
+  overflow-y: auto;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(229, 231, 235, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(209, 213, 219, 0.5) transparent;
+}
+
+.history-modal-v2-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.history-modal-v2-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-modal-v2-list::-webkit-scrollbar-thumb {
+  background: rgba(209, 213, 219, 0.5);
+  border-radius: 3px;
+}
+
+.history-modal-v2-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.7);
+}
+
+.history-modal-v2-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.history-modal-v2-empty-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+  color: #9ca3af;
+}
+
+.history-modal-v2-empty-title {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.history-modal-v2-empty-desc {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #9ca3af;
+}
+
+/* Row: same structure as file-nav-link – left border, hover blue */
+.history-modal-v2-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  background: transparent;
+  color: #4b5563;
+  font-size: 0.8125rem;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: left;
+}
+
+.history-modal-v2-row:hover {
+  background: rgba(59, 130, 246, 0.08);
+  border-left-color: #3b82f6;
+  color: #111827;
+}
+
+.history-modal-v2-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-modal-v2-row-primary {
+  font-weight: 500;
+  color: inherit;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.history-modal-v2-row-primary .history-modal-v2-arrow {
+  margin: 0 0.25rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.history-modal-v2-row:hover .history-modal-v2-row-primary .history-modal-v2-arrow {
+  color: #60a5fa;
+}
+
+.history-modal-v2-row-secondary {
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+.history-modal-v2-row:hover .history-modal-v2-row-secondary {
+  color: #6b7280;
+}
+
+.history-modal-v2-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-shrink: 0;
+}
+
+.history-modal-v2-badge {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+}
+
+.history-modal-v2-badge--success {
+  background: rgba(34, 197, 94, 0.15);
+  color: #059669;
+}
+
+.history-modal-v2-badge--error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b31f1f;
+}
+
+.history-modal-v2-badge--unknown {
+  background: rgba(156, 163, 175, 0.15);
+  color: #6b7280;
+}
+
+.history-modal-v2-repeat {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.12);
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+}
+
+.history-modal-v2-footer {
+  padding: 0.5rem 1.25rem;
+  border-top: 1px solid rgba(229, 231, 235, 0.2);
+  font-size: 0.75rem;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+/* Resize handle at bottom-right (when not minimized/maximized) */
+.history-modal-v2-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 0%, transparent 40%, rgba(156, 163, 175, 0.3) 40%, rgba(156, 163, 175, 0.3) 45%, transparent 45%, transparent 55%, rgba(156, 163, 175, 0.3) 55%, rgba(156, 163, 175, 0.3) 60%, transparent 60%);
+  z-index: 10;
+  border-bottom-right-radius: 0.75rem;
+}
+
+.history-modal-v2-resize-handle:hover {
+  background: linear-gradient(135deg, transparent 0%, transparent 40%, rgba(59, 130, 246, 0.5) 40%, rgba(59, 130, 246, 0.5) 45%, transparent 45%, transparent 55%, rgba(59, 130, 246, 0.5) 55%, rgba(59, 130, 246, 0.5) 60%, transparent 60%);
+}
+
+/* ============================================
+   DARK THEME: full UI overrides (modals, panels, taskbar, content)
+   ============================================ */
+:root[data-theme="dark"] .settings-overlay {
+  background: var(--theme-modal-overlay);
+}
+:root[data-theme="dark"] .settings-panel {
+  background: var(--theme-modal-bg);
+  border-color: var(--theme-modal-border);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+:root[data-theme="dark"] .settings-panel-header {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.18) 0%, rgba(99, 102, 241, 0.1) 100%);
+  border-bottom-color: var(--theme-modal-border);
+}
+:root[data-theme="dark"] .settings-panel-header h3 {
+  color: var(--theme-modal-text);
+}
+:root[data-theme="dark"] .settings-close-btn {
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .settings-close-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+:root[data-theme="dark"] .settings-panel-content {
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+:root[data-theme="dark"] .settings-panel-content::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+}
+:root[data-theme="dark"] .settings-panel-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
+:root[data-theme="dark"] .settings-param-section {
+  background: rgba(30, 41, 59, 0.6);
+  border-color: var(--theme-modal-border);
+}
+:root[data-theme="dark"] .settings-param-section button.settings-param-header {
+  color: var(--theme-modal-text);
+}
+:root[data-theme="dark"] .settings-param-section button.settings-param-header:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+:root[data-theme="dark"] .settings-param-section .settings-param-body {
+  border-top-color: var(--theme-modal-border);
+}
+:root[data-theme="dark"] .settings-param-section .settings-param-arrow {
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .settings-param-reset-btn {
+  border-color: var(--theme-modal-text-muted);
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .settings-param-reset-btn:hover {
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+}
+:root[data-theme="dark"] .settings-param-body .option-label {
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .settings-param-body .option-input,
+:root[data-theme="dark"] .settings-param-body .option-select {
+  background: rgba(30, 41, 59, 0.7);
+  border-color: var(--theme-modal-border);
+  color: var(--theme-modal-text);
+}
+:root[data-theme="dark"] .settings-param-body .option-checkbox-label {
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .settings-section h4 {
+  color: var(--theme-modal-text);
+}
+:root[data-theme="dark"] .subtitle {
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .badge {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: var(--theme-modal-border);
+  color: var(--theme-modal-text-muted);
+}
+
+/* Navigation window – dark */
+:root[data-theme="dark"] .navigation-window {
+  background: var(--theme-modal-bg);
+  border-color: var(--theme-modal-border);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+:root[data-theme="dark"] .navigation-window-header {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.18) 0%, rgba(99, 102, 241, 0.1) 100%);
+  border-bottom-color: var(--theme-modal-border);
+}
+:root[data-theme="dark"] .navigation-window-title span:first-child {
+  color: var(--theme-modal-text);
+}
+:root[data-theme="dark"] .navigation-window-btn {
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .navigation-window-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--theme-modal-text);
+}
+
+/* Taskbar – dark */
+:root[data-theme="dark"] .taskbar {
+  background: rgba(15, 23, 42, 0.92);
+  border-top-color: var(--theme-modal-border);
+}
+:root[data-theme="dark"] .taskbar-item {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: var(--theme-modal-border);
+  color: var(--theme-modal-text);
+}
+:root[data-theme="dark"] .taskbar-item:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+:root[data-theme="dark"] .taskbar-item span:last-child {
+  color: var(--theme-modal-text);
+}
+
+/* History modal – dark */
+:root[data-theme="dark"] .history-modal-v2-overlay {
+  background: var(--theme-modal-overlay);
+}
+:root[data-theme="dark"] .history-modal-v2-panel {
+  background: var(--theme-modal-bg);
+  border-color: var(--theme-modal-border);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+:root[data-theme="dark"] .history-modal-v2-header {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.18) 0%, rgba(99, 102, 241, 0.1) 100%);
+  border-bottom-color: var(--theme-modal-border);
+}
+:root[data-theme="dark"] .history-modal-v2-title {
+  color: var(--theme-modal-text);
+}
+:root[data-theme="dark"] .history-modal-v2-btn {
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .history-modal-v2-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--theme-modal-text);
+}
+:root[data-theme="dark"] .history-modal-v2-toolbar {
+  border-bottom-color: var(--theme-modal-border);
+}
+:root[data-theme="dark"] .history-modal-v2-btn-clear {
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .history-modal-v2-list {
+  background: rgba(30, 41, 59, 0.5);
+  border-color: var(--theme-modal-border);
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+:root[data-theme="dark"] .history-modal-v2-list::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+}
+:root[data-theme="dark"] .history-modal-v2-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
+:root[data-theme="dark"] .history-modal-v2-empty-title {
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .history-modal-v2-empty-desc {
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .history-modal-v2-row:hover {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--theme-modal-text);
+}
+:root[data-theme="dark"] .history-modal-v2-row-secondary {
+  color: var(--theme-modal-text-muted);
+}
+:root[data-theme="dark"] .history-modal-v2-row:hover .history-modal-v2-row-secondary {
+  color: #94a3b8;
+}
+:root[data-theme="dark"] .history-modal-v2-footer {
+  border-top-color: var(--theme-modal-border);
+  color: var(--theme-modal-text-muted);
+}
+
+/* Content panels (source/result) – dark */
+:root[data-theme="dark"] .panel {
+  background: var(--theme-panel-bg);
+  border-color: var(--theme-panel-border);
+}
+:root[data-theme="dark"] .panel:hover {
+  background: rgba(30, 41, 59, 0.6);
+}
+:root[data-theme="dark"] .panel-header h2,
+:root[data-theme="dark"] .panel-header-source h2,
+:root[data-theme="dark"] .panel-header-result h2 {
+  color: var(--theme-text);
+}
+:root[data-theme="dark"] .result-textarea,
+:root[data-theme="dark"] .source-textarea {
+  background: rgba(30, 41, 59, 0.5);
+  border-color: var(--theme-panel-border);
+  color: var(--theme-text);
+}
+:root[data-theme="dark"] .panel.result-locked .result-textarea {
+  background: rgba(30, 41, 59, 0.4);
+}
+:root[data-theme="dark"] .panel.result-editing .result-textarea {
+  background: rgba(30, 41, 59, 0.55);
+}
+:root[data-theme="dark"] .file-nav-link {
+  color: var(--theme-text);
+}
+:root[data-theme="dark"] .file-nav-link:hover {
+  color: var(--theme-text);
+  background: rgba(59, 130, 246, 0.15);
+}
+:root[data-theme="dark"] .panel-toolbar {
+  color: var(--theme-text-muted);
+}
+:root[data-theme="dark"] .result-zone-locked {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.25);
+}
+:root[data-theme="dark"] .result-zone-editing {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.25);
+}
+:root[data-theme="dark"] .status-message {
+  color: var(--theme-text-muted);
+}
+
+/* Footer – dark */
+:root[data-theme="dark"] .footer {
+  background: linear-gradient(to top, rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.6));
+  border-top-color: var(--theme-modal-border);
+  color: var(--theme-text-muted);
+}
+:root[data-theme="dark"] .footer-brand {
+  color: var(--theme-text-muted);
+}
+:root[data-theme="dark"] .footer-version {
+  color: var(--theme-text-muted);
+  background: rgba(30, 41, 59, 0.7);
+}
+:root[data-theme="dark"] .footer-separator {
+  color: rgba(148, 163, 184, 0.5);
+}
+:root[data-theme="dark"] .footer-license {
+  color: var(--theme-text-muted);
+}
+:root[data-theme="dark"] .footer-note {
+  color: rgba(148, 163, 184, 0.8);
+}
+:root[data-theme="dark"] .footer-author-text {
+  color: var(--theme-text-muted);
 }
 
 
