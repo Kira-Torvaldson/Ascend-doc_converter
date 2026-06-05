@@ -13,6 +13,15 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.4.9 (2026-06-05)
+
+#### Added
+- `npm run check:ascend:ci` — single validation chain for CI (version sync, e2e, golden, roundtrip, abuse).
+
+#### Changed
+- CI job `ascend` simplified to `check:ascend:ci` with root `npm ci` for Mocha abuse tests.
+- Version alignment across frontend/backend packages, lockfiles, README badge, and app metadata.
+
 ### 0.0.1.4.8 (2026-06-03)
 
 #### Added
