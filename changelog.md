@@ -13,6 +13,16 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.5 (2026-06-05)
+
+#### Added
+- `npm run check:docker:backend` — build `container/backend/Dockerfile` and verify Pandoc in the image.
+- CI job `docker` — backend image build gate on every push/PR.
+
+#### Changed
+- Version alignment across frontend/backend packages, lockfiles, README badge, and app metadata.
+- Runbook and roadmap updated for Docker build validation before `0.0.2.0` beta.
+
 ### 0.0.1.4.9 (2026-06-05)
 
 #### Added

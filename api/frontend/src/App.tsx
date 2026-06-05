@@ -3195,7 +3195,7 @@ function App() {
                         </p>
                       </div>
                       <div className="option-group">
-                        <label className="option-label">Nouveautés v0.0.1.4.9</label>
+                        <label className="option-label">Nouveautés v0.0.1.5</label>
                         <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8125rem', color: '#64748b', lineHeight: 1.6 }}>
                           <li>Stabilisation des états “document modifié” (conversion, restauration, effacement)</li>
                           <li>Blocage de conversion pendant l'édition du résultat</li>

@@ -2,7 +2,7 @@
 
 Guide pour démarrer la stack, diagnostiquer les conversions et valider une release en local ou Docker.
 
-**Version documentée :** `0.0.1.4.9` (backend / frontend alignés via `npm run check:version`).
+**Version documentée :** `0.0.1.5` (backend / frontend alignés via `npm run check:version`).
 
 ---
 
@@ -71,6 +71,7 @@ npm --prefix api/backend run test:smoke
 ```bash
 npm run check:ascend          # rapide (local)
 npm run check:ascend:ci       # complet (identique CI GitHub)
+npm run check:docker:backend  # build image backend + pandoc (identique CI job docker)
 # ou détaillé :
 npm run check:version
 npm --prefix api/backend run test:golden
