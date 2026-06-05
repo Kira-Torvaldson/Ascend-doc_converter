@@ -68,3 +68,11 @@ jobs:
       run: npm --prefix api/frontend ci
     - name: Ascend full validation (check:ascend:ci)
       run: npm run check:ascend:ci
+  docker:
+    needs: activate
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Build and verify backend Docker image
+      run: npm run check:docker:backend

@@ -6,15 +6,23 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.4.9 (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** Patch stabilisation — clôture série `0.0.1.4.x` avant beta  
-**Focus:** `check:ascend:ci` en CI, validation unifiée
+**Version:** 0.0.1.5 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** Patch industrialisation — validation Docker avant beta  
+**Focus:** build image backend en CI, pont vers `0.0.2.0`
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.4.9 (Current — Ascend)
+### 0.0.1.5 (Current — Ascend)
+
+**Delivered (ASC-017 → ASC-018):**
+- `check:docker:backend` et job CI `docker` (build + Pandoc dans l’image)
+- Notes release, changelog, axes 0.0.1.5, runbook
+
+**Docs:** `doc/specs/axes-ameliorations-0.0.1.5.md`
+
+### 0.0.1.4.9
 
 **Delivered (ASC-015 → ASC-016):**
 - `check:ascend:ci` et CI `ascend` unifiée (root `npm ci` + une commande)
