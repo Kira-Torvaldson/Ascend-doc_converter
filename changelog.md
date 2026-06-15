@@ -13,6 +13,23 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.6 (2026-06-15)
+
+#### Added
+- Default page background SVG bundled with the frontend; optional `rafale.jpg` from `api/backend/public/`.
+- UI components `ConversionLoadingBanner` and `HeaderStatusPill` (conversion status in header).
+- `api/backend/public/README.md` — static asset setup guide.
+
+#### Changed
+- Header layout (logo, title, conversion status pill); harmonized panel buttons and loading banners.
+- Settings panel texts use theme-aware CSS classes; release notes updated in UI.
+- Runbook and `container/README.md` — Docker client version, WSL troubleshooting, CORS dev note.
+- CORS middleware: allow any `http://localhost` / `127.0.0.1` origin in development (Vite port fallback).
+
+#### Fixed
+- Page background not rendering when `rafale.jpg` was missing (CSS variable `url()` resolution).
+- Broken `.settings-field-error` CSS rule (PostCSS parse error).
+
 ### 0.0.1.5 (2026-06-05)
 
 #### Added

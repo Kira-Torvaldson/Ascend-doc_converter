@@ -47,7 +47,15 @@ An API cannot be made “unmodifiable” in the browser, but you can block most 
 
 ## Build & start
 
-From the repository root:
+**Prerequisite:** Docker client API **≥ 1.44** (Docker Desktop 4.25+). On WSL, avoid the legacy `docker.io` 20.10 package — use Docker Desktop integration or install current Docker CE; see [`doc/guides/operations/runbook.md`](../doc/guides/operations/runbook.md#docker-sous-wsl-client-trop-ancien).
+
+**CI-equivalent backend check** (from repo root):
+
+```bash
+npm run check:docker:backend
+```
+
+Full stack:
 
 ```bash
 cd container

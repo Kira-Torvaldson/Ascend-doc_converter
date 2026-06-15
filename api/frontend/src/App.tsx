@@ -59,9 +59,11 @@ import {
 } from "./converters";
 import { FormatType, ConversionHistoryItem } from "./types";
 import { HistoryModalV2, useNewHistoryModal } from "./components/HistoryModalV2";
+import { ConversionLoadingBanner, HeaderStatusPill } from "./components";
 import { removeExperimentalTag } from "./utils/asciidocHelpers";
 import packageJson from "../package.json";
 import { fetchConversionLimits } from "./converters/api";
+import defaultLogo from "./assets/ascend-logo.svg";
 
 type UserPreferences = { displayName: string; organization: string; defaultLanguage: 'fr' | 'en' | 'es' | 'de' };
 type SettingsValidationErrors = { displayName?: string; organization?: string };
@@ -199,11 +201,32 @@ function loadUserSettings(): UserSettings {
 
 function App() {
   const [maxSourceSizeMb, setMaxSourceSizeMb] = useState(DEFAULT_MAX_SOURCE_SIZE_MB);
+  const [logoSrc, setLogoSrc] = useState("/public/ascend-logo.png");
 
   useEffect(() => {
     fetchConversionLimits().then((limits) => {
       setMaxSourceSizeMb(limits.maxSourceUiMb || limits.maxInputSizeMb || DEFAULT_MAX_SOURCE_SIZE_MB);
     });
+  }, []);
+
+  /** Fond photo rafale.jpg (api/backend/public/) si disponible ; sinon SVG embarqué (styles.css). */
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      document.documentElement.classList.add("page-custom-bg");
+    };
+    img.onerror = () => {
+      document.documentElement.classList.remove("page-custom-bg");
+    };
+    img.src = "/public/rafale.jpg";
+  }, []);
+
+  /** Logo custom (api/backend/public/ascend-logo.png) si disponible. */
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => setLogoSrc("/public/ascend-logo.png");
+    img.onerror = () => setLogoSrc(defaultLogo);
+    img.src = "/public/ascend-logo.png";
   }, []);
   // ==========================================================================
   // STATES: PANEL CONTENT
@@ -769,6 +792,13 @@ function App() {
       return () => clearTimeout(timer);
     }
   }, [notification]);
+
+  /** Réinitialise l'indicateur de succès dans l'en-tête après quelques secondes. */
+  useEffect(() => {
+    if (conversionUiState !== 'success') return;
+    const timer = setTimeout(() => setConversionUiState('idle'), 4000);
+    return () => clearTimeout(timer);
+  }, [conversionUiState]);
 
   // ==========================================================================
   // DOM REFERENCES
@@ -2446,13 +2476,9 @@ function App() {
     };
 
     return (
-    <section className="panel" style={{
-      border: isDeleting ? "2px solid #3b82f6" : undefined,
-      background: isDeleting ? "rgba(59, 130, 246, 0.05)" : undefined,
-      transition: "all 0.2s ease"
-    }}>
+    <section className={`panel${isDeleting ? ' panel-deleting' : ''}`}>
       <div className="panel-header">
-        <h2>{title}{sourceModified && <span className="panel-modified-badge" title="Document modifié"> •</span>}</h2>
+        <h2>{title}{sourceModified && <span className="panel-modified-badge" title="Document modifié depuis la dernière conversion">modifié</span>}</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <label className="file-input-label">
             <span>📄</span>
@@ -2475,36 +2501,22 @@ function App() {
             <button
               onClick={onClear}
               disabled={!value.trim()}
-              style={{
-                fontSize: "0.85rem",
-                padding: "0.4rem 0.9rem",
-                background: "#ef4444"
-              }}
+              className="panel-header-btn panel-header-btn--danger"
               title={`Effacer le contenu ${title}`}
             >
-              🗑️ 
+              🗑️
             </button>
           )}
           <button
             onClick={onConvert}
             disabled={loading || !value.trim() || !canConvert}
+            className={`panel-header-btn panel-header-btn--convert${loading ? ' is-loading' : ''}`}
             title={!canConvert ? "Les formats source et destination doivent être différents" : ""}
-            style={{
-              position: "relative",
-              opacity: loading ? 0.7 : 1
-            }}
           >
             {loading ? (
-              <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <div className="spinner" style={{
-                  width: "14px",
-                  height: "14px",
-                  border: "2px solid rgba(255, 255, 255, 0.3)",
-                  borderTop: "2px solid white",
-                  borderRadius: "50%",
-                  animation: "spin 1.2s linear infinite"
-                }}></div>
-                Conversion...
+              <span className="panel-header-btn-convert-label">
+                <span className="panel-header-btn-convert-spinner" aria-hidden="true" />
+                Conversion…
               </span>
             ) : (
               "Convertir"
@@ -2512,68 +2524,13 @@ function App() {
           </button>
         </div>
       </div>
-      {/* Enhanced Loading indicator in source panel */}
-      {loading && (
-        <div style={{
-          padding: "0.875rem",
-          background: "rgba(59, 130, 246, 0.08)",
-          borderRadius: "0.5rem",
-          marginBottom: "0.5rem",
-          border: "1px solid rgba(59, 130, 246, 0.2)",
-          boxShadow: "0 2px 8px rgba(59, 130, 246, 0.1)"
-        }}>
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "0.625rem"
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
-              <div className="spinner" style={{
-                width: "18px",
-                height: "18px",
-                border: "2.5px solid rgba(59, 130, 246, 0.2)",
-                borderTop: "2.5px solid #3b82f6",
-                borderRadius: "50%",
-                animation: "spin 1.2s linear infinite"
-              }}></div>
-              <span style={{ color: "#3b82f6", fontSize: "0.8rem", fontWeight: "600" }}>
-                Conversion en cours...
-              </span>
-            </div>
-          </div>
-          {/* Progress bar */}
-          <div style={{
-            width: "100%",
-            height: "3px",
-            background: "rgba(59, 130, 246, 0.1)",
-            borderRadius: "2px",
-            overflow: "hidden",
-            position: "relative"
-          }}>
-            <div className="progress-bar" style={{
-              height: "100%",
-              background: "linear-gradient(90deg, #3b82f6, #60a5fa, #3b82f6)",
-              backgroundSize: "200% 100%",
-              borderRadius: "2px",
-              animation: "progress 2.5s ease-in-out infinite, shimmer 3s linear infinite",
-              width: "100%"
-            }}></div>
-          </div>
-        </div>
-      )}
+      {loading && <ConversionLoadingBanner compact />}
       <div className="panel-toolbar">
         {currentFileName && (
           <span className="file-name">{currentFileName}</span>
         )}
         {value && (
-          <div style={{ 
-            display: "flex", 
-            gap: "1rem", 
-            fontSize: "0.75rem", 
-            color: "#6b7280",
-            marginLeft: "auto"
-          }}>
+          <div className="text-stats">
             {(() => {
               const stats = getTextStats(value);
               return (
@@ -2796,24 +2753,20 @@ function App() {
     const isEditing = !!resultValue && isEditingResult;
 
     return (
-    <section className={`panel${isLocked ? " result-locked" : isEditing ? " result-editing" : ""}`} style={{
-      border: isDeleting ? "2px solid #3b82f6" : undefined,
-      background: isDeleting ? "rgba(59, 130, 246, 0.05)" : undefined,
-      transition: "all 0.2s ease"
-    }}>
+    <section className={`panel${isLocked ? " result-locked" : isEditing ? " result-editing" : ""}`}>
       <div className="panel-header">
-        <h2>{getFormatTitle(targetFormat)}{resultModified && <span className="panel-modified-badge" title="Document modifié"> •</span>}</h2>
+        <h2>{getFormatTitle(targetFormat)}{resultModified && <span className="panel-modified-badge" title="Résultat modifié depuis la dernière conversion">modifié</span>}</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
           {resultValue && (
             <>
               {isLocked && (
-                <span className="result-zone-state result-zone-locked" role="status" aria-live="polite" title="Verrouillé">
-                  🔒
+                <span className="result-zone-state result-zone-locked" role="status" aria-live="polite" title="Lecture seule — activez l'édition pour modifier">
+                  Verrouillé
                 </span>
               )}
               {isEditing && (
-                <span className="result-zone-state result-zone-editing" role="status" aria-live="polite" title="Edition">
-                  🔓
+                <span className="result-zone-state result-zone-editing" role="status" aria-live="polite" title="Mode édition actif">
+                  Édition
                 </span>
               )}
               <button
@@ -2824,11 +2777,7 @@ function App() {
                     setShowEditModal(true);
                   }
                 }}
-                style={{ 
-                  fontSize: "0.85rem", 
-                  padding: "0.4rem 0.9rem",
-                  background: isEditingResult ? "#ef4444" : "#6b7280"
-                }}
+                className={`panel-header-btn ${isEditingResult ? 'panel-header-btn--danger' : 'panel-header-btn--muted'}`}
                 title={isEditingResult ? "Annuler l'édition" : "Activer l'édition"}
               >
                 {isEditingResult ? "✕" : "✏️"}
@@ -2836,21 +2785,17 @@ function App() {
               {isEditingResult && (
               <button
                   onClick={() => setShowSaveModal(true)}
-                style={{ 
-                  fontSize: "0.85rem", 
-                  padding: "0.4rem 0.9rem",
-                    background: "#10b981"
-                }}
+                className="panel-header-btn panel-header-btn--success"
                   title="Sauvegarder les modifications"
               >
-                  💾 
+                  💾
               </button>
           )}
               {!isEditingResult && (
                 <>
                   <button
                     onClick={handleCopy}
-                    style={{ fontSize: "0.85rem", padding: "0.4rem 0.9rem" }}
+                    className="panel-header-btn panel-header-btn--muted"
                     title="Copier le résultat"
                   >
                     {copied ? "✓ Copié" : "📋"}
@@ -2858,25 +2803,17 @@ function App() {
                   <button
                     onClick={handleExport}
                     disabled={!resultValue.trim()}
-                    style={{ 
-                      fontSize: "0.85rem", 
-                      padding: "0.4rem 0.9rem",
-                      background: "#3b82f6"
-                    }}
+                    className="panel-header-btn panel-header-btn--primary"
                     title="Télécharger le résultat"
                   >
-                    ⬇️ 
+                    ⬇️
                   </button>
                   <button
                     onClick={handleClear}
-                    style={{ 
-                      fontSize: "0.85rem", 
-                      padding: "0.4rem 0.9rem",
-                      background: "#ef4444"
-                    }}
+                    className="panel-header-btn panel-header-btn--danger"
                     title="Effacer le résultat"
                   >
-                    🗑️ 
+                    🗑️
                   </button>
                 </>
               )}
@@ -2884,76 +2821,15 @@ function App() {
           )}
         </div>
       </div>
-      {/* Enhanced Loading indicator */}
-      {loading && (
-        <div style={{
-          padding: "1rem",
-          background: "rgba(59, 130, 246, 0.08)",
-          borderRadius: "0.5rem",
-          marginBottom: "0.5rem",
-          border: "1px solid rgba(59, 130, 246, 0.2)",
-          boxShadow: "0 2px 8px rgba(59, 130, 246, 0.1)"
-        }}>
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "0.75rem"
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <div className="spinner" style={{
-                width: "20px",
-                height: "20px",
-                border: "3px solid rgba(59, 130, 246, 0.2)",
-                borderTop: "3px solid #3b82f6",
-                borderRadius: "50%",
-                animation: "spin 1.2s linear infinite"
-              }}></div>
-              <span style={{ color: "#3b82f6", fontSize: "0.875rem", fontWeight: "600" }}>
-                Conversion en cours...
-              </span>
-            </div>
-            <span style={{
-              color: "#6b7280",
-              fontSize: "0.75rem",
-              fontFamily: "monospace"
-            }}>
-              {status || "Traitement..."}
-            </span>
-          </div>
-          {/* Progress bar */}
-          <div style={{
-            width: "100%",
-            height: "4px",
-            background: "rgba(59, 130, 246, 0.1)",
-            borderRadius: "2px",
-            overflow: "hidden",
-            position: "relative"
-          }}>
-            <div className="progress-bar" style={{
-              height: "100%",
-              background: "linear-gradient(90deg, #3b82f6, #60a5fa, #3b82f6)",
-              backgroundSize: "200% 100%",
-              borderRadius: "2px",
-              animation: "progress 2.5s ease-in-out infinite, shimmer 3s linear infinite",
-              width: "100%"
-            }}></div>
-          </div>
-        </div>
-      )}
+      {loading && <ConversionLoadingBanner status={status} />}
       {/* Statistics toolbar for result panel */}
       {resultValue && (
-        <div className="panel-toolbar" style={{ 
-          display: "flex", 
+        <div className="panel-toolbar" style={{
+          display: "flex",
           justifyContent: "flex-end",
           padding: "0.5rem 0"
         }}>
-          <div style={{ 
-            display: "flex", 
-            gap: "1rem", 
-            fontSize: "0.75rem", 
-            color: "#6b7280"
-          }}>
+          <div className="text-stats">
             {(() => {
               const stats = getTextStats(resultValue);
               return (
@@ -3038,21 +2914,7 @@ function App() {
             */}
             <button
               onClick={() => setNotification(null)}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "white",
-                cursor: "pointer",
-                padding: "0.25rem",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: "0.25rem",
-                opacity: 0.8,
-                transition: "opacity 0.2s"
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.opacity = "1"}
-              onMouseLeave={(e) => e.currentTarget.style.opacity = "0.8"}
+              className="notification-close-btn"
               title="Fermer"
             >
               ✕
@@ -3062,17 +2924,18 @@ function App() {
       )}
       <header className="header">
         <div className="header-main">
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          <div className="header-brand">
             <img
-              src="/public/ascend-logo.png"
+              src={logoSrc}
               alt="Logo Ascend"
-              style={{
-                width: 130,
-                height: 130,
-                borderRadius: 999,
-                objectFit: "cover",
-              }}
+              className="header-logo"
+              onError={() => setLogoSrc(defaultLogo)}
             />
+            <div className="header-brand-text">
+              <span className="header-app-title">Ascend</span>
+              <span className="header-app-tagline">Convertisseur AsciiDoc ↔ Markdown</span>
+              <HeaderStatusPill state={conversionUiState} status={status} />
+            </div>
           </div>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             <button
@@ -3084,20 +2947,7 @@ function App() {
             >
               📜
               {conversionHistory.length > 0 && (
-                <span style={{
-                  position: "absolute",
-                  top: "-4px",
-                  right: "-4px",
-                  background: "#ef4444",
-                  color: "white",
-                  borderRadius: "50%",
-                  width: "18px",
-                  height: "18px",
-                  fontSize: "0.7rem",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}>
+                <span className="history-count-badge">
                   {conversionHistory.length > 9 ? "9+" : conversionHistory.length}
                 </span>
               )}
@@ -3186,20 +3036,21 @@ function App() {
                     <div className="settings-param-body">
                       <div className="option-group">
                         <label className="option-label">Version</label>
-                        <div style={{ fontSize: '0.875rem', color: '#64748b' }}>v{packageJson.version}</div>
+                        <div className="settings-muted">v{packageJson.version}</div>
                       </div>
                       <div className="option-group">
                         <label className="option-label">À propos</label>
-                        <p style={{ margin: 0, fontSize: '0.8125rem', color: '#64748b', lineHeight: 1.5 }}>
-                          Ascend — Convertisseur de documents (AsciiDoc, Markdown, etc.). Thèmes Par défaut et Sombre, paramètres appliqués à la demande, historique et options d’interface.
+                        <p className="settings-about-text">
+                          Ascend — Convertisseur de documents (AsciiDoc, Markdown, etc.). Thèmes clair et sombre, historique, validation Docker en CI et messages d'erreur structurés.
                         </p>
                       </div>
                       <div className="option-group">
-                        <label className="option-label">Nouveautés v0.0.1.5</label>
-                        <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8125rem', color: '#64748b', lineHeight: 1.6 }}>
-                          <li>Stabilisation des états “document modifié” (conversion, restauration, effacement)</li>
-                          <li>Blocage de conversion pendant l'édition du résultat</li>
-                          <li>Messages de confirmation clarifiés et cohérence version Front/Back</li>
+                        <label className="option-label">Nouveautés v0.0.1.6</label>
+                        <ul className="settings-release-list">
+                          <li>CORS dev : ports Vite alternatifs (5174+) acceptés en local</li>
+                          <li>Fond d'écran : SVG par défaut + photo <code>rafale.jpg</code> si présente</li>
+                          <li>En-tête : titre, indicateur d'état de conversion, bannières de chargement</li>
+                          <li>Badges « modifié », « Verrouillé » / « Édition » et paramètres lisibles en thème sombre</li>
                         </ul>
                       </div>
                     </div>
@@ -3214,13 +3065,13 @@ function App() {
                     <div className="settings-param-body">
                       <div className="option-group">
                         <label className="option-label">Nom / pseudo</label>
-                        <input type="text" value={userSettings.profile.displayName} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, displayName: e.target.value } }))} className="option-input" placeholder="Nom ou pseudo" style={settingsErrors.displayName ? { borderColor: '#ef4444', outlineColor: '#ef4444' } : undefined} />
-                        {settingsErrors.displayName && <span style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '0.25rem' }} role="alert">{settingsErrors.displayName}</span>}
+                        <input type="text" value={userSettings.profile.displayName} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, displayName: e.target.value } }))} className={`option-input${settingsErrors.displayName ? ' settings-input-invalid' : ''}`} placeholder="Nom ou pseudo" />
+                        {settingsErrors.displayName && <span className="settings-field-error" role="alert">{settingsErrors.displayName}</span>}
                       </div>
                       <div className="option-group">
                         <label className="option-label">Organisation</label>
-                        <input type="text" value={userSettings.profile.organization} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, organization: e.target.value } }))} className="option-input" placeholder="Organisation" style={settingsErrors.organization ? { borderColor: '#ef4444', outlineColor: '#ef4444' } : undefined} />
-                        {settingsErrors.organization && <span style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '0.25rem' }} role="alert">{settingsErrors.organization}</span>}
+                        <input type="text" value={userSettings.profile.organization} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, organization: e.target.value } }))} className={`option-input${settingsErrors.organization ? ' settings-input-invalid' : ''}`} placeholder="Organisation" />
+                        {settingsErrors.organization && <span className="settings-field-error" role="alert">{settingsErrors.organization}</span>}
                       </div>
                       <div className="option-group">
                         <label className="option-label">Signature</label>
