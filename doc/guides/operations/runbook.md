@@ -13,6 +13,7 @@ Guide pour démarrer la stack, diagnostiquer les conversions et valider une rele
 | Node.js | 20 (CI Ascend), 16+ (package racine `downdoc`) | Dev + tests |
 | npm | 9+ | Workspaces `api/backend`, `api/frontend` |
 | Pandoc | 3.x | Conversions Markdown → AsciiDoc (e2e, golden, prod Docker) |
+| Docker (optionnel) | Client API **≥ 1.44** (Docker Desktop 4.25+) | `check:docker:backend`, `docker compose` |
 
 **Installation Pandoc (exemples) :**
 
@@ -40,7 +41,7 @@ npm --prefix api/frontend ci
 npm run check:version
 ```
 
-Attendu : message de succès, versions `api/backend` et `api/frontend` identiques (ex. `0.0.1.4.7`).
+Attendu : message de succès, versions `api/backend` et `api/frontend` identiques (ex. `0.0.1.5`).
 
 ### 3. Lancer front + back
 
@@ -190,11 +191,15 @@ En production avec `API_KEY` défini, fournir `X-API-Key` identique.
 
 | Commande | Rôle |
 |----------|------|
-| `npm run release:bump -- 0.0.1.4.8` | Bump version (7 zones) |
+| `npm run release:bump -- 0.0.1.5` | Bump version (7 zones) |
 | `npm run check:version` | Garde-fou cohérence |
-| `node scripts/release-bump.js --dry-run 0.0.1.4.8` | Simulation sans écriture |
+| `node scripts/release-bump.js --dry-run 0.0.1.5` | Simulation sans écriture |
+| `npm run check:docker:backend` | Build image backend + vérif. Pandoc (job CI `docker`) |
 
-Workflow GitHub : job `ascend` (Node 20, Pandoc, golden, roundtrip, abuse) — voir `.github/workflows/ci.yml`.
+Workflow GitHub (`.github/workflows/ci.yml`) :
+
+- job **`ascend`** — Node 20, Pandoc, golden, roundtrip, e2e, abuse (`check:ascend:ci`)
+- job **`docker`** — build `container/backend/Dockerfile` + `pandoc --version` (`check:docker:backend`)
 
 ---
 
@@ -206,13 +211,29 @@ Workflow GitHub : job `ascend` (Node 20, Pandoc, golden, roundtrip, abuse) — v
 | 413 / `PAYLOAD_TOO_LARGE` | Fichier > limite | Vérifier `MAX_INPUT_SIZE_MB` et `NGINX_CLIENT_MAX_BODY_SIZE` |
 | 429 | Rate limit | Attendre 15 min ou tester depuis une autre IP |
 | Pandoc introuvable | Binaire absent | Installer Pandoc ou reconstruire l’image Docker backend |
+| `client version 1.41 is too old` (WSL) | Client Docker WSL obsolète vs Docker Desktop | Utiliser Docker depuis PowerShell/CMD, ou mettre à jour le client WSL (voir ci-dessous) |
 | Versions désync | Bump partiel | `npm run check:version` puis `release:bump` |
 | e2e golden échoue | Pandoc / downdoc | `which pandoc` ; relancer `npm --prefix api/backend run test:golden` |
 
----
+### Docker sous WSL (client trop ancien)
+
+Si `docker compose` ou `npm run check:docker:backend` échoue avec *Minimum supported API version is 1.44* :
+
+1. **Recommandé** — lancer depuis **PowerShell** ou **CMD** (Docker Desktop fournit un client récent) :
+   ```powershell
+   cd C:\Users\...\Ascend
+   npm run check:docker:backend
+   ```
+2. **Alternative WSL** — installer/mettre à jour le binaire Docker dans la distro (pas le paquet `docker.io` Debian 20.10) :
+   ```bash
+   # Exemple : binaires officiels Docker CE (API ≥ 1.44)
+   curl -fsSL https://get.docker.com | sh
+   docker version   # Client API ≥ 1.44
+   ```
+3. Vérifier que Docker Desktop → **Settings → Resources → WSL integration** est activé pour votre distro.
 
 ## Références
 
 - Configuration : [`doc/references/configuration.md`](../../references/configuration.md)
-- Axes d’amélioration : [`doc/specs/axes-ameliorations-0.0.1.4.7.md`](../../specs/axes-ameliorations-0.0.1.4.7.md)
+- Axes d’amélioration : [`doc/specs/axes-ameliorations-0.0.1.5.md`](../../specs/axes-ameliorations-0.0.1.5.md)
 - Roadmap : [`doc/specs/roadmap.md`](../../specs/roadmap.md)

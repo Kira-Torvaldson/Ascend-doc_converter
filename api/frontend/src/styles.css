@@ -129,14 +129,29 @@ body {
   display: flex;
   flex-direction: column;
   width: 100%;
-  /* Background image served by backend (/public). */
-  background-image: url("/public/rafale.jpg");
+  /* Décoratif : SVG embarqué (Vite) ; photo rafale.jpg si html.page-custom-bg */
+  background-image: url("./assets/page-background.svg");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   background-attachment: fixed;
   position: relative;
   background-color: var(--theme-bg);
+}
+
+@media (max-width: 768px) {
+  .page {
+    background-attachment: scroll;
+  }
+}
+
+[data-reduce-motion="true"] .page {
+  background-attachment: scroll;
+}
+
+/* Photo custom : api/backend/public/rafale.jpg servie par le backend (/public) */
+html.page-custom-bg .page {
+  background-image: url("/public/rafale.jpg");
 }
 
 /* ============================================
@@ -167,6 +182,117 @@ body {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.header-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.header-brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.header-app-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--theme-text);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.header-app-tagline {
+  font-size: 0.8125rem;
+  color: var(--theme-text-muted);
+  line-height: 1.3;
+}
+
+.header-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+  max-width: 100%;
+  animation: headerStatusIn 0.25s ease-out;
+}
+
+.header-status-pill--loading {
+  color: #1d4ed8;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.header-status-pill--success {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.header-status-pill--error {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.header-status-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-status-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(59, 130, 246, 0.25);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 1.2s linear infinite;
+  flex-shrink: 0;
+}
+
+.header-status-icon {
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+@keyframes headerStatusIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.history-count-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #ef4444;
+  color: white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
 }
 
 /* Main title in header "Ascend - Document Converter" */
@@ -1552,29 +1678,36 @@ body {
 
 /* Locked / Editing state badges */
 .panel-modified-badge {
-  font-size: 0.875rem;
-  color: #f59e0b;
-  margin-left: 0.25rem;
-  font-weight: 700;
+  font-size: 0.6875rem;
+  color: #b45309;
+  margin-left: 0.5rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  background: rgba(245, 158, 11, 0.15);
+  vertical-align: middle;
 }
 :root[data-theme="dark"] .panel-modified-badge {
-  color: #fbbf24;
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.15);
 }
 .result-zone-state {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   padding: 0.25rem 0.5rem;
   border-radius: 0.375rem;
   text-transform: uppercase;
-  letter-spacing: 0.025em;
+  letter-spacing: 0.04em;
 }
 .result-zone-locked {
-  color: #6b7280;
-  background: rgba(107, 114, 128, 0.2);
+  color: var(--theme-text-muted);
+  background: rgba(107, 114, 128, 0.18);
 }
 .result-zone-editing {
-  color: #059669;
-  background: rgba(16, 185, 129, 0.2);
+  color: #047857;
+  background: rgba(16, 185, 129, 0.18);
 }
 
 /* Central column with format swap button */
@@ -2689,6 +2822,228 @@ button:disabled:hover {
   animation: shimmer 3s linear infinite;
 }
 
+/* Conversion loading banner (source + result panels) */
+.conversion-loading-banner {
+  padding: 1rem;
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: 0.5rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.conversion-loading-banner--compact {
+  padding: 0.875rem;
+}
+
+.conversion-loading-banner-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.625rem;
+}
+
+.conversion-loading-banner--compact .conversion-loading-banner-row {
+  margin-bottom: 0.5rem;
+}
+
+.conversion-loading-banner-main {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.conversion-loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(59, 130, 246, 0.2);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 1.2s linear infinite;
+  flex-shrink: 0;
+}
+
+.conversion-loading-spinner--sm {
+  width: 18px;
+  height: 18px;
+  border-width: 2.5px;
+}
+
+.conversion-loading-label {
+  color: #2563eb;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.conversion-loading-banner--compact .conversion-loading-label {
+  font-size: 0.8rem;
+}
+
+.conversion-loading-status {
+  color: var(--theme-text-muted);
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversion-loading-track {
+  width: 100%;
+  height: 4px;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.conversion-loading-banner--compact .conversion-loading-track {
+  height: 3px;
+}
+
+.conversion-loading-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa, #3b82f6);
+  background-size: 200% 100%;
+  border-radius: 2px;
+  animation: progress 2.5s ease-in-out infinite, shimmer 3s linear infinite;
+  width: 100%;
+}
+
+/* Panel toolbar stats + action buttons */
+.text-stats {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: var(--theme-text-muted);
+  margin-left: auto;
+}
+
+.text-stats span {
+  white-space: nowrap;
+}
+
+.panel-header-btn {
+  font-size: 0.85rem;
+  padding: 0.4rem 0.9rem;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  color: #fff;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.panel-header-btn:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.panel-header-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.panel-header-btn--danger { background: #ef4444; }
+.panel-header-btn--success { background: #10b981; }
+.panel-header-btn--primary { background: #3b82f6; }
+.panel-header-btn--muted { background: #6b7280; }
+
+.panel-header-btn--convert {
+  position: relative;
+}
+
+.panel-header-btn--convert.is-loading {
+  opacity: 0.7;
+}
+
+.panel-header-btn-convert-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.panel-header-btn-convert-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 1.2s linear infinite;
+}
+
+.panel-deleting {
+  border: 2px solid #3b82f6 !important;
+  background: rgba(59, 130, 246, 0.05) !important;
+  transition: all 0.2s ease;
+}
+
+/* Settings muted text (theme-aware) */
+.settings-muted {
+  font-size: 0.875rem;
+  color: var(--theme-text-muted);
+}
+
+.settings-about-text {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--theme-text-muted);
+  line-height: 1.5;
+}
+
+.settings-release-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.8125rem;
+  color: var(--theme-text-muted);
+  line-height: 1.6;
+}
+
+.settings-release-list code {
+  font-size: 0.75rem;
+  padding: 0.05rem 0.25rem;
+  border-radius: 0.2rem;
+  background: rgba(59, 130, 246, 0.1);
+  color: inherit;
+}
+
+.settings-field-error {
+  font-size: 0.75rem;
+  color: #ef4444;
+  margin-top: 0.25rem;
+}
+
+.settings-input-invalid {
+  border-color: #ef4444 !important;
+  outline-color: #ef4444 !important;
+}
+
+/* Notification close */
+.notification-close-btn {
+  background: transparent;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.notification-close-btn:hover {
+  opacity: 1;
+}
+
+.notification-close-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 2px;
+}
+
 /* ============================================
    HistoryModalV2 – conversion history window
    Visual style aligned with navigation window
@@ -3289,6 +3644,31 @@ button:disabled:hover {
 :root[data-theme="dark"] .result-zone-editing {
   color: #34d399;
   background: rgba(16, 185, 129, 0.25);
+}
+:root[data-theme="dark"] .header-app-title {
+  color: var(--theme-text);
+}
+:root[data-theme="dark"] .header-status-pill--loading {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+:root[data-theme="dark"] .header-status-pill--success {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+:root[data-theme="dark"] .header-status-pill--error {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+:root[data-theme="dark"] .conversion-loading-banner {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.28);
+}
+:root[data-theme="dark"] .conversion-loading-label {
+  color: #93c5fd;
 }
 :root[data-theme="dark"] .status-message {
   color: var(--theme-text-muted);

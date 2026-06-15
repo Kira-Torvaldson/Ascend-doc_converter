@@ -1,15 +1,16 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.5-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.6-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.5)
+## Latest changes (v0.0.1.6)
 
-- **Contract & conversion pipeline**
-  - Extended `ConversionResult` contract documentation (Steps 10–11, Step 11 closure, handoff baseline).
-  - AsciiDoc → Markdown wrapper alignment and related e2e scripts (`/api/to-markdown`, representative scenarios).
+- **UI & dev experience**
+  - Header status pill, unified conversion loading banners, theme-aware settings.
+  - Default background SVG; optional `rafale.jpg` from `api/backend/public/`.
+  - CORS allows alternate Vite dev ports (`localhost` / `127.0.0.1`).
 
 ## Overview
 
