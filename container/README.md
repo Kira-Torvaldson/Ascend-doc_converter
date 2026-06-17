@@ -62,6 +62,14 @@ cd container
 docker compose up -d --build
 ```
 
+From repo root (CI-equivalent checks):
+
+```bash
+npm run check:docker:backend
+npm run check:docker:frontend
+npm run check:docker
+```
+
 Default access:
 
 - `http://localhost:${FRONTEND_HTTP_PORT}`

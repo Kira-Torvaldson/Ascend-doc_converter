@@ -195,11 +195,13 @@ En production avec `API_KEY` défini, fournir `X-API-Key` identique.
 | `npm run check:version` | Garde-fou cohérence |
 | `node scripts/release-bump.js --dry-run 0.0.1.5` | Simulation sans écriture |
 | `npm run check:docker:backend` | Build image backend + vérif. Pandoc (job CI `docker`) |
+| `npm run check:docker:frontend` | Build image frontend + vérif. nginx/SPA |
+| `npm run check:docker` | Backend + frontend |
 
 Workflow GitHub (`.github/workflows/ci.yml`) :
 
 - job **`ascend`** — Node 20, Pandoc, golden, roundtrip, e2e, abuse (`check:ascend:ci`)
-- job **`docker`** — build `container/backend/Dockerfile` + `pandoc --version` (`check:docker:backend`)
+- job **`docker`** — build backend + frontend (`check:docker:backend`, `check:docker:frontend`)
 
 ---
 

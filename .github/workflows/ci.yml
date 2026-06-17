@@ -76,3 +76,5 @@ jobs:
       uses: actions/checkout@v3
     - name: Build and verify backend Docker image
       run: npm run check:docker:backend
+    - name: Build and verify frontend Docker image
+      run: npm run check:docker:frontend

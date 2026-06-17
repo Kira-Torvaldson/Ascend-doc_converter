@@ -63,6 +63,7 @@ import { ConversionLoadingBanner, HeaderStatusPill } from "./components";
 import { removeExperimentalTag } from "./utils/asciidocHelpers";
 import packageJson from "../package.json";
 import { fetchConversionLimits } from "./converters/api";
+import { formatConversionErrorForUi, getHintForCode } from "./converters/error-code-messages";
 import defaultLogo from "./assets/ascend-logo.svg";
 
 type UserPreferences = { displayName: string; organization: string; defaultLanguage: 'fr' | 'en' | 'es' | 'de' };
@@ -814,6 +815,24 @@ function App() {
   // ==========================================================================
   // MEMOIZED CALCULATIONS (useMemo)
   // ==========================================================================
+
+  const conversionErrorDetails = useMemo(() => {
+    const failure = lastBackendConversionResult;
+    const err = failure?.error;
+    const code = typeof err?.code === "string" ? err.code : "";
+    const backendHint = typeof err?.hint === "string" ? err.hint.trim() : "";
+    const backendMessage =
+      typeof err?.message === "string" && err.message.trim()
+        ? err.message.trim()
+        : conversionErrorMessage.trim();
+    const message = code
+      ? formatConversionErrorForUi(code, backendMessage || "La conversion a échoué.", backendHint || null)
+      : backendMessage || "La conversion a échoué.";
+    const hint = getHintForCode(code) || backendHint || undefined;
+    const requestId =
+      typeof failure?.meta?.requestId === "string" ? failure.meta.requestId : undefined;
+    return { code: code || undefined, message, hint, requestId };
+  }, [lastBackendConversionResult, conversionErrorMessage]);
   
   /**
    * Extracts headings from SOURCE panel only
@@ -3045,12 +3064,12 @@ function App() {
                         </p>
                       </div>
                       <div className="option-group">
-                        <label className="option-label">Nouveautés v0.0.1.6</label>
+                        <label className="option-label">Nouveautés v0.0.1.7</label>
                         <ul className="settings-release-list">
-                          <li>CORS dev : ports Vite alternatifs (5174+) acceptés en local</li>
-                          <li>Fond d'écran : SVG par défaut + photo <code>rafale.jpg</code> si présente</li>
-                          <li>En-tête : titre, indicateur d'état de conversion, bannières de chargement</li>
-                          <li>Badges « modifié », « Verrouillé » / « Édition » et paramètres lisibles en thème sombre</li>
+                          <li>Modale d'erreur : code, indication d'action et identifiant de requête</li>
+                          <li>CI Docker frontend (<code>check:docker:frontend</code>)</li>
+                          <li>Footer : limite source et repère runbook</li>
+                          <li>Fond Rafale plus visible ; historique aligné au thème</li>
                         </ul>
                       </div>
                     </div>
@@ -4087,6 +4106,13 @@ function App() {
 
       <footer className="footer">
         <div className="footer-content">
+          <div className="footer-meta">
+            <span>Limite source : {maxSourceSizeMb} Mo</span>
+            <span className="footer-separator">•</span>
+            <span className="footer-runbook-hint" title="doc/guides/operations/runbook.md">
+              Runbook opérations (dépôt)
+            </span>
+          </div>
           <div className="footer-author">
             <span className="footer-author-text">Made by TBE</span>
           </div>
@@ -4779,41 +4805,29 @@ function App() {
       */}
       {showConversionErrorModal && (
         <div className="modal-overlay" onClick={() => setShowConversionErrorModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ color: "#ef4444", marginBottom: "1rem" }}>⚠️ Erreur de conversion</h3>
-            <div style={{ marginBottom: "1rem" }}>
-              <p style={{ marginBottom: "0.5rem", lineHeight: "1.6", fontWeight: "500" }}>
-                La conversion a échoué. Le résultat contient encore de l'AsciiDoc au lieu du Markdown.
+          <div className="modal-content conversion-error-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="conversion-error-title">Erreur de conversion</h3>
+            {conversionErrorDetails.code && (
+              <p className="conversion-error-code">
+                Code : <code>{conversionErrorDetails.code}</code>
               </p>
-              {conversionErrorMessage && conversionErrorMessage !== "La conversion a échoué. Le résultat contient encore de l'AsciiDoc au lieu du Markdown. Veuillez modifier la source et réessayer la conversion." && (
-                <p style={{ fontSize: "0.9rem", color: "#6b7280", fontStyle: "italic", marginTop: "0.5rem" }}>
-                  {conversionErrorMessage}
-                </p>
-              )}
-            </div>
-            <div style={{ 
-              backgroundColor: "#fef3c7", 
-              border: "1px solid #fbbf24", 
-              borderRadius: "6px", 
-              padding: "1rem", 
-              marginTop: "1rem",
-              marginBottom: "1rem"
-            }}>
-              <p style={{ margin: 0, fontSize: "0.95rem", color: "#92400e", lineHeight: "1.6" }}>
-                <strong>🔧 Action recommandée :</strong><br />
-                Veuillez modifier la source et réessayer la conversion.
+            )}
+            <p className="conversion-error-message">{conversionErrorDetails.message}</p>
+            {conversionErrorDetails.hint && (
+              <div className="conversion-error-hint-box">
+                <p className="conversion-error-hint">{conversionErrorDetails.hint}</p>
+              </div>
+            )}
+            {conversionErrorDetails.requestId && (
+              <p className="conversion-error-request-id">
+                Identifiant : <code>{conversionErrorDetails.requestId}</code>
               </p>
-            </div>
-            <div className="modal-buttons" style={{ marginTop: "1rem" }}>
+            )}
+            <div className="modal-buttons conversion-error-actions">
               <button
+                type="button"
+                className="conversion-error-dismiss"
                 onClick={() => setShowConversionErrorModal(false)}
-                style={{ 
-                  background: "#3b82f6",
-                  flex: 1,
-                  padding: "0.75rem",
-                  fontSize: "1rem",
-                  fontWeight: "500"
-                }}
               >
                 Compris
               </button>

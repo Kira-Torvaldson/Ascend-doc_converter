@@ -6,15 +6,24 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.6 (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** Patch polish UI + dev local  
-**Focus:** UX, fond d'écran, CORS dev ; suite patches avant `0.0.2.0`
+**Version:** 0.0.1.7 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** Patch UX + CI Docker frontend  
+**Focus:** modale erreur, visibilité fond, `check:docker:frontend`
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.6 (Current — Ascend)
+### 0.0.1.7 (Current — Ascend)
+
+**Delivered:**
+- Modale erreur structurée (`error.code`, hint, `requestId`)
+- `check:docker:frontend` + CI job docker (frontend)
+- Footer limite source ; visibilité Rafale ; HistoryModalV2 thème
+
+**Docs:** `doc/specs/axes-ameliorations-0.0.1.7.md`
+
+### 0.0.1.6
 
 **Delivered:**
 - Polish UI (header, bannières, badges, paramètres thème)

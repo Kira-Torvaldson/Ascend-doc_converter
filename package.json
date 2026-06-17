@@ -28,6 +28,8 @@
     "check:ascend": "node scripts/check-version-sync.js && npm --prefix api/frontend run test && npm --prefix api/backend run test:golden && npm --prefix api/backend run test:roundtrip && npm run test:abuse",
     "check:ascend:ci": "node scripts/check-version-sync.js && npm --prefix api/frontend run test && node api/backend/scripts/verify-e2e-to-markdown-representative-scenarios.js && node api/backend/scripts/verify-e2e-to-markdown-failure-contract.js && node api/backend/scripts/verify-e2e-to-asciidoc-representative-scenarios.js && node api/backend/scripts/verify-e2e-text-to-markdown-representative-scenarios.js && node api/backend/scripts/verify-e2e-text-to-markdown-failure-contract.js && node api/backend/scripts/verify-e2e-from-html-representative-scenarios.js && node api/backend/scripts/verify-e2e-from-html-failure-contract.js && npm --prefix api/backend run test:golden && npm --prefix api/backend run test:roundtrip && npm run test:abuse",
     "check:docker:backend": "node scripts/check-docker-backend.js",
+    "check:docker:frontend": "node scripts/check-docker-frontend.js",
+    "check:docker": "npm run check:docker:backend && npm run check:docker:frontend",
     "generate:golden": "node scripts/generate-golden-corpus.js",
     "build": "npm test && npm run lint",
     "format": "node npm/format.js lib,test,npm",
