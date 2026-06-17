@@ -266,11 +266,7 @@ export async function convertText(
           setOutput("");
         }
 
-        const shouldShowConversionErrorModal =
-          backendCode === 'CONVERSION_FAILED' ||
-          backendCode === 'OUTPUT_NOT_CREATED' ||
-          backendCode === 'OUTPUT_INVALID' ||
-          backendCode === 'OUTPUT_IS_INPUT';
+        const shouldShowConversionErrorModal = Boolean(backendCode);
 
         if (shouldShowConversionErrorModal && setShowErrorModal && setErrorMessage) {
           setShowErrorModal(true);
@@ -348,11 +344,7 @@ export async function convertText(
           setOutput("");
         }
 
-        const shouldShowConversionErrorModal =
-          backendCode === 'CONVERSION_FAILED' ||
-          backendCode === 'OUTPUT_NOT_CREATED' ||
-          backendCode === 'OUTPUT_INVALID' ||
-          backendCode === 'OUTPUT_IS_INPUT';
+        const shouldShowConversionErrorModal = Boolean(backendCode);
 
         if (shouldShowConversionErrorModal && setShowErrorModal && setErrorMessage) {
           setShowErrorModal(true);

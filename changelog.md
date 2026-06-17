@@ -13,6 +13,19 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.7 (2026-06-17)
+
+#### Added
+- `npm run check:docker:frontend` and `check:docker` — build `container/frontend/Dockerfile` + nginx SPA check.
+- CI job `docker` — frontend image build step.
+- Footer: source size limit and runbook hint.
+- Conversion error modal: `error.code`, hint, and `requestId`.
+
+#### Changed
+- Rafale background visibility (lighter overlays when custom photo is loaded).
+- `HistoryModalV2` panel uses theme modal CSS variables.
+- Structured conversion failures open the error modal for all backend `error.code` values.
+
 ### 0.0.1.6 (2026-06-15)
 
 #### Added

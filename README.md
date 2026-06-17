@@ -1,16 +1,16 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.6-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.7-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.6)
+## Latest changes (v0.0.1.7)
 
-- **UI & dev experience**
-  - Header status pill, unified conversion loading banners, theme-aware settings.
-  - Default background SVG; optional `rafale.jpg` from `api/backend/public/`.
-  - CORS allows alternate Vite dev ports (`localhost` / `127.0.0.1`).
+- **UX & CI**
+  - Conversion error modal with `error.code`, hint, and request ID.
+  - Docker frontend build gate (`check:docker:frontend`) in CI.
+  - Footer shows source size limit; Rafale background more visible.
 
 ## Overview
 
