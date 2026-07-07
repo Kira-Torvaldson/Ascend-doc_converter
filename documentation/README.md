@@ -14,10 +14,6 @@ Documentation complète du projet, organisée en **5 parties**.
 
 **Ascend** `0.0.1.7` — voir [`I-installation/projet/changelog.md`](I-installation/projet/changelog.md).
 
-## Version BookStack (synthèse)
-
-Pour une doc **courte et opérationnelle** (~15 pages) prête à importer dans BookStack : [`bookstack/`](bookstack/).
-
 ## Originaux
 
 Le dossier [`doc/`](../doc/) conserve les sources (souvent en anglais).  
