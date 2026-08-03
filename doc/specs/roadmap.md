@@ -6,7 +6,7 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.8 (Ascend app — `api/backend` / `api/frontend`)  
+**Version:** 0.0.1.8.1 (Ascend app — `api/backend` / `api/frontend`)  
 **Status:** Patch contrat ConversionResult + EnvMap  
 **Focus:** `/api/convert` + `/api/proxy/convert` standardisés, correctifs secure-converter, EnvMap complété
 
@@ -14,7 +14,15 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Version History
 
-### 0.0.1.8 (Current — Ascend)
+### 0.0.1.8.1 (Current — Ascend)
+
+**Delivered:**
+- Fond d’écran personnalisable + adaptation écran ; sidebar/navbar opaques (thème)
+- Fenêtres flottantes unifiées, modales Ascend, états vides éditeurs, historique enrichi
+
+**Docs:** `doc/releases/v0.0.1.8.1-notes.md`
+
+### 0.0.1.8
 
 **Delivered:**
 - Contrat `ConversionResult` sur `/api/convert` et `/api/proxy/convert` (+ scripts contrat en CI)

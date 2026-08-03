@@ -58,16 +58,19 @@ import {
   requestConfirmationToken
 } from "./converters";
 import { FormatType, ConversionHistoryItem } from "./types";
-import { HistoryModalV2, useNewHistoryModal } from "./components/HistoryModalV2";
-import { ConversionLoadingBanner, HeaderStatusPill } from "./components";
+import { HistoryModalV2, useNewHistoryModal, type DisplayHistoryEntryShape } from "./components/HistoryModalV2";
+import { buildDisplayHistory } from "./utils/displayHistory";
+import { ConversionLoadingBanner, HeaderStatusPill, EmptyEditorState, Modal } from "./components";
 import { removeExperimentalTag } from "./utils/asciidocHelpers";
 import packageJson from "../package.json";
 import { fetchConversionLimits } from "./converters/api";
 import { formatConversionErrorForUi, getHintForCode } from "./converters/error-code-messages";
 import defaultLogo from "./assets/ascend-logo.svg";
+import { getSampleDocument } from "./examples/sampleDocuments";
 import {
   type UserSettings,
   type SettingsValidationErrors,
+  type BackgroundMode,
   DEFAULT_USER_SETTINGS,
   validateUserPrefs,
   loadUserSettings,
@@ -75,6 +78,13 @@ import {
   areUserSettingsEqual,
   persistUserSettings,
 } from "./settings/userSettings";
+import {
+  applyPageBackgroundToDocument,
+  fileToPageBackgroundDataUrl,
+  loadCustomPageBackground,
+  persistCustomPageBackground,
+  SERVER_BG_URL,
+} from "./settings/pageBackground";
 
 const DEFAULT_MAX_SOURCE_SIZE_MB = 5;
 const SIDEBAR_COLLAPSED_KEY = 'ascend_sidebar_collapsed';
@@ -118,18 +128,6 @@ function App() {
     fetchConversionLimits().then((limits) => {
       setMaxSourceSizeMb(limits.maxSourceUiMb || limits.maxInputSizeMb || DEFAULT_MAX_SOURCE_SIZE_MB);
     });
-  }, []);
-
-  /** Fond photo rafale.jpg (api/backend/public/) si disponible ; sinon SVG embarqué (styles.css). */
-  useEffect(() => {
-    const img = new Image();
-    img.onload = () => {
-      document.documentElement.classList.add("page-custom-bg");
-    };
-    img.onerror = () => {
-      document.documentElement.classList.remove("page-custom-bg");
-    };
-    img.src = "/public/rafale.jpg";
   }, []);
 
   /** Logo custom (api/backend/public/ascend-logo.png) si disponible. */
@@ -224,6 +222,12 @@ function App() {
   
   /** Shows confirmation modal to clear source content */
   const [showClearSourceModal, setShowClearSourceModal] = useState<boolean>(false);
+
+  /** Discard dirty settings without applying */
+  const [showDiscardSettingsModal, setShowDiscardSettingsModal] = useState<boolean>(false);
+
+  /** Clear entire conversion history */
+  const [showClearHistoryModal, setShowClearHistoryModal] = useState<boolean>(false);
 
   /** Shows help modal for keyboard shortcuts */
   const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
@@ -383,23 +387,25 @@ function App() {
   const [isDraggingSettings, setIsDraggingSettings] = useState<boolean>(false);
   const [settingsDragStart, setSettingsDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [settingsDragOffset, setSettingsDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [settingsMinimized, setSettingsMinimized] = useState(false);
+  const [settingsMaximized, setSettingsMaximized] = useState(false);
 
   useLayoutEffect(() => {
-    if (settingsOpen) {
+    if (settingsOpen && !settingsMaximized) {
       setSettingsPanelPosition({
         x: Math.max(0, (window.innerWidth - settingsPanelSize.width) / 2),
         y: Math.max(0, (window.innerHeight - settingsPanelSize.height) / 2),
       });
     }
-  }, [settingsOpen, settingsPanelSize.width, settingsPanelSize.height]);
+  }, [settingsOpen, settingsPanelSize.width, settingsPanelSize.height, settingsMaximized]);
 
   const handleSettingsDragStart = useCallback((e: React.MouseEvent) => {
-    if (isResizingSettings) return;
+    if (isResizingSettings || settingsMaximized) return;
     e.preventDefault();
     setIsDraggingSettings(true);
     setSettingsDragStart({ x: e.clientX - settingsPanelPosition.x, y: e.clientY - settingsPanelPosition.y });
     setSettingsDragOffset({ x: 0, y: 0 });
-  }, [settingsPanelPosition, isResizingSettings]);
+  }, [settingsPanelPosition, isResizingSettings, settingsMaximized]);
 
   const handleSettingsDrag = useCallback((e: MouseEvent) => {
     if (!isDraggingSettings) return;
@@ -437,10 +443,11 @@ function App() {
   }, [isDraggingSettings, handleSettingsDrag, handleSettingsDragEnd]);
 
   const handleSettingsResizeStart = useCallback((e: React.MouseEvent) => {
+    if (settingsMaximized || settingsMinimized) return;
     e.stopPropagation();
     setIsResizingSettings(true);
     setSettingsResizeStart({ x: e.clientX, y: e.clientY, width: settingsPanelSize.width, height: settingsPanelSize.height });
-  }, [settingsPanelSize]);
+  }, [settingsPanelSize, settingsMaximized, settingsMinimized]);
 
   const handleSettingsResize = useCallback((e: MouseEvent) => {
     if (!isResizingSettings) return;
@@ -615,7 +622,13 @@ function App() {
   // Draft edited in the settings panel; committed only on "Appliquer et fermer"
   const [draftSettings, setDraftSettings] = useState<UserSettings>(settingsBootstrap.draft);
   const [settingsErrors, setSettingsErrors] = useState<SettingsValidationErrors>({});
-  const settingsDirty = !areUserSettingsEqual(draftSettings, userSettings);
+  const [pageBgImage, setPageBgImage] = useState<string | null>(() => loadCustomPageBackground());
+  const [draftPageBgImage, setDraftPageBgImage] = useState<string | null>(() => loadCustomPageBackground());
+  const [pageBgError, setPageBgError] = useState<string | null>(null);
+  const pageBgFileInputRef = useRef<HTMLInputElement>(null);
+  const settingsDirty =
+    !areUserSettingsEqual(draftSettings, userSettings) ||
+    draftPageBgImage !== pageBgImage;
   useEffect(() => {
     setSettingsErrors(validateUserPrefs({
       displayName: draftSettings.profile.displayName,
@@ -639,7 +652,10 @@ function App() {
     root.style.colorScheme = 'light';
   }, []);
 
-  const applyUiPreferencesToDocument = useCallback((ui: UserSettings['ui']) => {
+  const applyUiPreferencesToDocument = useCallback((
+    ui: UserSettings['ui'],
+    customBg: string | null = pageBgImage
+  ) => {
     applyThemeToDocument(ui.theme);
     const root = document.documentElement;
     root.setAttribute('data-editor-word-wrap', ui.editorWordWrap ? 'true' : 'false');
@@ -648,36 +664,50 @@ function App() {
     root.setAttribute('data-tab-size', String(ui.tabSize));
     root.setAttribute('data-show-tooltips', ui.showTooltips ? 'true' : 'false');
     root.style.setProperty('--editor-font-size', `${ui.editorFontSize}px`);
-  }, [applyThemeToDocument]);
+    applyPageBackgroundToDocument(ui.backgroundMode, customBg);
+  }, [applyThemeToDocument, pageBgImage]);
 
   // UI prefs apply only from committed settings (after Apply)
   useEffect(() => {
-    applyUiPreferencesToDocument(userSettings.ui);
-  }, [applyUiPreferencesToDocument, userSettings.ui]);
+    applyUiPreferencesToDocument(userSettings.ui, pageBgImage);
+  }, [applyUiPreferencesToDocument, userSettings.ui, pageBgImage]);
 
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsPanelRef = useRef<HTMLDivElement>(null);
 
   const openSettingsPanel = useCallback(() => {
     setDraftSettings(cloneUserSettings(userSettings));
+    setDraftPageBgImage(pageBgImage);
+    setPageBgError(null);
     setSettingsErrors({});
+    setSettingsMinimized(false);
+    setSettingsMaximized(false);
     setSettingsOpen(true);
-  }, [userSettings]);
+  }, [userSettings, pageBgImage]);
+
+  const forceCloseSettingsPanel = useCallback(() => {
+    setShowDiscardSettingsModal(false);
+    setSettingsOpen(false);
+    setSettingsMinimized(false);
+    setSettingsMaximized(false);
+    setDraftSettings(cloneUserSettings(userSettings));
+    setDraftPageBgImage(pageBgImage);
+    setPageBgError(null);
+    setSettingsErrors({});
+  }, [userSettings, pageBgImage]);
 
   const closeSettingsPanel = useCallback((opts?: { force?: boolean }) => {
     const dirty = !areUserSettingsEqual(draftSettings, userSettings);
     if (!opts?.force && dirty) {
-      const discard = window.confirm('Modifications non appliquées. Quitter sans enregistrer ?');
-      if (!discard) return;
+      setShowDiscardSettingsModal(true);
+      return;
     }
-    setSettingsOpen(false);
-    setDraftSettings(cloneUserSettings(userSettings));
-    setSettingsErrors({});
-  }, [draftSettings, userSettings]);
+    forceCloseSettingsPanel();
+  }, [draftSettings, userSettings, forceCloseSettingsPanel]);
 
-  // Escape closes the settings panel (with dirty confirm)
+  // Escape closes the settings panel (with dirty confirm); skipped while confirm modal is open
   useEffect(() => {
-    if (!settingsOpen) return;
+    if (!settingsOpen || settingsMinimized || showDiscardSettingsModal) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -686,17 +716,71 @@ function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [settingsOpen, closeSettingsPanel]);
+  }, [settingsOpen, settingsMinimized, showDiscardSettingsModal, closeSettingsPanel]);
 
   // Focus dialog on open; restore focus to the gear button on close
   useEffect(() => {
-    if (!settingsOpen) return;
+    if (!settingsOpen || settingsMinimized) return;
     const closeBtn = settingsPanelRef.current?.querySelector('.settings-close-btn') as HTMLElement | null;
     closeBtn?.focus();
     return () => {
       settingsButtonRef.current?.focus();
     };
-  }, [settingsOpen]);
+  }, [settingsOpen, settingsMinimized]);
+
+  // Focus trap inside settings panel
+  useEffect(() => {
+    if (!settingsOpen || settingsMinimized || showDiscardSettingsModal) return;
+    const panel = settingsPanelRef.current;
+    if (!panel) return;
+
+    const selector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const nodes = Array.from(panel.querySelectorAll<HTMLElement>(selector)).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement
+      );
+      if (nodes.length === 0) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (event.shiftKey) {
+        if (active === first || !panel.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !panel.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    panel.addEventListener('keydown', onKeyDown);
+    return () => panel.removeEventListener('keydown', onKeyDown);
+  }, [settingsOpen, settingsMinimized, showDiscardSettingsModal]);
+
+  // Escape closes navigation window
+  useEffect(() => {
+    if (!navigationWindowOpen || navigationWindowMinimized) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (settingsOpen || showHistoryPanel || showDiscardSettingsModal || showClearHistoryModal) return;
+      event.preventDefault();
+      setNavigationWindowOpen(false);
+      setNavigationEnabled(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    navigationWindowOpen,
+    navigationWindowMinimized,
+    settingsOpen,
+    showHistoryPanel,
+    showDiscardSettingsModal,
+    showClearHistoryModal,
+  ]);
 
   // Apply the preferred default output format once at startup
   useEffect(() => {
@@ -740,9 +824,20 @@ function App() {
       setSettingsErrors(errors);
       return;
     }
+    if (draftSettings.ui.backgroundMode === 'custom' && !draftPageBgImage) {
+      setPageBgError('Choisissez une image ou basculez vers un autre fond.');
+      return;
+    }
+    try {
+      persistCustomPageBackground(draftPageBgImage);
+    } catch (e) {
+      setPageBgError(e instanceof Error ? e.message : 'Enregistrement du fond impossible');
+      return;
+    }
     const committed = cloneUserSettings(draftSettings);
+    setPageBgImage(draftPageBgImage);
     setUserSettings(committed);
-    applyUiPreferencesToDocument(committed.ui);
+    applyUiPreferencesToDocument(committed.ui, draftPageBgImage);
     updateOption(['metadata', 'author'], committed.profile.displayName || null);
     updateOption(['metadata', 'organization'], committed.profile.organization || null);
     updateOption(['metadata', 'language'], committed.profile.defaultLanguage || null);
@@ -751,9 +846,12 @@ function App() {
     if (fmt && validFormats.includes(fmt) && fmt !== sourceFormat) {
       setTargetFormat(fmt);
     }
+    setPageBgError(null);
     setStatus('Paramètres appliqués');
+    setSettingsMinimized(false);
+    setSettingsMaximized(false);
     setSettingsOpen(false);
-  }, [draftSettings, applyUiPreferencesToDocument, sourceFormat]);
+  }, [draftSettings, draftPageBgImage, applyUiPreferencesToDocument, sourceFormat]);
   
   // ==========================================================================
   // STATES: NOTIFICATIONS
@@ -1527,18 +1625,35 @@ function App() {
   }, []);
 
   /**
-   * Clears conversion history
+   * Clears conversion history.
+   * @param skipConfirm - when true (HistoryModalV2 already confirmed), wipe immediately
    */
-  const clearHistory = useCallback(() => {
-    if (confirm('Êtes-vous sûr de vouloir effacer tout l\'historique ?')) {
-      setConversionHistory([]);
-      try {
-        localStorage.removeItem('ascend_conversion_history');
-      } catch (e) {
-        console.error('Error clearing conversion history:', e);
-      }
-      setStatus('Historique effacé');
+  const clearHistory = useCallback((skipConfirm = false) => {
+    if (!skipConfirm) {
+      setShowClearHistoryModal(true);
+      return;
     }
+    setConversionHistory([]);
+    try {
+      localStorage.removeItem('ascend_conversion_history');
+    } catch (e) {
+      console.error('Error clearing conversion history:', e);
+    }
+    setStatus('Historique effacé');
+  }, []);
+
+  /** Removes one history entry by id (HistoryModalV2). */
+  const removeHistoryEntry = useCallback((id: string) => {
+    setConversionHistory((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      try {
+        localStorage.setItem('ascend_conversion_history', JSON.stringify(next));
+      } catch (e) {
+        console.error('Error updating conversion history:', e);
+      }
+      return next;
+    });
+    setStatus('Entrée retirée de l’historique');
   }, []);
 
   /**
@@ -2490,7 +2605,8 @@ function App() {
     canConvert: boolean = true,
     onClear?: () => void,
     isDeleting: boolean = false,
-    sourceModified: boolean = false
+    sourceModified: boolean = false,
+    format: FormatType = 'asciidoc'
   ) => {
     const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value;
@@ -2502,6 +2618,9 @@ function App() {
       }
       setValue(newValue);
     };
+
+    const isEmpty = !value.trim();
+    const canInsertSample = format === 'asciidoc' || format === 'markdown';
 
     return (
     <section className={`panel${isDeleting ? ' panel-deleting' : ''}`}>
@@ -2598,12 +2717,36 @@ function App() {
           )}
         </div>
       )}
-      <textarea
-        ref={textAreaRef}
-        value={value}
-        onChange={handleChange}
-        placeholder={placeholder}
-      />
+      <div className={`editor-shell${isEmpty ? ' is-empty' : ''}`}>
+        {isEmpty && (
+          <EmptyEditorState
+            variant="source"
+            title={`Collez votre ${title} ici`}
+            description={
+              canInsertSample
+                ? 'Chargez un fichier, ou essayez un exemple en un clic.'
+                : 'Chargez un fichier ou collez votre contenu pour commencer.'
+            }
+            actionLabel={canInsertSample ? 'Insérer un exemple' : undefined}
+            onAction={
+              canInsertSample
+                ? () => {
+                    setValue(getSampleDocument(format));
+                    setSourceModified(true);
+                    requestAnimationFrame(() => textAreaRef?.current?.focus());
+                  }
+                : undefined
+            }
+          />
+        )}
+        <textarea
+          ref={textAreaRef}
+          className="source-textarea"
+          value={value}
+          onChange={handleChange}
+          placeholder={isEmpty ? '' : placeholder}
+        />
+      </div>
     </section>
     );
   };
@@ -2710,7 +2853,8 @@ function App() {
       sourceFormat !== targetFormat && isAllowedConversion, // Can convert if formats are different AND conversion is allowed
       handleClearSource, // Function to clear source content
       false, // isDeleting
-      sourceModified
+      sourceModified,
+      sourceFormat
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceFormat, adocInput, mdOutput, currentFileName, status, headings, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, adocTextAreaRef, navigationEnabled, getTextStats, sourceModified]);
@@ -2871,6 +3015,18 @@ function App() {
           </div>
         </div>
       )}
+      <div className={`editor-shell${!resultValue.trim() && !loading ? ' is-empty' : ''}`}>
+        {!resultValue.trim() && !loading && (
+          <EmptyEditorState
+            variant="result"
+            title={`Résultat ${getFormatTitle(targetFormat)}`}
+            description={
+              !sourceValueForCurrentFormat.trim()
+                ? 'Ajoutez du contenu à gauche, puis cliquez sur Convertir.'
+                : 'Prêt — cliquez sur Convertir pour générer le résultat.'
+            }
+          />
+        )}
       <textarea
         className="result-textarea"
         value={resultValue}
@@ -2879,8 +3035,8 @@ function App() {
         placeholder={
           loading
             ? "Conversion en cours..."
-            : !sourceValueForCurrentFormat.trim()
-              ? "Le résultat apparaîtra après conversion."
+            : !resultValue.trim()
+              ? ""
               : `Résultat ${getFormatTitle(targetFormat)}...`
         }
         style={{
@@ -2888,6 +3044,7 @@ function App() {
           transition: "opacity 0.2s"
         }}
       />
+      </div>
     </section>
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3034,7 +3191,14 @@ function App() {
             type="button"
             ref={settingsButtonRef}
             className="settings-button settings-gear-btn"
-            onClick={() => (settingsOpen ? closeSettingsPanel() : openSettingsPanel())}
+            onClick={() => {
+              if (settingsMinimized) {
+                setSettingsMinimized(false);
+                return;
+              }
+              if (settingsOpen) closeSettingsPanel();
+              else openSettingsPanel();
+            }}
             data-tooltip="Paramètres"
             aria-haspopup="dialog"
             aria-expanded={settingsOpen}
@@ -3065,57 +3229,92 @@ function App() {
         - Closes when clicking the overlay or the × button
         - stopPropagation() prevents closing when clicking inside the panel
       */}
-      {settingsOpen && (
+      {settingsOpen && !settingsMinimized && (
         <>
           {/* 
             Overlay: semi-transparent background
             Closes the modal on click (but not when clicking inside the panel)
           */}
-          <div className="settings-overlay" onClick={() => closeSettingsPanel()} />
+          <div className="settings-overlay floating-window-overlay" onClick={() => closeSettingsPanel()} />
           {/* 
             Main panel: contains all settings
             stopPropagation() prevents closing when clicking inside
           */}
           <div
             ref={settingsPanelRef}
-            className={`settings-panel${isResizingSettings ? ' settings-panel-resizing' : ''}${isDraggingSettings ? ' settings-panel-dragging' : ''}`}
+            className={[
+              'floating-window',
+              'floating-window--enter',
+              'settings-panel',
+              isResizingSettings ? 'settings-panel-resizing' : '',
+              isDraggingSettings ? 'settings-panel-dragging' : '',
+              settingsMaximized ? 'settings-panel--maximized' : '',
+            ].filter(Boolean).join(' ')}
             role="dialog"
             aria-modal="true"
             aria-labelledby="settings-panel-title"
             onClick={(e) => e.stopPropagation()}
-            style={{
-              left: settingsPanelPosition.x,
-              top: settingsPanelPosition.y,
-              width: settingsPanelSize.width,
-              height: settingsPanelSize.height,
-              minWidth: SETTINGS_MIN_W,
-              minHeight: SETTINGS_MIN_H,
-              maxWidth: '90vw',
-              maxHeight: '85vh',
-              transform: isDraggingSettings ? `translate(${settingsDragOffset.x}px, ${settingsDragOffset.y}px)` : undefined,
-            }}
+            style={
+              settingsMaximized
+                ? undefined
+                : {
+                    left: settingsPanelPosition.x,
+                    top: settingsPanelPosition.y,
+                    width: settingsPanelSize.width,
+                    height: settingsPanelSize.height,
+                    minWidth: SETTINGS_MIN_W,
+                    minHeight: SETTINGS_MIN_H,
+                    maxWidth: '90vw',
+                    maxHeight: '85vh',
+                    transform: isDraggingSettings
+                      ? `translate(${settingsDragOffset.x}px, ${settingsDragOffset.y}px)`
+                      : undefined,
+                  }
+            }
           >
             <div
-              className="settings-panel-header settings-panel-header-draggable"
+              className="floating-window-header floating-window-header--draggable settings-panel-header settings-panel-header-draggable"
               onMouseDown={handleSettingsDragStart}
             >
-              <h3 id="settings-panel-title">
-                Paramètres
-                {settingsDirty && (
-                  <span className="settings-dirty-badge" aria-label="Modifications non enregistrées">
-                    non enregistré
-                  </span>
-                )}
-              </h3>
-              <button
-                type="button"
-                className="settings-close-btn"
-                onClick={() => closeSettingsPanel()}
-                onMouseDown={(e) => e.stopPropagation()}
-                data-tooltip="Fermer sans appliquer"
-              >
-                ×
-              </button>
+              <div className="floating-window-title-wrap">
+                <h3 id="settings-panel-title" className="floating-window-title">
+                  Paramètres
+                  {settingsDirty && (
+                    <span className="settings-dirty-badge" aria-label="Modifications non enregistrées">
+                      non enregistré
+                    </span>
+                  )}
+                </h3>
+              </div>
+              <div className="floating-window-controls">
+                <button
+                  type="button"
+                  className="floating-window-btn floating-window-btn--minimize"
+                  onClick={() => setSettingsMinimized(true)}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  aria-label="Réduire"
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  className="floating-window-btn floating-window-btn--maximize"
+                  onClick={() => setSettingsMaximized((v) => !v)}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  aria-label={settingsMaximized ? 'Restaurer' : 'Plein écran'}
+                >
+                  {settingsMaximized ? '⧉' : '□'}
+                </button>
+                <button
+                  type="button"
+                  className="floating-window-btn floating-window-btn--close settings-close-btn"
+                  onClick={() => closeSettingsPanel()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  aria-label="Fermer sans appliquer"
+                >
+                  ×
+                </button>
+              </div>
             </div>
             <div className="settings-panel-content">
               <p className="settings-live-note">Les modifications ne sont prises en compte qu'après un clic sur « Appliquer et fermer ».</p>
@@ -3138,10 +3337,13 @@ function App() {
                         </p>
                       </div>
                       <div className="option-group">
-                        <label className="option-label">Version courante</label>
-                        <p className="settings-about-text">
-                          Vous utilisez Ascend <strong>v{packageJson.version}</strong>. Consultez le <code>changelog.md</code> du dépôt pour le détail des nouveautés.
-                        </p>
+                        <label className="option-label">Nouveautés v0.0.1.8.1</label>
+                        <ul className="settings-release-list">
+                          <li>Fond d’écran personnalisable (SVG, photo serveur ou image personnelle)</li>
+                          <li>Sidebar et navbar opaques selon le thème, même avec un fond photo</li>
+                          <li>Fenêtres flottantes unifiées et modales de confirmation Ascend</li>
+                          <li>États vides des éditeurs et historique enrichi</li>
+                        </ul>
                       </div>
                     </div>
                   )}
@@ -3237,6 +3439,89 @@ function App() {
                         </select>
                       </div>
                       <div className="option-group">
+                        <label className="option-label" htmlFor="settings-background-mode">Fond d’écran</label>
+                        <select
+                          id="settings-background-mode"
+                          value={draftSettings.ui.backgroundMode}
+                          onChange={(e) => {
+                            const next = e.target.value as BackgroundMode;
+                            setPageBgError(null);
+                            setDraftSettings((s) => ({ ...s, ui: { ...s.ui, backgroundMode: next } }));
+                          }}
+                          className="option-select"
+                        >
+                          <option value="default">Décoratif (SVG Ascend)</option>
+                          <option value="server">Photo serveur (rafale.jpg)</option>
+                          <option value="custom">Image personnelle</option>
+                        </select>
+                        <p className="settings-muted" style={{ marginTop: '0.4rem' }}>
+                          {draftSettings.ui.backgroundMode === 'default' &&
+                            'Fond aurora intégré, adapté au thème clair ou sombre.'}
+                          {draftSettings.ui.backgroundMode === 'server' &&
+                            `Utilise ${SERVER_BG_URL} si le fichier est présent côté backend.`}
+                          {draftSettings.ui.backgroundMode === 'custom' &&
+                            'Image entière visible (sans crop), qualité adaptée à votre écran.'}
+                        </p>
+                        {draftSettings.ui.backgroundMode === 'custom' && (
+                          <div className="settings-bg-picker">
+                            {draftPageBgImage ? (
+                              <div
+                                className="settings-bg-preview"
+                                style={{ backgroundImage: `url("${draftPageBgImage}")` }}
+                                role="img"
+                                aria-label="Aperçu du fond personnalisé"
+                              />
+                            ) : (
+                              <div className="settings-bg-preview settings-bg-preview--empty">
+                                Aucune image
+                              </div>
+                            )}
+                            <div className="settings-bg-actions">
+                              <input
+                                ref={pageBgFileInputRef}
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp,image/gif"
+                                className="settings-bg-file-input"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  e.target.value = '';
+                                  if (!file) return;
+                                  try {
+                                    setPageBgError(null);
+                                    const dataUrl = await fileToPageBackgroundDataUrl(file);
+                                    setDraftPageBgImage(dataUrl);
+                                  } catch (err) {
+                                    setPageBgError(err instanceof Error ? err.message : 'Import impossible');
+                                  }
+                                }}
+                              />
+                              <button
+                                type="button"
+                                className="settings-param-reset-btn"
+                                onClick={() => pageBgFileInputRef.current?.click()}
+                              >
+                                Choisir une image…
+                              </button>
+                              {draftPageBgImage && (
+                                <button
+                                  type="button"
+                                  className="settings-param-reset-btn"
+                                  onClick={() => {
+                                    setDraftPageBgImage(null);
+                                    setPageBgError(null);
+                                  }}
+                                >
+                                  Retirer
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {pageBgError && (
+                          <p className="settings-field-error" role="alert">{pageBgError}</p>
+                        )}
+                      </div>
+                      <div className="option-group">
                         <label className="option-label">Taille police éditeur</label>
                         <input type="number" min={8} max={32} value={draftSettings.ui.editorFontSize} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, editorFontSize: Math.min(32, Math.max(8, parseInt(e.target.value, 10) || 14)) } }))} className="option-input" />
                       </div>
@@ -3289,6 +3574,8 @@ function App() {
                     className="settings-param-reset-btn"
                     onClick={() => {
                       setDraftSettings(cloneUserSettings(DEFAULT_USER_SETTINGS));
+                      setDraftPageBgImage(null);
+                      setPageBgError(null);
                       setSettingsErrors({});
                     }}
                     data-tooltip="Réinitialiser le brouillon (appliquer ensuite pour valider)"
@@ -3298,14 +3585,39 @@ function App() {
                 </div>
               </div>
             </div>
-            <div
-              className="settings-resize-handle"
-              onMouseDown={handleSettingsResizeStart}
-              data-tooltip="Redimensionner"
-            />
+            {!settingsMaximized && (
+              <div
+                className="floating-window-resize-handle settings-resize-handle"
+                onMouseDown={handleSettingsResizeStart}
+                aria-label="Redimensionner"
+              />
+            )}
           </div>
         </>
       )}
+
+      <Modal
+        isOpen={showDiscardSettingsModal}
+        onClose={() => setShowDiscardSettingsModal(false)}
+        title="Modifications non enregistrées"
+        message="Des modifications n’ont pas été appliquées. Quitter sans enregistrer ?"
+        confirmText="Quitter sans enregistrer"
+        cancelText="Continuer l’édition"
+        type="warning"
+        onConfirm={forceCloseSettingsPanel}
+      />
+
+      <Modal
+        isOpen={showClearHistoryModal}
+        onClose={() => setShowClearHistoryModal(false)}
+        title="Effacer l’historique"
+        message="Êtes-vous sûr de vouloir effacer tout l’historique ? Cette action est irréversible."
+        confirmText="Effacer tout"
+        cancelText="Annuler"
+        type="danger"
+        autoFocusConfirm
+        onConfirm={() => clearHistory(true)}
+      />
 
       {/* 
         ========================================================================
@@ -3367,7 +3679,7 @@ function App() {
                       Clear button: prompts for confirmation before deletion
                     */}
                     <button
-                      onClick={clearHistory}
+                      onClick={() => clearHistory()}
                       style={{
                         padding: "0.4rem 0.8rem",
                         background: "#ef4444",
@@ -3447,9 +3759,10 @@ function App() {
             setHistoryWindowMinimized(false);
           }}
           onMinimize={() => setHistoryWindowMinimized(true)}
-          entries={conversionHistory}
+          entries={buildDisplayHistory(conversionHistory) as DisplayHistoryEntryShape[]}
           onRestore={restoreFromHistory}
-          onClear={clearHistory}
+          onDelete={removeHistoryEntry}
+          onClear={() => clearHistory(true)}
           getFormatTitle={getFormatTitle}
         />
       )}
@@ -4209,7 +4522,7 @@ function App() {
         - Position: fixed at bottom of screen
         - Shows Navigation and/or Historique when minimized
       */}
-      {(navigationWindowMinimized || historyWindowMinimized) && (
+      {(navigationWindowMinimized || historyWindowMinimized || settingsMinimized) && (
         <div className="taskbar">
           {navigationWindowMinimized && (
             <div
@@ -4232,6 +4545,16 @@ function App() {
             >
               <span className="taskbar-icon" aria-hidden>🕐</span>
               <span className="taskbar-label">Historique</span>
+            </div>
+          )}
+          {settingsMinimized && (
+            <div
+              className="taskbar-item"
+              onClick={() => setSettingsMinimized(false)}
+              data-tooltip="Paramètres – Cliquer pour restaurer"
+            >
+              <span className="taskbar-icon" aria-hidden>⚙</span>
+              <span className="taskbar-label">Paramètres</span>
             </div>
           )}
         </div>
@@ -4437,7 +4760,7 @@ function App() {
             // - maximized: full screen window (95vw x 95vh, centered)
             // - dragging: state during movement (improves visual performance)
             // - resizing: state during resizing (optimizes rendering)
-            className={`navigation-window ${navigationWindowMinimized ? 'minimized' : ''} ${navigationWindowMaximized ? 'maximized' : ''} ${isDragging ? 'dragging' : ''} ${isResizing ? 'resizing' : ''}`}
+            className={`floating-window navigation-window ${navigationWindowMinimized ? 'minimized' : ''} ${navigationWindowMaximized ? 'maximized' : ''} ${isDragging ? 'dragging' : ''} ${isResizing ? 'resizing' : ''}`}
             style={{
               // Position: centered if maximized, otherwise custom position
               left: navigationWindowMaximized ? '50%' : `${navigationWindowPosition.x}px`,
@@ -4461,16 +4784,16 @@ function App() {
               header to move the window. Also holds control buttons (minimize, maximize, close).
             */}
             <div 
-              className="navigation-window-header"
+              className="floating-window-header floating-window-header--draggable navigation-window-header"
               onMouseDown={handleDragStart}
             >
               {/* 
                 Title and section count
                 The count shows total detected headings with singular/plural handling.
               */}
-              <div className="navigation-window-title">
-                <span>Navigation</span>
-                <span className="navigation-window-count">
+              <div className="floating-window-title-wrap navigation-window-title">
+                <span className="floating-window-title">Navigation</span>
+                <span className="floating-window-count navigation-window-count">
                   {headings.length} {headings.length > 1 ? 'sections' : 'section'}
                 </span>
               </div>
@@ -4484,54 +4807,34 @@ function App() {
                 2. Maximize/Restore (□/⧉): toggle full screen and normal size
                 3. Close (×): close window and disable navigation
               */}
-              <div className="navigation-window-controls">
-                {/* 
-                  Minimize button: reduces the window
-                  - Sets navigationWindowMinimized to true
-                  - Hides window (navigationWindowOpen = false)
-                  - Window appears in the taskbar at the bottom
-                */}
+              <div className="floating-window-controls navigation-window-controls">
                 <button
                   type="button"
-                  className="navigation-window-btn minimize-btn"
+                  className="floating-window-btn floating-window-btn--minimize navigation-window-btn minimize-btn"
                   onClick={() => {
                     setNavigationWindowMinimized(true);
                     setNavigationWindowOpen(false);
                   }}
-                  data-tooltip="Minimize"
+                  aria-label="Réduire"
                 >
                   −
                 </button>
-                
-                {/* 
-                  Maximize/Restore button: toggle full screen ↔ normal
-                  - If maximized: restore normal size
-                  - If normal: expand to 95vw x 95vh (centered)
-                  - Icon changes by state (□ = maximize, ⧉ = restore)
-                */}
                 <button
                   type="button"
-                  className="navigation-window-btn maximize-btn"
+                  className="floating-window-btn floating-window-btn--maximize navigation-window-btn maximize-btn"
                   onClick={() => setNavigationWindowMaximized(!navigationWindowMaximized)}
-                  data-tooltip={navigationWindowMaximized ? "Restore" : "Full screen"}
+                  aria-label={navigationWindowMaximized ? "Restaurer" : "Plein écran"}
                 >
                   {navigationWindowMaximized ? '⧉' : '□'}
                 </button>
-                
-                {/* 
-                  Close button: closes window and disables navigation
-                  - Sets navigationWindowOpen to false
-                  - Disables navigation (navigationEnabled = false)
-                  - Window disappears completely
-                */}
                 <button
                   type="button"
-                  className="navigation-window-btn close-btn"
+                  className="floating-window-btn floating-window-btn--close navigation-window-btn close-btn"
                   onClick={() => {
                     setNavigationWindowOpen(false);
                     setNavigationEnabled(false);
                   }}
-                  data-tooltip="Close"
+                  aria-label="Fermer"
                 >
                   ×
                 </button>
@@ -4570,7 +4873,7 @@ function App() {
             */}
             {!navigationWindowMinimized && !navigationWindowMaximized && (
               <div 
-                className="navigation-window-resize-handle"
+                className="floating-window-resize-handle navigation-window-resize-handle"
                 onMouseDown={handleResizeStart}
               />
             )}
@@ -4578,302 +4881,150 @@ function App() {
         );
       })()}
 
-      {/* Confirmation modal for editing */}
-      {showEditModal && (
-        <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Activer l'édition</h3>
-            <p>Voulez-vous activer le mode édition pour modifier le contenu ?</p>
-            <div className="modal-buttons">
-              <button
-                onClick={() => {
-                  // Save original content before enabling editing
-                  if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json') {
-                    setOriginalMdOutput(mdOutput);
-                  } else {
-                    setOriginalAdocInput(adocInput);
-                  }
-                  setIsEditingResult(true);
-                  setShowEditModal(false);
-                }}
-                style={{ 
-                  background: "#10b981",
-                  flex: 1
-                }}
-              >
-                Oui
-              </button>
-              <button
-                onClick={() => setShowEditModal(false)}
-                style={{ 
-                  background: "#ef4444",
-                  flex: 1
-                }}
-              >
-                Non
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title="Activer l’édition"
+        message="Voulez-vous activer le mode édition pour modifier le contenu ?"
+        confirmText="Activer"
+        cancelText="Annuler"
+        type="info"
+        onConfirm={() => {
+          if (
+            targetFormat === 'markdown' ||
+            targetFormat === 'html' ||
+            targetFormat === 'pdf' ||
+            targetFormat === 'yaml' ||
+            targetFormat === 'json'
+          ) {
+            setOriginalMdOutput(mdOutput);
+          } else {
+            setOriginalAdocInput(adocInput);
+          }
+          setIsEditingResult(true);
+        }}
+      />
 
-      {/* Save confirmation modal */}
-      {showSaveModal && (
-        <div className="modal-overlay" onClick={() => setShowSaveModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Sauvegarder les modifications</h3>
-            <p>Voulez-vous sauvegarder les modifications apportées au contenu ?</p>
-            <div className="modal-buttons">
-              <button
-                onClick={() => {
-                  setIsEditingResult(false);
-                  setShowSaveModal(false);
-                  setStatus("Modifications sauvegardées ✓");
-                  setTimeout(() => setStatus(""), 3000);
-                }}
-                style={{ 
-                  background: "#10b981",
-                  flex: 1
-                }}
-              >
-                Oui
-              </button>
-              <button
-                onClick={() => {
-                  // Restore original content and disable editing
-                  if (visualMode === 'adoc-to-md') {
-                    setMdOutput(originalMdOutput);
-                  } else {
-                    setAdocInput(originalAdocInput);
-                  }
-                  setIsEditingResult(false);
-                  setShowSaveModal(false);
-                  setStatus("Editing cancelled - unsaved modifications");
-                }}
-                style={{ 
-                  background: "#ef4444",
-                  flex: 1
-                }}
-              >
-                Non
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        isOpen={showSaveModal}
+        onClose={() => setShowSaveModal(false)}
+        title="Sauvegarder les modifications"
+        message="Enregistrer les modifications et quitter le mode édition ?"
+        confirmText="Sauvegarder"
+        cancelText="Continuer l’édition"
+        type="info"
+        onConfirm={() => {
+          setIsEditingResult(false);
+          setStatus('Modifications sauvegardées');
+          setTimeout(() => setStatus(''), 3000);
+        }}
+      />
 
-      {/* Confirmation modal for cancellation */}
-      {showCancelModal && (
-        <div className="modal-overlay" onClick={() => setShowCancelModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Annuler l'édition</h3>
-            <p>Voulez-vous annuler l'édition ? Les modifications non sauvegardées seront perdues.</p>
-            <div className="modal-buttons">
-              <button
-                onClick={() => {
-                  // Cancel modifications and restore original content
-                  if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
-                    setMdOutput(originalMdOutput);
-                  } else {
-                    setAdocInput(originalAdocInput);
-                  }
-                  setIsEditingResult(false);
-                  setShowCancelModal(false);
-                  setStatus("Édition annulée - modifications non sauvegardées");
-                }}
-                style={{ 
-                  background: "#10b981",
-                  flex: 1
-                }}
-              >
-                Oui
-              </button>
-              <button
-                onClick={() => setShowCancelModal(false)}
-                style={{ 
-                  background: "#ef4444",
-                  flex: 1
-                }}
-              >
-                Non
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        title="Annuler l’édition"
+        message="Les modifications non sauvegardées seront perdues."
+        confirmText="Abandonner"
+        cancelText="Continuer l’édition"
+        type="warning"
+        onConfirm={() => {
+          if (
+            targetFormat === 'markdown' ||
+            targetFormat === 'html' ||
+            targetFormat === 'pdf' ||
+            targetFormat === 'yaml' ||
+            targetFormat === 'json' ||
+            targetFormat === 'txt'
+          ) {
+            setMdOutput(originalMdOutput);
+          } else {
+            setAdocInput(originalAdocInput);
+          }
+          setIsEditingResult(false);
+          setStatus('Édition annulée — modifications non sauvegardées');
+        }}
+      />
 
-      {/* Confirmation modal for result clearing */}
-      {showClearResultModal && (
-        <div className="modal-overlay" onClick={() => setShowClearResultModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Effacer le résultat</h3>
-            <p>Voulez-vous effacer le résultat ? Cette action est irréversible.</p>
-            <div className="modal-buttons">
-              <button
-                onClick={confirmClearResult}
-                style={{ 
-                  background: "#10b981",
-                  flex: 1
-                }}
-              >
-                Oui
-              </button>
-              <button
-                onClick={() => setShowClearResultModal(false)}
-                style={{ 
-                  background: "#ef4444",
-                  flex: 1
-                }}
-              >
-                Non
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        isOpen={showClearResultModal}
+        onClose={() => setShowClearResultModal(false)}
+        title="Effacer le résultat"
+        message="Voulez-vous effacer le résultat ? Cette action est irréversible."
+        confirmText="Effacer"
+        cancelText="Annuler"
+        type="danger"
+        autoFocusConfirm
+        onConfirm={confirmClearResult}
+      />
 
-      {/* Confirmation modal for source clearing */}
-      {showClearSourceModal && (
-        <div className="modal-overlay" onClick={() => setShowClearSourceModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Effacer la source</h3>
-            <p>Que souhaitez-vous effacer ?</p>
-            <div className="modal-buttons" style={{ flexDirection: "column", gap: "0.5rem" }}>
-              <button
-                onClick={confirmClearSource}
-                style={{ 
-                  background: "#10b981",
-                  width: "100%"
-                }}
-              >
-                Oui - source uniquement
-              </button>
-              <button
-                onClick={confirmClearSourceAndResult}
-                style={{ 
-                  background: "#3b82f6",
-                  width: "100%"
-                }}
-              >
-                Oui - source et résultat
-              </button>
-              <button
-                onClick={() => setShowClearSourceModal(false)}
-                style={{ 
-                  background: "#ef4444",
-                  width: "100%"
-                }}
-              >
-                Non
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        isOpen={showClearSourceModal}
+        onClose={() => setShowClearSourceModal(false)}
+        title="Effacer la source"
+        message="Que souhaitez-vous effacer ?"
+        type="danger"
+        stackActions
+        footer={
+          <>
+            <button type="button" className="modal-button confirm info" onClick={confirmClearSource}>
+              Source uniquement
+            </button>
+            <button type="button" className="modal-button confirm warning" onClick={confirmClearSourceAndResult}>
+              Source et résultat
+            </button>
+            <button
+              type="button"
+              className="modal-button cancel"
+              onClick={() => setShowClearSourceModal(false)}
+            >
+              Annuler
+            </button>
+          </>
+        }
+      />
 
-      {/* 
-        ========================================================================
-        CONFIRMATION MODAL: SECURE CONVERSION (WITH TOKEN)
-        ========================================================================
-        This modal is shown for conversions that require explicit user
-        confirmation (security).
-        
-        SECURITY:
-        ---------
-        1. A confirmation token is requested from the backend before showing the modal
-        2. Token is unique, single-use and time-limited
-        3. Token MUST be included in the final conversion request
-        4. If the user cancels, the token is invalidated
-        
-        DISPLAY CONDITIONS:
-        -------------------
-        Modal is shown only when:
-        - showConversionModal === true
-        - confirmationToken exists (valid token)
-        - pendingConversion exists (pending conversion parameters)
-        
-        ACTIONS:
-        --------
-        - "Yes": run conversion with token (confirmAndConvert)
-        - "No": cancel and invalidate token
-        - Overlay click: cancel and invalidate token
-        
-        IMPORTANT:
-        ----------
-        This modal is used for sensitive conversions that require explicit
-        confirmation to avoid accidental conversions.
-      */}
-      {showConversionModal && confirmationToken && pendingConversion && (
-        <div className="modal-overlay" onClick={() => {
-          /* 
-            Cancel: invalidate token and close modal.
-            Token cannot be used after cancel.
-          */
+      <Modal
+        isOpen={Boolean(showConversionModal && confirmationToken && pendingConversion)}
+        onClose={() => {
           setShowConversionModal(false);
           setConfirmationToken(null);
           setPendingConversion(null);
-        }}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Confirmer la conversion</h3>
-            {/* 
-              Show source and target formats so the user knows
-              exactly what will be converted
-            */}
-            <p>
-              Voulez-vous convertir de <strong>{getFormatTitle(pendingConversion.fromFormat)}</strong> vers <strong>{getFormatTitle(pendingConversion.toFormat)}</strong> ?
-            </p>
-            <p style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: "0.5rem" }}>
-              Cette action nécessite une confirmation explicite.
-            </p>
-            <div className="modal-buttons">
-              {/* 
-                "Yes" button: confirms and runs the conversion
-                - Calls confirmAndConvert() which uses the token
-                - Closes the modal
-                - Runs conversion with the confirmation token
-              */}
-              <button
-                onClick={confirmAndConvert}
-                style={{ 
-                  background: "#10b981", // Green for "Yes"
-                  flex: 1
-                }}
-              >
-                Oui
-              </button>
-              {/* 
-                "No" button: cancels the conversion
-                - Invalidates the token
-                - Closes the modal
-                - Does not run the conversion
-              */}
-              <button
-                onClick={() => {
-                  // Cancel: invalidate token and close modal
-                  setShowConversionModal(false);
-                  setConfirmationToken(null);
-                  setPendingConversion(null);
-                }}
-                style={{ 
-                  background: "#ef4444", // Red for "No"
-                  flex: 1
-                }}
-              >
-                Non
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        }}
+        title="Confirmer la conversion"
+        message={
+          pendingConversion ? (
+            <>
+              <p>
+                Convertir de <strong>{getFormatTitle(pendingConversion.fromFormat)}</strong> vers{' '}
+                <strong>{getFormatTitle(pendingConversion.toFormat)}</strong> ?
+              </p>
+              <p className="modal-body-note">Cette action nécessite une confirmation explicite.</p>
+            </>
+          ) : null
+        }
+        confirmText="Convertir"
+        cancelText="Annuler"
+        type="warning"
+        onConfirm={confirmAndConvert}
+        onCancel={() => {
+          setConfirmationToken(null);
+          setPendingConversion(null);
+        }}
+      />
 
-      {/* 
-        ERROR MODAL: Displays when conversion fails
-        Shows a message asking user to modify source and retry conversion
-      */}
-      {showConversionErrorModal && (
-        <div className="modal-overlay" onClick={() => setShowConversionErrorModal(false)}>
-          <div className="modal-content conversion-error-modal" onClick={(e) => e.stopPropagation()}>
-            <h3 className="conversion-error-title">Erreur de conversion</h3>
+      <Modal
+        isOpen={showConversionErrorModal}
+        onClose={() => setShowConversionErrorModal(false)}
+        title="Erreur de conversion"
+        type="danger"
+        showCancel={false}
+        confirmText="Compris"
+        autoFocusConfirm
+        contentClassName="conversion-error-modal"
+        onConfirm={() => setShowConversionErrorModal(false)}
+        message={
+          <>
             {conversionErrorDetails.code && (
               <p className="conversion-error-code">
                 Code : <code>{conversionErrorDetails.code}</code>
@@ -4890,18 +5041,9 @@ function App() {
                 Identifiant : <code>{conversionErrorDetails.requestId}</code>
               </p>
             )}
-            <div className="modal-buttons conversion-error-actions">
-              <button
-                type="button"
-                className="conversion-error-dismiss"
-                onClick={() => setShowConversionErrorModal(false)}
-              >
-                Compris
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        }
+      />
     </div>
   );
 }

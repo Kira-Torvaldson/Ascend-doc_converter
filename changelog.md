@@ -13,6 +13,18 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.8.1 (2026-08-03)
+
+#### Added
+- Custom page background option in Settings → Interface: decorative SVG, server photo (`rafale.jpg`), or personal image (localStorage, auto-compressed).
+- Empty editor states with one-click sample documents.
+- Unified Ascend confirmation modal (Escape, focus trap, theme-aware) for settings discard, history clear, edit/save/cancel, clear source/result, and conversion confirm/error.
+- Floating-window chrome shared by Settings, History, and Navigation (min/max, taskbar, Escape).
+
+#### Changed
+- Photo backgrounds use contain + ambient blur fill (no aggressive crop/zoom); sidebar and header stay opaque theme colors over custom backgrounds.
+- History modal upgrades: search, status chips, day groups, preview, keyboard navigation.
+
 ### 0.0.1.8 (2026-08-03)
 
 #### Added

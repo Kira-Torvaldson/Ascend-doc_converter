@@ -70,7 +70,9 @@ export interface HistoryEntry {
   hasError?: boolean;
   durationMs?: number;
   sourcePath?: string;
-  [key: string]: unknown;
+  id?: string;
+  timestamp?: number;
+  resultContent?: string;
 }
 
 /**
