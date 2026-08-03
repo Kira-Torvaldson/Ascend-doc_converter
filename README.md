@@ -1,16 +1,21 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.7-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.8-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.7)
+## Latest changes (v0.0.1.8)
 
-- **UX & CI**
-  - Conversion error modal with `error.code`, hint, and request ID.
-  - Docker frontend build gate (`check:docker:frontend`) in CI.
-  - Footer shows source size limit; Rafale background more visible.
+- **ConversionResult & EnvMap**
+  - `POST /api/convert`, `POST /api/proxy/convert`, and `POST /api/roundtrip` now expose the standardized `ConversionResult` contract (all conversion routes covered); Zod validation failures use the standardized error envelope.
+  - Fixed `/api/convert` runtime failures (anomaly detector call, lazyload require path, token error fields).
+  - `API_KEY`, `FRONTEND_URL`, and `ASCEND_REPORTS_DIR` added to the EnvMap schema; middlewares migrated off `process.env`.
+  - EnvMap is now the single configuration source (`server.js`, error handler, logger and security fallbacks removed); `secure-converter` limits follow `MAX_INPUT_SIZE_MB` / `CONVERSION_TIMEOUT_MS`.
+  - Fixed `SecurityLogger` log directory creation; added a Pandoc scenario to the `/api/convert` contract script (CI).
+- **Large-document performance**
+  - `/api/to-markdown` fully in-memory (no disk I/O); Pandoc via stdin/stdout for text formats (no temp files); async I/O everywhere else, single-pass post-processing, 4 KB MIME sampling, HTTP response compression. A 4 MB document converts in ≈0.5 s on `/api/to-markdown`.
+  - Persistent Pandoc server (Pandoc >= 3.0): no per-request binary startup for text conversions, with automatic CLI fallback (`PANDOC_SERVER_ENABLED` to opt out).
 
 ## Overview
 

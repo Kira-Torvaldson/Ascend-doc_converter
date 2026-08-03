@@ -13,7 +13,8 @@
  */
 
 const path = require('path')
-const { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync } = require('fs')
+const { readFileSync, existsSync, statSync, unlinkSync, mkdirSync } = require('fs')
+const { writeFile, readFile } = require('fs/promises')
 const { tmpdir } = require('os')
 const { randomUUID, createHash } = require('crypto')
 const { safeSpawn } = require('../../../../lib/security/safe-spawn.js')
@@ -261,7 +262,7 @@ async function runRoundTrip(inputAdocPath, options = {}) {
     logs.push(`[${conversionId}] Input invalid → pipeline stopped, state=input_invalid`)
     return out
   }
-  let sourceAdocContent = inputValidation.normalizedContent ?? readFileSync(inputAdocPath, 'utf8')
+  let sourceAdocContent = inputValidation.normalizedContent ?? (await readFile(inputAdocPath, 'utf8'))
   
   // Remove :experimental: line from header only (no :toc: injection)
   sourceAdocContent = removeExperimentalTag(sourceAdocContent)
@@ -271,7 +272,7 @@ async function runRoundTrip(inputAdocPath, options = {}) {
   ensureWorkDir()
   
   // Create cleaned input file for Pandoc (without :experimental: tag)
-  writeFileSync(cleanedInputPath, sourceAdocContent, 'utf8')
+  await writeFile(cleanedInputPath, sourceAdocContent, 'utf8')
   logs.push(`[${conversionId}] Created cleaned input file: ${cleanedInputPath}`)
   
   let pandocPath = getPandocPath()
@@ -314,7 +315,7 @@ async function runRoundTrip(inputAdocPath, options = {}) {
     if (existsSync(cleanedInputPath)) try { unlinkSync(cleanedInputPath) } catch (_) {}
     return out
   }
-  const mdContent = readFileSync(mdPath, 'utf8')
+  const mdContent = await readFile(mdPath, 'utf8')
   logs.push(`[${conversionId}] Markdown output valid (blocs de code, titres, images, blockquotes préservés): ${mdPath}`)
 
   // ---------- 3. Conversion Markdown → AsciiDoc ----------
@@ -352,11 +353,11 @@ async function runRoundTrip(inputAdocPath, options = {}) {
   out.state = STATE_SUCCESS
   out.markdownPath = mdPath
   out.asciidocPath = adocPath
-  let markdownContent = ''
+  // Réutiliser le Markdown déjà lu ; seul l'AsciiDoc final doit être lu du disque
+  let markdownContent = mdContent
   let asciidocContent = ''
   try {
-    markdownContent = readFileSync(mdPath, 'utf8')
-    asciidocContent = readFileSync(adocPath, 'utf8')
+    asciidocContent = await readFile(adocPath, 'utf8')
     out.markdownContent = markdownContent
     out.asciidocContent = asciidocContent
   } catch (e) {

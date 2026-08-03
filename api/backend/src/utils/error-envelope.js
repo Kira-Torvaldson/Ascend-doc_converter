@@ -21,6 +21,12 @@ const CATEGORY_BY_CODE = Object.freeze({
   PATH_TRAVERSAL: ERROR_CATEGORIES.VALIDATION_ERROR,
   SYMLINK_REJECTED: ERROR_CATEGORIES.VALIDATION_ERROR,
   PATH_NOT_FOUND: ERROR_CATEGORIES.VALIDATION_ERROR,
+  CONFIRMATION_REQUIRED: ERROR_CATEGORIES.VALIDATION_ERROR,
+  CONFIRMATION_TOKEN_MISSING: ERROR_CATEGORIES.VALIDATION_ERROR,
+  CONFIRMATION_TOKEN_INVALID: ERROR_CATEGORIES.VALIDATION_ERROR,
+  CONFIRMATION_TOKEN_EXPIRED: ERROR_CATEGORIES.VALIDATION_ERROR,
+  CONFIRMATION_TOKEN_ALREADY_USED: ERROR_CATEGORIES.VALIDATION_ERROR,
+  CONFIRMATION_TOKEN_METADATA_MISMATCH: ERROR_CATEGORIES.VALIDATION_ERROR,
   CONVERSION_TIMEOUT: ERROR_CATEGORIES.TIMEOUT_ERROR,
   CONVERSION_FAILED: ERROR_CATEGORIES.CONVERSION_ERROR,
   OUTPUT_NOT_CREATED: ERROR_CATEGORIES.CONVERSION_ERROR,
@@ -52,6 +58,12 @@ const HINT_BY_CODE = Object.freeze({
   WORKER_CRASH: 'Relancez la conversion ; si le problème persiste, consultez les logs.',
   RESOURCE_LIMIT_EXCEEDED: 'Réduisez la taille ou la complexité du document.',
   PATH_NOT_FOUND: 'Vérifiez que tous les fichiers référencés existent.',
+  CONFIRMATION_REQUIRED: 'Confirmez la conversion dans la fenêtre de confirmation puis réessayez.',
+  CONFIRMATION_TOKEN_MISSING: 'Confirmez la conversion dans la fenêtre de confirmation puis réessayez.',
+  CONFIRMATION_TOKEN_INVALID: 'Demandez une nouvelle confirmation puis relancez la conversion.',
+  CONFIRMATION_TOKEN_EXPIRED: 'La confirmation a expiré : confirmez à nouveau puis relancez.',
+  CONFIRMATION_TOKEN_ALREADY_USED: 'Cette confirmation a déjà servi : demandez-en une nouvelle.',
+  CONFIRMATION_TOKEN_METADATA_MISMATCH: 'Les formats confirmés ne correspondent pas : recommencez la confirmation.',
 })
 
 function mapCodeToCategory(code) {

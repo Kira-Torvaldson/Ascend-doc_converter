@@ -524,6 +524,7 @@ Chaque variable d'environnement dans le schéma définit :
 #### Configuration Pandoc
 
 - **`PANDOC_PATH`** : Chemin vers le binaire Pandoc (path, défaut : '/usr/bin/pandoc')
+- **`PANDOC_SERVER_ENABLED`** : Utilise un processus `pandoc server` persistant pour les conversions texte au lieu d'une invocation CLI par requête (boolean, défaut : true). Nécessite Pandoc >= 3.0 ; si le serveur ne peut pas démarrer, les conversions retombent automatiquement sur le chemin CLI.
 
 #### Configuration de journalisation
 

@@ -65,116 +65,26 @@ import packageJson from "../package.json";
 import { fetchConversionLimits } from "./converters/api";
 import { formatConversionErrorForUi, getHintForCode } from "./converters/error-code-messages";
 import defaultLogo from "./assets/ascend-logo.svg";
+import {
+  type UserSettings,
+  type SettingsValidationErrors,
+  DEFAULT_USER_SETTINGS,
+  validateUserPrefs,
+  loadUserSettings,
+  cloneUserSettings,
+  areUserSettingsEqual,
+  persistUserSettings,
+} from "./settings/userSettings";
 
-type UserPreferences = { displayName: string; organization: string; defaultLanguage: 'fr' | 'en' | 'es' | 'de' };
-type SettingsValidationErrors = { displayName?: string; organization?: string };
-const USER_PREFS_KEY = 'ascend_user_prefs';
-const MAX_DISPLAY_NAME = 100;
-const MAX_ORGANIZATION = 100;
 const DEFAULT_MAX_SOURCE_SIZE_MB = 5;
+const SIDEBAR_COLLAPSED_KEY = 'ascend_sidebar_collapsed';
 
-function validateUserPrefs(prefs: UserPreferences): SettingsValidationErrors {
-  const err: SettingsValidationErrors = {};
-  const dn = (prefs.displayName || '').trim();
-  const org = (prefs.organization || '').trim();
-  if (dn.length > MAX_DISPLAY_NAME) err.displayName = `Maximum ${MAX_DISPLAY_NAME} caractères`;
-  if (org.length > MAX_ORGANIZATION) err.organization = `Maximum ${MAX_ORGANIZATION} caractères`;
-  return err;
-}
-
-function loadUserPrefs(): UserPreferences {
+function loadSidebarCollapsed(): boolean {
   try {
-    const stored = localStorage.getItem(USER_PREFS_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      return {
-        displayName: typeof parsed.displayName === 'string' ? parsed.displayName : '',
-        organization: typeof parsed.organization === 'string' ? parsed.organization : '',
-        defaultLanguage: ['fr', 'en', 'es', 'de'].includes(parsed.defaultLanguage) ? parsed.defaultLanguage : 'fr'
-      };
-    }
-  } catch (e) {
-    console.error('Error loading user prefs:', e);
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
   }
-  return { displayName: '', organization: '', defaultLanguage: 'fr' };
-}
-
-type UserSettings = {
-  profile: { displayName: string; organization: string; signature: string; defaultLanguage: 'fr'|'en'|'es'|'de' };
-  conversion: {
-    defaultOutputFormat: string;
-    autoApplyUserToMetadata: boolean;
-    defaultTocEnabled: boolean;
-    saveConversionHistory: boolean;
-  };
-  ui: {
-    theme: 'default'|'dark';
-    editorFontSize: number;
-    compactMode: boolean;
-    editorWordWrap: boolean;
-    reduceMotion: boolean;
-    showLineNumbers: boolean;
-    tabSize: 2 | 4;
-    showTooltips: boolean;
-  };
-};
-const USER_SETTINGS_KEY = 'ascend_user_settings';
-const DEFAULT_USER_SETTINGS: UserSettings = {
-  profile: { displayName: '', organization: '', signature: '', defaultLanguage: 'fr' },
-  conversion: {
-    defaultOutputFormat: '',
-    autoApplyUserToMetadata: false,
-    defaultTocEnabled: false,
-    saveConversionHistory: true
-  },
-  ui: {
-    theme: 'default',
-    editorFontSize: 14,
-    compactMode: false,
-    editorWordWrap: false,
-    reduceMotion: false,
-    showLineNumbers: false,
-    tabSize: 4,
-    showTooltips: true
-  }
-};
-function loadUserSettings(): UserSettings {
-  try {
-    const stored = localStorage.getItem(USER_SETTINGS_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      const p = parsed.profile || {};
-      const c = parsed.conversion || {};
-      const u = parsed.ui || {};
-      return {
-        profile: {
-          displayName: typeof p.displayName === 'string' ? p.displayName : '',
-          organization: typeof p.organization === 'string' ? p.organization : '',
-          signature: typeof p.signature === 'string' ? p.signature : '',
-          defaultLanguage: ['fr', 'en', 'es', 'de'].includes(p.defaultLanguage) ? p.defaultLanguage : 'fr'
-        },
-        conversion: {
-          defaultOutputFormat: typeof c.defaultOutputFormat === 'string' ? c.defaultOutputFormat : '',
-          autoApplyUserToMetadata: !!c.autoApplyUserToMetadata,
-          defaultTocEnabled: !!c.defaultTocEnabled,
-          saveConversionHistory: c.saveConversionHistory !== false
-        },
-        ui: {
-          theme: ['default', 'dark'].includes(u.theme) ? u.theme : 'default',
-          editorFontSize: typeof u.editorFontSize === 'number' && u.editorFontSize >= 8 && u.editorFontSize <= 32 ? u.editorFontSize : 14,
-          compactMode: !!u.compactMode,
-          editorWordWrap: !!u.editorWordWrap,
-          reduceMotion: !!u.reduceMotion,
-          showLineNumbers: !!u.showLineNumbers,
-          tabSize: u.tabSize === 2 ? 2 : 4,
-          showTooltips: u.showTooltips !== false
-        }
-      };
-    }
-  } catch (e) {
-    console.error('Error loading user settings:', e);
-  }
-  return { ...DEFAULT_USER_SETTINGS, profile: { ...DEFAULT_USER_SETTINGS.profile }, conversion: { ...DEFAULT_USER_SETTINGS.conversion }, ui: { ...DEFAULT_USER_SETTINGS.ui } };
 }
 
 /**
@@ -445,6 +355,19 @@ function App() {
   
   /** Indicates if settings panel is open */
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(loadSidebarCollapsed);
+
+  const toggleSidebarCollapsed = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
   /** Settings panel size (resizable) */
   const SETTINGS_MIN_W = 320;
@@ -655,6 +578,7 @@ function App() {
     metadata?: {
       title?: string | null;
       author?: string | null;
+      organization?: string | null;
       language?: string;
     };
     developer?: {
@@ -682,17 +606,25 @@ function App() {
     setExpandedSections(newExpanded);
   };
 
-  const [userSettings, setUserSettings] = useState<UserSettings>(loadUserSettings);
+  // Single localStorage read at startup for committed + draft
+  const [settingsBootstrap] = useState(() => {
+    const committed = loadUserSettings();
+    return { committed, draft: cloneUserSettings(committed) };
+  });
+  const [userSettings, setUserSettings] = useState<UserSettings>(settingsBootstrap.committed);
+  // Draft edited in the settings panel; committed only on "Appliquer et fermer"
+  const [draftSettings, setDraftSettings] = useState<UserSettings>(settingsBootstrap.draft);
   const [settingsErrors, setSettingsErrors] = useState<SettingsValidationErrors>({});
+  const settingsDirty = !areUserSettingsEqual(draftSettings, userSettings);
   useEffect(() => {
-    setSettingsErrors(validateUserPrefs({ displayName: userSettings.profile.displayName, organization: userSettings.profile.organization, defaultLanguage: userSettings.profile.defaultLanguage }));
-  }, [userSettings.profile.displayName, userSettings.profile.organization, userSettings.profile.defaultLanguage]);
+    setSettingsErrors(validateUserPrefs({
+      displayName: draftSettings.profile.displayName,
+      organization: draftSettings.profile.organization,
+      defaultLanguage: draftSettings.profile.defaultLanguage,
+    }));
+  }, [draftSettings.profile.displayName, draftSettings.profile.organization, draftSettings.profile.defaultLanguage]);
   useEffect(() => {
-    try {
-      localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(userSettings));
-    } catch (e) {
-      console.error('Error saving user settings:', e);
-    }
+    persistUserSettings(userSettings);
   }, [userSettings]);
 
   const applyThemeToDocument = useCallback((theme: 'default' | 'dark') => {
@@ -712,31 +644,69 @@ function App() {
     const root = document.documentElement;
     root.setAttribute('data-editor-word-wrap', ui.editorWordWrap ? 'true' : 'false');
     root.setAttribute('data-reduce-motion', ui.reduceMotion ? 'true' : 'false');
-    root.setAttribute('data-show-line-numbers', ui.showLineNumbers ? 'true' : 'false');
+    root.setAttribute('data-compact-mode', ui.compactMode ? 'true' : 'false');
     root.setAttribute('data-tab-size', String(ui.tabSize));
     root.setAttribute('data-show-tooltips', ui.showTooltips ? 'true' : 'false');
-    if (ui.showTooltips) {
-      root.querySelectorAll('[data-saved-title]').forEach((el) => {
-        const saved = el.getAttribute('data-saved-title');
-        if (saved) {
-          el.setAttribute('title', saved);
-          el.removeAttribute('data-saved-title');
-        }
-      });
-    } else {
-      root.querySelectorAll('[title]').forEach((el) => {
-        const t = el.getAttribute('title');
-        if (t) {
-          el.setAttribute('data-saved-title', t);
-          el.removeAttribute('title');
-        }
-      });
-    }
+    root.style.setProperty('--editor-font-size', `${ui.editorFontSize}px`);
   }, [applyThemeToDocument]);
 
+  // UI prefs apply only from committed settings (after Apply)
   useEffect(() => {
     applyUiPreferencesToDocument(userSettings.ui);
   }, [applyUiPreferencesToDocument, userSettings.ui]);
+
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsPanelRef = useRef<HTMLDivElement>(null);
+
+  const openSettingsPanel = useCallback(() => {
+    setDraftSettings(cloneUserSettings(userSettings));
+    setSettingsErrors({});
+    setSettingsOpen(true);
+  }, [userSettings]);
+
+  const closeSettingsPanel = useCallback((opts?: { force?: boolean }) => {
+    const dirty = !areUserSettingsEqual(draftSettings, userSettings);
+    if (!opts?.force && dirty) {
+      const discard = window.confirm('Modifications non appliquées. Quitter sans enregistrer ?');
+      if (!discard) return;
+    }
+    setSettingsOpen(false);
+    setDraftSettings(cloneUserSettings(userSettings));
+    setSettingsErrors({});
+  }, [draftSettings, userSettings]);
+
+  // Escape closes the settings panel (with dirty confirm)
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeSettingsPanel();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [settingsOpen, closeSettingsPanel]);
+
+  // Focus dialog on open; restore focus to the gear button on close
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const closeBtn = settingsPanelRef.current?.querySelector('.settings-close-btn') as HTMLElement | null;
+    closeBtn?.focus();
+    return () => {
+      settingsButtonRef.current?.focus();
+    };
+  }, [settingsOpen]);
+
+  // Apply the preferred default output format once at startup
+  useEffect(() => {
+    const fmt = userSettings.conversion.defaultOutputFormat as FormatType;
+    const validFormats: FormatType[] = ['asciidoc', 'markdown', 'html', 'pdf', 'yaml', 'json', 'txt'];
+    if (fmt && validFormats.includes(fmt) && fmt !== sourceFormat) {
+      setTargetFormat(fmt);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Updates a conversion option at a specific path
@@ -759,6 +729,31 @@ function App() {
       return newOptions;
     });
   };
+
+  const applyAndCloseSettings = useCallback(() => {
+    const errors = validateUserPrefs({
+      displayName: draftSettings.profile.displayName,
+      organization: draftSettings.profile.organization,
+      defaultLanguage: draftSettings.profile.defaultLanguage,
+    });
+    if (Object.keys(errors).length > 0) {
+      setSettingsErrors(errors);
+      return;
+    }
+    const committed = cloneUserSettings(draftSettings);
+    setUserSettings(committed);
+    applyUiPreferencesToDocument(committed.ui);
+    updateOption(['metadata', 'author'], committed.profile.displayName || null);
+    updateOption(['metadata', 'organization'], committed.profile.organization || null);
+    updateOption(['metadata', 'language'], committed.profile.defaultLanguage || null);
+    const fmt = committed.conversion.defaultOutputFormat as FormatType;
+    const validFormats: FormatType[] = ['asciidoc', 'markdown', 'html', 'pdf', 'yaml', 'json', 'txt'];
+    if (fmt && validFormats.includes(fmt) && fmt !== sourceFormat) {
+      setTargetFormat(fmt);
+    }
+    setStatus('Paramètres appliqués');
+    setSettingsOpen(false);
+  }, [draftSettings, applyUiPreferencesToDocument, sourceFormat]);
   
   // ==========================================================================
   // STATES: NOTIFICATIONS
@@ -1907,6 +1902,13 @@ function App() {
     } else if (userSettings.conversion.defaultTocEnabled) {
       opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
     }
+    if (userSettings.conversion.autoApplyUserToMetadata) {
+      const metadata = { ...(opts.metadata || {}) };
+      if (!metadata.author && userSettings.profile.displayName.trim()) metadata.author = userSettings.profile.displayName.trim();
+      if (!metadata.organization && userSettings.profile.organization.trim()) metadata.organization = userSettings.profile.organization.trim();
+      if (!metadata.language) metadata.language = userSettings.profile.defaultLanguage;
+      opts = { ...opts, metadata };
+    }
     const attemptId = activeAttemptIdRef.current + 1;
     activeAttemptIdRef.current = attemptId;
     setLastAttemptId(attemptId);
@@ -2287,6 +2289,13 @@ function App() {
       } else if (userSettings.conversion.defaultTocEnabled) {
         opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
       }
+      if (userSettings.conversion.autoApplyUserToMetadata) {
+        const metadata = { ...(opts.metadata || {}) };
+        if (!metadata.author && userSettings.profile.displayName.trim()) metadata.author = userSettings.profile.displayName.trim();
+        if (!metadata.organization && userSettings.profile.organization.trim()) metadata.organization = userSettings.profile.organization.trim();
+        if (!metadata.language) metadata.language = userSettings.profile.defaultLanguage;
+        opts = { ...opts, metadata };
+      }
       const attemptId = activeAttemptIdRef.current + 1;
       activeAttemptIdRef.current = attemptId;
       setLastAttemptId(attemptId);
@@ -2497,7 +2506,7 @@ function App() {
     return (
     <section className={`panel${isDeleting ? ' panel-deleting' : ''}`}>
       <div className="panel-header">
-        <h2>{title}{sourceModified && <span className="panel-modified-badge" title="Document modifié depuis la dernière conversion">modifié</span>}</h2>
+        <h2>{title}{sourceModified && <span className="panel-modified-badge" data-tooltip="Document modifié depuis la dernière conversion">modifié</span>}</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <label className="file-input-label">
             <span>📄</span>
@@ -2521,7 +2530,7 @@ function App() {
               onClick={onClear}
               disabled={!value.trim()}
               className="panel-header-btn panel-header-btn--danger"
-              title={`Effacer le contenu ${title}`}
+              data-tooltip={`Effacer le contenu ${title}`}
             >
               🗑️
             </button>
@@ -2529,8 +2538,8 @@ function App() {
           <button
             onClick={onConvert}
             disabled={loading || !value.trim() || !canConvert}
-            className={`panel-header-btn panel-header-btn--convert${loading ? ' is-loading' : ''}`}
-            title={!canConvert ? "Les formats source et destination doivent être différents" : ""}
+            className={`panel-header-btn panel-header-btn--convert panel-header-btn--convert-secondary${loading ? ' is-loading' : ''}`}
+            data-tooltip={!canConvert ? "Les formats source et destination doivent être différents" : "Convertir (également disponible dans l'en-tête)"}
           >
             {loading ? (
               <span className="panel-header-btn-convert-label">
@@ -2554,9 +2563,9 @@ function App() {
               const stats = getTextStats(value);
               return (
                 <>
-                  <span title="Nombre de caractères">{stats.characterCount.toLocaleString('fr-FR')} caractères</span>
-                  <span title="Nombre de mots">{stats.wordCount.toLocaleString('fr-FR')} mots</span>
-                  <span title="Nombre de lignes">{stats.lineCount.toLocaleString('fr-FR')} lignes</span>
+                  <span data-tooltip="Nombre de caractères">{stats.characterCount.toLocaleString('fr-FR')} caractères</span>
+                  <span data-tooltip="Nombre de mots">{stats.wordCount.toLocaleString('fr-FR')} mots</span>
+                  <span data-tooltip="Nombre de lignes">{stats.lineCount.toLocaleString('fr-FR')} lignes</span>
                 </>
               );
             })()}
@@ -2774,17 +2783,17 @@ function App() {
     return (
     <section className={`panel${isLocked ? " result-locked" : isEditing ? " result-editing" : ""}`}>
       <div className="panel-header">
-        <h2>{getFormatTitle(targetFormat)}{resultModified && <span className="panel-modified-badge" title="Résultat modifié depuis la dernière conversion">modifié</span>}</h2>
+        <h2>{getFormatTitle(targetFormat)}{resultModified && <span className="panel-modified-badge" data-tooltip="Résultat modifié depuis la dernière conversion">modifié</span>}</h2>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
           {resultValue && (
             <>
               {isLocked && (
-                <span className="result-zone-state result-zone-locked" role="status" aria-live="polite" title="Lecture seule — activez l'édition pour modifier">
+                <span className="result-zone-state result-zone-locked" role="status" aria-live="polite" data-tooltip="Lecture seule — activez l'édition pour modifier">
                   Verrouillé
                 </span>
               )}
               {isEditing && (
-                <span className="result-zone-state result-zone-editing" role="status" aria-live="polite" title="Mode édition actif">
+                <span className="result-zone-state result-zone-editing" role="status" aria-live="polite" data-tooltip="Mode édition actif">
                   Édition
                 </span>
               )}
@@ -2797,7 +2806,7 @@ function App() {
                   }
                 }}
                 className={`panel-header-btn ${isEditingResult ? 'panel-header-btn--danger' : 'panel-header-btn--muted'}`}
-                title={isEditingResult ? "Annuler l'édition" : "Activer l'édition"}
+                data-tooltip={isEditingResult ? "Annuler l'édition" : "Activer l'édition"}
               >
                 {isEditingResult ? "✕" : "✏️"}
               </button>
@@ -2805,7 +2814,7 @@ function App() {
               <button
                   onClick={() => setShowSaveModal(true)}
                 className="panel-header-btn panel-header-btn--success"
-                  title="Sauvegarder les modifications"
+                  data-tooltip="Sauvegarder les modifications"
               >
                   💾
               </button>
@@ -2815,7 +2824,7 @@ function App() {
                   <button
                     onClick={handleCopy}
                     className="panel-header-btn panel-header-btn--muted"
-                    title="Copier le résultat"
+                    data-tooltip="Copier le résultat"
                   >
                     {copied ? "✓ Copié" : "📋"}
                   </button>
@@ -2823,14 +2832,14 @@ function App() {
                     onClick={handleExport}
                     disabled={!resultValue.trim()}
                     className="panel-header-btn panel-header-btn--primary"
-                    title="Télécharger le résultat"
+                    data-tooltip="Télécharger le résultat"
                   >
                     ⬇️
                   </button>
                   <button
                     onClick={handleClear}
                     className="panel-header-btn panel-header-btn--danger"
-                    title="Effacer le résultat"
+                    data-tooltip="Effacer le résultat"
                   >
                     🗑️
                   </button>
@@ -2853,9 +2862,9 @@ function App() {
               const stats = getTextStats(resultValue);
               return (
                 <>
-                  <span title="Nombre de caractères">{stats.characterCount.toLocaleString('fr-FR')} caractères</span>
-                  <span title="Nombre de mots">{stats.wordCount.toLocaleString('fr-FR')} mots</span>
-                  <span title="Nombre de lignes">{stats.lineCount.toLocaleString('fr-FR')} lignes</span>
+                  <span data-tooltip="Nombre de caractères">{stats.characterCount.toLocaleString('fr-FR')} caractères</span>
+                  <span data-tooltip="Nombre de mots">{stats.wordCount.toLocaleString('fr-FR')} mots</span>
+                  <span data-tooltip="Nombre de lignes">{stats.lineCount.toLocaleString('fr-FR')} lignes</span>
                 </>
               );
             })()}
@@ -2934,7 +2943,7 @@ function App() {
             <button
               onClick={() => setNotification(null)}
               className="notification-close-btn"
-              title="Fermer"
+              data-tooltip="Fermer"
             >
               ✕
             </button>
@@ -2956,12 +2965,62 @@ function App() {
               <HeaderStatusPill state={conversionUiState} status={status} />
             </div>
           </div>
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <div className="header-actions">
+            <div className="header-convert-group">
+              <span className="header-format-chip" aria-hidden="true">
+                <span className="header-format-chip-from">{getFormatTitle(sourceFormat)}</span>
+                <span className="header-format-chip-arrow">→</span>
+                <span className="header-format-chip-to">{getFormatTitle(targetFormat)}</span>
+              </span>
+              <button
+                type="button"
+                className="header-convert-btn"
+                onClick={handleConvert}
+                disabled={
+                  loading ||
+                  isEditingResult ||
+                  sourceFormat === targetFormat ||
+                  !(sourceFormat === 'markdown' ? mdOutput : adocInput).trim()
+                }
+                aria-label="Convertir le document"
+                data-tooltip={
+                  sourceFormat === targetFormat
+                    ? 'Les formats source et destination doivent être différents'
+                    : isEditingResult
+                      ? "Sauvegardez ou annulez l'édition du résultat avant de convertir"
+                      : !(sourceFormat === 'markdown' ? mdOutput : adocInput).trim()
+                        ? 'Ajoutez du contenu source pour convertir'
+                        : `${getFormatTitle(sourceFormat)} → ${getFormatTitle(targetFormat)}`
+                }
+              >
+                {loading ? (
+                  <span className="panel-header-btn-convert-label">
+                    <span className="panel-header-btn-convert-spinner" aria-hidden="true" />
+                    Conversion…
+                  </span>
+                ) : (
+                  'Convertir'
+                )}
+              </button>
+            </div>
             <button
               type="button"
-              className="settings-button"
+              className={`settings-button header-icon-btn sidebar-toggle-btn${sidebarCollapsed ? ' is-collapsed' : ''}`}
+              onClick={toggleSidebarCollapsed}
+              aria-label={sidebarCollapsed ? 'Afficher les options' : 'Masquer les options'}
+              aria-pressed={!sidebarCollapsed}
+              aria-controls="ascend-sidebar"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 6H20M4 12H14M4 18H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                {sidebarCollapsed ? null : <path d="M18 8L14 12L18 16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>}
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="settings-button header-icon-btn"
               onClick={() => setShowHistoryPanel(!showHistoryPanel)}
-              title="Historique des conversions"
+              data-tooltip="Historique des conversions"
               style={{ position: "relative" }}
             >
               📜
@@ -2973,9 +3032,12 @@ function App() {
             </button>
           <button
             type="button"
-            className="settings-button"
-            onClick={() => setSettingsOpen(!settingsOpen)}
-            title="Paramètres"
+            ref={settingsButtonRef}
+            className="settings-button settings-gear-btn"
+            onClick={() => (settingsOpen ? closeSettingsPanel() : openSettingsPanel())}
+            data-tooltip="Paramètres"
+            aria-haspopup="dialog"
+            aria-expanded={settingsOpen}
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
@@ -3009,13 +3071,17 @@ function App() {
             Overlay: semi-transparent background
             Closes the modal on click (but not when clicking inside the panel)
           */}
-          <div className="settings-overlay" onClick={() => setSettingsOpen(false)} />
+          <div className="settings-overlay" onClick={() => closeSettingsPanel()} />
           {/* 
             Main panel: contains all settings
             stopPropagation() prevents closing when clicking inside
           */}
           <div
+            ref={settingsPanelRef}
             className={`settings-panel${isResizingSettings ? ' settings-panel-resizing' : ''}${isDraggingSettings ? ' settings-panel-dragging' : ''}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-panel-title"
             onClick={(e) => e.stopPropagation()}
             style={{
               left: settingsPanelPosition.x,
@@ -3033,18 +3099,26 @@ function App() {
               className="settings-panel-header settings-panel-header-draggable"
               onMouseDown={handleSettingsDragStart}
             >
-              <h3>Paramètres</h3>
+              <h3 id="settings-panel-title">
+                Paramètres
+                {settingsDirty && (
+                  <span className="settings-dirty-badge" aria-label="Modifications non enregistrées">
+                    non enregistré
+                  </span>
+                )}
+              </h3>
               <button
                 type="button"
                 className="settings-close-btn"
-                onClick={() => setSettingsOpen(false)}
+                onClick={() => closeSettingsPanel()}
                 onMouseDown={(e) => e.stopPropagation()}
-                title="Fermer"
+                data-tooltip="Fermer sans appliquer"
               >
                 ×
               </button>
             </div>
             <div className="settings-panel-content">
+              <p className="settings-live-note">Les modifications ne sont prises en compte qu'après un clic sur « Appliquer et fermer ».</p>
               <div className="settings-param-list">
                 <div className="settings-param-section">
                   <button type="button" className="settings-param-header" onClick={() => toggleSection('settingsGeneral')}>
@@ -3064,13 +3138,10 @@ function App() {
                         </p>
                       </div>
                       <div className="option-group">
-                        <label className="option-label">Nouveautés v0.0.1.7</label>
-                        <ul className="settings-release-list">
-                          <li>Modale d'erreur : code, indication d'action et identifiant de requête</li>
-                          <li>CI Docker frontend (<code>check:docker:frontend</code>)</li>
-                          <li>Footer : limite source et repère runbook</li>
-                          <li>Fond Rafale plus visible ; historique aligné au thème</li>
-                        </ul>
+                        <label className="option-label">Version courante</label>
+                        <p className="settings-about-text">
+                          Vous utilisez Ascend <strong>v{packageJson.version}</strong>. Consultez le <code>changelog.md</code> du dépôt pour le détail des nouveautés.
+                        </p>
                       </div>
                     </div>
                   )}
@@ -3084,26 +3155,23 @@ function App() {
                     <div className="settings-param-body">
                       <div className="option-group">
                         <label className="option-label">Nom / pseudo</label>
-                        <input type="text" value={userSettings.profile.displayName} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, displayName: e.target.value } }))} className={`option-input${settingsErrors.displayName ? ' settings-input-invalid' : ''}`} placeholder="Nom ou pseudo" />
+                        <input type="text" value={draftSettings.profile.displayName} onChange={(e) => setDraftSettings(s => ({ ...s, profile: { ...s.profile, displayName: e.target.value } }))} className={`option-input${settingsErrors.displayName ? ' settings-input-invalid' : ''}`} placeholder="Nom ou pseudo" />
                         {settingsErrors.displayName && <span className="settings-field-error" role="alert">{settingsErrors.displayName}</span>}
                       </div>
                       <div className="option-group">
                         <label className="option-label">Organisation</label>
-                        <input type="text" value={userSettings.profile.organization} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, organization: e.target.value } }))} className={`option-input${settingsErrors.organization ? ' settings-input-invalid' : ''}`} placeholder="Organisation" />
+                        <input type="text" value={draftSettings.profile.organization} onChange={(e) => setDraftSettings(s => ({ ...s, profile: { ...s.profile, organization: e.target.value } }))} className={`option-input${settingsErrors.organization ? ' settings-input-invalid' : ''}`} placeholder="Organisation" />
                         {settingsErrors.organization && <span className="settings-field-error" role="alert">{settingsErrors.organization}</span>}
                       </div>
                       <div className="option-group">
-                        <label className="option-label">Signature</label>
-                        <input type="text" value={userSettings.profile.signature} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, signature: e.target.value } }))} className="option-input" placeholder="Votre signature" />
-                      </div>
-                      <div className="option-group">
-                        <label className="option-label">Langue par défaut</label>
-                        <select value={userSettings.profile.defaultLanguage} onChange={(e) => setUserSettings(s => ({ ...s, profile: { ...s.profile, defaultLanguage: e.target.value as 'fr'|'en'|'es'|'de' } }))} className="option-select">
+                        <label className="option-label">Langue des métadonnées</label>
+                        <select value={draftSettings.profile.defaultLanguage} onChange={(e) => setDraftSettings(s => ({ ...s, profile: { ...s.profile, defaultLanguage: e.target.value as 'fr'|'en'|'es'|'de' } }))} className="option-select">
                           <option value="fr">Français</option>
                           <option value="en">Anglais</option>
                           <option value="es">Espagnol</option>
                           <option value="de">Allemand</option>
                         </select>
+                        <p className="settings-muted" style={{ marginTop: '0.25rem' }}>Utilisée pour les métadonnées de conversion, pas pour l'interface.</p>
                       </div>
                     </div>
                   )}
@@ -3117,7 +3185,7 @@ function App() {
                     <div className="settings-param-body">
                       <div className="option-group">
                         <label className="option-label">Format de sortie par défaut</label>
-                        <select value={userSettings.conversion.defaultOutputFormat} onChange={(e) => setUserSettings(s => ({ ...s, conversion: { ...s.conversion, defaultOutputFormat: e.target.value } }))} className="option-select">
+                        <select value={draftSettings.conversion.defaultOutputFormat} onChange={(e) => setDraftSettings(s => ({ ...s, conversion: { ...s.conversion, defaultOutputFormat: e.target.value } }))} className="option-select">
                           <option value="">—</option>
                           <option value="asciidoc">AsciiDoc</option>
                           <option value="markdown">Markdown</option>
@@ -3129,13 +3197,19 @@ function App() {
                         </select>
                       </div>
                       <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                        <input type="checkbox" checked={userSettings.conversion.defaultTocEnabled} onChange={(e) => setUserSettings(s => ({ ...s, conversion: { ...s.conversion, defaultTocEnabled: e.target.checked } }))} className="option-checkbox" />
+                        <input type="checkbox" checked={draftSettings.conversion.defaultTocEnabled} onChange={(e) => setDraftSettings(s => ({ ...s, conversion: { ...s.conversion, defaultTocEnabled: e.target.checked } }))} className="option-checkbox" />
                         <span>Table des matières par défaut</span>
                       </label>
                       <div className="option-group">
                         <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={userSettings.conversion.saveConversionHistory} onChange={(e) => setUserSettings(s => ({ ...s, conversion: { ...s.conversion, saveConversionHistory: e.target.checked } }))} className="option-checkbox" />
+                          <input type="checkbox" checked={draftSettings.conversion.saveConversionHistory} onChange={(e) => setDraftSettings(s => ({ ...s, conversion: { ...s.conversion, saveConversionHistory: e.target.checked } }))} className="option-checkbox" />
                           <span>Conserver l'historique des conversions</span>
+                        </label>
+                      </div>
+                      <div className="option-group">
+                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                          <input type="checkbox" checked={draftSettings.conversion.autoApplyUserToMetadata} onChange={(e) => setDraftSettings(s => ({ ...s, conversion: { ...s.conversion, autoApplyUserToMetadata: e.target.checked } }))} className="option-checkbox" />
+                          <span>Appliquer le profil aux métadonnées (auteur, organisation, langue)</span>
                         </label>
                       </div>
                     </div>
@@ -3151,11 +3225,10 @@ function App() {
                       <div className="option-group">
                         <label className="option-label">Thème</label>
                         <select
-                          value={userSettings.ui.theme}
+                          value={draftSettings.ui.theme}
                           onChange={(e) => {
                             const nextTheme = e.target.value as 'default' | 'dark';
-                            applyThemeToDocument(nextTheme);
-                            setUserSettings(s => ({ ...s, ui: { ...s.ui, theme: nextTheme } }));
+                            setDraftSettings(s => ({ ...s, ui: { ...s.ui, theme: nextTheme } }));
                           }}
                           className="option-select"
                         >
@@ -3165,43 +3238,37 @@ function App() {
                       </div>
                       <div className="option-group">
                         <label className="option-label">Taille police éditeur</label>
-                        <input type="number" min={8} max={32} value={userSettings.ui.editorFontSize} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, editorFontSize: Math.min(32, Math.max(8, parseInt(e.target.value, 10) || 14)) } }))} className="option-input" />
+                        <input type="number" min={8} max={32} value={draftSettings.ui.editorFontSize} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, editorFontSize: Math.min(32, Math.max(8, parseInt(e.target.value, 10) || 14)) } }))} className="option-input" />
                       </div>
                       <div className="option-group">
                         <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={userSettings.ui.compactMode} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, compactMode: e.target.checked } }))} className="option-checkbox" />
+                          <input type="checkbox" checked={draftSettings.ui.compactMode} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, compactMode: e.target.checked } }))} className="option-checkbox" />
                           <span>Mode compact</span>
                         </label>
                       </div>
                       <div className="option-group">
                         <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={userSettings.ui.editorWordWrap} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, editorWordWrap: e.target.checked } }))} className="option-checkbox" />
+                          <input type="checkbox" checked={draftSettings.ui.editorWordWrap} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, editorWordWrap: e.target.checked } }))} className="option-checkbox" />
                           <span>Retour à la ligne dans les éditeurs</span>
                         </label>
                       </div>
                       <div className="option-group">
                         <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={userSettings.ui.reduceMotion} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, reduceMotion: e.target.checked } }))} className="option-checkbox" />
+                          <input type="checkbox" checked={draftSettings.ui.reduceMotion} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, reduceMotion: e.target.checked } }))} className="option-checkbox" />
                           <span>Réduire les animations</span>
                         </label>
                       </div>
                       <div className="option-group">
-                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={userSettings.ui.showLineNumbers} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, showLineNumbers: e.target.checked } }))} className="option-checkbox" />
-                          <span>Afficher les numéros de ligne</span>
-                        </label>
-                      </div>
-                      <div className="option-group">
                         <label className="option-label">Taille des tabulations</label>
-                        <select value={userSettings.ui.tabSize} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, tabSize: e.target.value === '2' ? 2 : 4 } }))} className="option-select">
+                        <select value={draftSettings.ui.tabSize} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, tabSize: e.target.value === '2' ? 2 : 4 } }))} className="option-select">
                           <option value={2}>2 espaces</option>
                           <option value={4}>4 espaces</option>
                         </select>
                       </div>
                       <div className="option-group">
                         <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={userSettings.ui.showTooltips} onChange={(e) => setUserSettings(s => ({ ...s, ui: { ...s.ui, showTooltips: e.target.checked } }))} className="option-checkbox" />
-                          <span>Afficher les infobulles</span>
+                          <input type="checkbox" checked={draftSettings.ui.showTooltips} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, showTooltips: e.target.checked } }))} className="option-checkbox" />
+                          <span>Afficher les infobulles (au survol)</span>
                         </label>
                       </div>
                     </div>
@@ -3211,45 +3278,20 @@ function App() {
                   <button
                     type="button"
                     className="settings-param-apply-btn"
-                    onClick={() => {
-                      applyUiPreferencesToDocument(userSettings.ui);
-                      updateOption(['metadata', 'author'], userSettings.profile.displayName || null);
-                      updateOption(['metadata', 'language'], userSettings.profile.defaultLanguage || null);
-                      setStatus('Paramètres appliqués');
-                      setSettingsOpen(false);
-                    }}
+                    disabled={Object.keys(settingsErrors).length > 0}
+                    data-tooltip={Object.keys(settingsErrors).length > 0 ? 'Corrigez les erreurs du profil avant d\'appliquer' : undefined}
+                    onClick={applyAndCloseSettings}
                   >
-                    Appliquer
+                    Appliquer et fermer
                   </button>
                   <button
                     type="button"
                     className="settings-param-reset-btn"
                     onClick={() => {
-                      setUserSettings({
-                        profile: { displayName: '', organization: '', signature: '', defaultLanguage: 'fr' },
-                        conversion: {
-                          defaultOutputFormat: '',
-                          autoApplyUserToMetadata: false,
-                          defaultTocEnabled: false,
-                          saveConversionHistory: true
-                        },
-                        ui: {
-                          theme: 'default',
-                          editorFontSize: 14,
-                          compactMode: false,
-                          editorWordWrap: false,
-                          reduceMotion: false,
-                          showLineNumbers: false,
-                          tabSize: 4,
-                          showTooltips: true
-                        }
-                      });
+                      setDraftSettings(cloneUserSettings(DEFAULT_USER_SETTINGS));
                       setSettingsErrors({});
-                      updateOption(['metadata', 'author'], null);
-                      updateOption(['metadata', 'language'], null);
-                      setStatus('Paramètres réinitialisés');
                     }}
-                    title="Réinitialiser tous les paramètres"
+                    data-tooltip="Réinitialiser le brouillon (appliquer ensuite pour valider)"
                   >
                     Réinitialiser
                   </button>
@@ -3259,7 +3301,7 @@ function App() {
             <div
               className="settings-resize-handle"
               onMouseDown={handleSettingsResizeStart}
-              title="Redimensionner"
+              data-tooltip="Redimensionner"
             />
           </div>
         </>
@@ -3299,7 +3341,7 @@ function App() {
                 type="button"
                 className="settings-close-btn"
                 onClick={() => setShowHistoryPanel(false)}
-                title="Fermer"
+                data-tooltip="Fermer"
               >
                 ×
               </button>
@@ -3423,7 +3465,7 @@ function App() {
                 type="button"
                 className="settings-close-btn"
                 onClick={() => setShowShortcutsModal(false)}
-                title="Fermer"
+                data-tooltip="Fermer"
               >
                 ×
               </button>
@@ -3468,7 +3510,7 @@ function App() {
         1. Sidebar (left): conversion options and settings
         2. Main content (right): source and result panels
       */}
-      <div className="main-layout">
+      <div className={`main-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
         {/* 
           ====================================================================
           SIDEBAR: OPTIONS AND SETTINGS
@@ -3478,10 +3520,25 @@ function App() {
           - Conversion options (normalization, analysis, etc.)
           - Navigation settings
           - Document metadata
+          Collapsible via the header toggle (P1).
         */}
-        <aside className="sidebar">
+        <aside
+          id="ascend-sidebar"
+          className="sidebar"
+          aria-hidden={sidebarCollapsed}
+        >
           <div className="sidebar-section">
-            <h3 className="sidebar-title">Options de conversion</h3>
+            <div className="sidebar-section-top">
+              <h3 className="sidebar-title">Options de conversion</h3>
+              <button
+                type="button"
+                className="sidebar-collapse-inline"
+                onClick={toggleSidebarCollapsed}
+                aria-label="Masquer les options"
+              >
+                «
+              </button>
+            </div>
             <div className="sidebar-content">
               {/* 
                 ============================================================
@@ -4028,6 +4085,16 @@ function App() {
                         />
                       </div>
                       <div className="option-group">
+                        <label className="option-label">Organisation</label>
+                        <input
+                          type="text"
+                          value={(conversionOptions.metadata?.organization ?? userSettings.profile.organization) || ''}
+                          onChange={(e) => updateOption(['metadata', 'organization'], e.target.value || null)}
+                          className="option-input"
+                          placeholder="Organisation"
+                        />
+                      </div>
+                      <div className="option-group">
                         <label className="option-label">Langue</label>
                         <select
                           value={conversionOptions.metadata?.language || userSettings.profile.defaultLanguage || 'fr'}
@@ -4089,7 +4156,7 @@ function App() {
                 type="button"
                 className="swap-button"
                 onClick={handleSwap}
-                title="Échanger les formats source et destination"
+                data-tooltip="Échanger les formats source et destination"
               >
                 <span className="swap-icon">⇄</span>
               </button>
@@ -4109,7 +4176,7 @@ function App() {
           <div className="footer-meta">
             <span>Limite source : {maxSourceSizeMb} Mo</span>
             <span className="footer-separator">•</span>
-            <span className="footer-runbook-hint" title="doc/guides/operations/runbook.md">
+            <span className="footer-runbook-hint" data-tooltip="doc/guides/operations/runbook.md">
               Runbook opérations (dépôt)
             </span>
           </div>
@@ -4151,7 +4218,7 @@ function App() {
                 setNavigationWindowMinimized(false);
                 setNavigationWindowOpen(true);
               }}
-              title="Navigation – Cliquer pour restaurer"
+              data-tooltip="Navigation – Cliquer pour restaurer"
             >
               <span className="taskbar-icon" aria-hidden>🔍</span>
               <span className="taskbar-label">Navigation</span>
@@ -4161,7 +4228,7 @@ function App() {
             <div
               className="taskbar-item"
               onClick={() => setHistoryWindowMinimized(false)}
-              title="Historique – Cliquer pour restaurer"
+              data-tooltip="Historique – Cliquer pour restaurer"
             >
               <span className="taskbar-icon" aria-hidden>🕐</span>
               <span className="taskbar-label">Historique</span>
@@ -4307,7 +4374,7 @@ function App() {
               <div
                 className="file-nav-link"
                 onClick={() => scrollToHeading(heading.lineIndex)}
-                title={`Line ${heading.lineIndex + 1}: ${heading.title}`}
+                data-tooltip={`Line ${heading.lineIndex + 1}: ${heading.title}`}
               >
                 <span className="file-nav-indicator"></span>
                 <span className="file-nav-text">{heading.title}</span>
@@ -4431,7 +4498,7 @@ function App() {
                     setNavigationWindowMinimized(true);
                     setNavigationWindowOpen(false);
                   }}
-                  title="Minimize"
+                  data-tooltip="Minimize"
                 >
                   −
                 </button>
@@ -4446,7 +4513,7 @@ function App() {
                   type="button"
                   className="navigation-window-btn maximize-btn"
                   onClick={() => setNavigationWindowMaximized(!navigationWindowMaximized)}
-                  title={navigationWindowMaximized ? "Restore" : "Full screen"}
+                  data-tooltip={navigationWindowMaximized ? "Restore" : "Full screen"}
                 >
                   {navigationWindowMaximized ? '⧉' : '□'}
                 </button>
@@ -4464,7 +4531,7 @@ function App() {
                     setNavigationWindowOpen(false);
                     setNavigationEnabled(false);
                   }}
-                  title="Close"
+                  data-tooltip="Close"
                 >
                   ×
                 </button>

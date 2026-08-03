@@ -7,8 +7,9 @@
  */
 
 const app = require('./app.js')
+const { envMap } = require('./services/config/envmap.module.js')
 
-const PORT = process.env.PORT || 3003
+const PORT = envMap.get('PORT')
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
@@ -16,7 +17,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Ascend Backend Server`)
   console.log(`${'='.repeat(60)}`)
   console.log(`   Server running on http://0.0.0.0:${PORT}`)
-  console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`)
+  console.log(`   Environment: ${envMap.get('NODE_ENV')}`)
   console.log(`\n📋 Available endpoints:`)
   console.log(`   GET  /                    - API documentation page`)
   console.log(`   POST /api/to-markdown     - Convert AsciiDoc → Markdown (downdoc)`)

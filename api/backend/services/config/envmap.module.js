@@ -77,6 +77,12 @@ const ENV_SCHEMA = {
     }
   },
 
+  PANDOC_SERVER_ENABLED: {
+    type: 'boolean',
+    default: true,
+    sensitive: false
+  },
+
   // Logging configuration
   LOGS_DIR: {
     type: 'path',
@@ -224,6 +230,33 @@ const ENV_SCHEMA = {
       const resolved = path.resolve(value)
       const tmpRoot = os.tmpdir()
       return resolved.startsWith(tmpRoot)
+    }
+  },
+
+  // API protection (empty = disabled, dev-friendly)
+  API_KEY: {
+    type: 'string',
+    default: '',
+    sensitive: true
+  },
+
+  // CORS allowed frontend origin (empty = dev origins only)
+  FRONTEND_URL: {
+    type: 'string',
+    default: '',
+    sensitive: false
+  },
+
+  // Round-trip history reports directory
+  ASCEND_REPORTS_DIR: {
+    type: 'path',
+    default: path.join(__dirname, '../../reports'),
+    sensitive: false,
+    validator: (value) => {
+      const resolved = path.resolve(value)
+      const projectRoot = path.resolve(__dirname, '../../../..')
+      const tmpRoot = os.tmpdir()
+      return resolved.startsWith(projectRoot) || resolved.startsWith(tmpRoot)
     }
   }
 }

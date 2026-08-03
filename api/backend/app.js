@@ -9,6 +9,7 @@
 const express = require('express')
 const path = require('path')
 const fs = require('fs')
+const compression = require('compression')
 const corsMiddleware = require('./middleware/cors.middleware.js')
 const helmetMiddleware = require('./middleware/security/helmet.middleware.js')
 const rateLimitMiddleware = require('./middleware/security/rate-limit.middleware.js')
@@ -32,6 +33,10 @@ const app = express()
 // ============================================================================
 // MIDDLEWARE
 // ============================================================================
+
+// Response compression: large converted documents (JSON/text) shrink
+// dramatically over the wire (threshold avoids compressing tiny payloads)
+app.use(compression({ threshold: 1024 }))
 
 // CORS
 app.use(corsMiddleware)

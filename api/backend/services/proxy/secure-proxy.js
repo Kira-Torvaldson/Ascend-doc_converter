@@ -43,10 +43,86 @@
 
 const express = require('express')
 const router = express.Router()
+const { randomUUID } = require('crypto')
 
 // Import the main orchestrator for actual conversion
 // This is the existing conversion service that we're proxying
 const { executeConversionRequest } = require('../modules/main-orchestrator.js')
+const { createSuccessResult, createFailureResult } = require('../../src/utils/conversion-result.js')
+const { buildRouteError } = require('../../src/utils/error-envelope.js')
+
+/** Maps legacy orchestrator failure messages / pipeline states to canonical codes. */
+function classifyProxyFailure(orchestratorResult) {
+  const pipelineState = orchestratorResult && orchestratorResult.pipelineState
+  const message = String((orchestratorResult && orchestratorResult.error) || '')
+  if (pipelineState === 'empty_input') return 'EMPTY_INPUT'
+  if (/No conversion path found/i.test(message)) return 'FORMAT_UNSUPPORTED'
+  if (/overloaded|Concurrency limit/i.test(message)) return 'RESOURCE_LIMIT_EXCEEDED'
+  if (/timeout/i.test(message)) return 'CONVERSION_TIMEOUT'
+  return 'CONVERSION_FAILED'
+}
+
+function buildProxyConversionResult({
+  conversionId,
+  startedAt,
+  startedAtMs,
+  content,
+  fromFormat,
+  toFormat,
+  orchestratorResult = null,
+  resultContent = null,
+  errorOverride = null,
+}) {
+  const base = {
+    conversionId,
+    converter: 'main-orchestrator',
+    pipeline: [`${fromFormat}->${toFormat}`],
+    inputFormat: fromFormat,
+    outputFormat: toFormat,
+    inputFile: {
+      originalName: `input.${fromFormat}`,
+      storedPath: 'in-memory://request/body',
+      size: Buffer.byteLength(content || '', 'utf8'),
+      mimeType: 'text/plain',
+    },
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    durationMs: Date.now() - startedAtMs,
+    warnings: [],
+    logs: (orchestratorResult && Array.isArray(orchestratorResult.logs)) ? orchestratorResult.logs : [],
+    meta: { route: '/api/proxy/convert', transport: 'in-memory' },
+  }
+
+  if (errorOverride) {
+    return createFailureResult({
+      ...base,
+      outputFile: null,
+      error: errorOverride,
+    })
+  }
+
+  if (orchestratorResult && orchestratorResult.success) {
+    return createSuccessResult({
+      ...base,
+      outputFile: {
+        path: 'in-memory://response/body',
+        size: Buffer.byteLength(resultContent || '', 'utf8'),
+        mimeType: 'text/plain',
+      },
+    })
+  }
+
+  const code = classifyProxyFailure(orchestratorResult)
+  const message = String((orchestratorResult && orchestratorResult.error) || 'Conversion failed for unknown reason')
+  return createFailureResult({
+    ...base,
+    outputFile: null,
+    error: buildRouteError(code, message, {
+      stage: 'main-orchestrator',
+      pipelineState: (orchestratorResult && orchestratorResult.pipelineState) || null,
+    }),
+  })
+}
 
 // ============================================================================
 // NORMALIZATION FUNCTIONS
@@ -302,13 +378,15 @@ function sanitizeContent(content) {
  * Success:
  * {
  *   "success": true,
- *   "result": string          // Converted content
+ *   "result": string,             // Converted content
+ *   "conversionResult": object    // Standardized ConversionResult contract
  * }
  * 
  * Error:
  * {
  *   "success": false,
- *   "error": string           // Error message
+ *   "error": string,              // Error message (legacy, kept for compatibility)
+ *   "conversionResult": object    // Standardized ConversionResult contract
  * }
  * 
  * PROCESSING FLOW:
@@ -319,30 +397,52 @@ function sanitizeContent(content) {
  * 4. Return standardized response
  */
 router.post('/convert', async (req, res) => {
+  const conversionId = randomUUID()
+  const startedAt = new Date().toISOString()
+  const startedAtMs = Date.now()
+
+  const rejectInvalidParam = (legacyMessage, code) => {
+    const { content, fromFormat, toFormat } = req.body || {}
+    const conversionResult = buildProxyConversionResult({
+      conversionId,
+      startedAt,
+      startedAtMs,
+      content: typeof content === 'string' ? content : '',
+      fromFormat: typeof fromFormat === 'string' ? fromFormat : 'unknown',
+      toFormat: typeof toFormat === 'string' ? toFormat : 'unknown',
+      errorOverride: buildRouteError(code, legacyMessage, { stage: 'proxy-precheck' }),
+    })
+    return res.status(400).json({
+      success: false,
+      error: legacyMessage,
+      conversionResult
+    })
+  }
+
   try {
     // Extract request parameters
     const { content, fromFormat, toFormat, options = {}, token } = req.body
     
     // Validate required parameters
     if (!content || typeof content !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing or invalid "content" parameter. Content must be a non-empty string.'
-      })
+      return rejectInvalidParam(
+        'Missing or invalid "content" parameter. Content must be a non-empty string.',
+        'EMPTY_INPUT'
+      )
     }
     
     if (!fromFormat || typeof fromFormat !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing or invalid "fromFormat" parameter. Format must be a string (e.g., "asciidoc", "markdown").'
-      })
+      return rejectInvalidParam(
+        'Missing or invalid "fromFormat" parameter. Format must be a string (e.g., "asciidoc", "markdown").',
+        'INVALID_INPUT'
+      )
     }
     
     if (!toFormat || typeof toFormat !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing or invalid "toFormat" parameter. Format must be a string (e.g., "markdown", "asciidoc").'
-      })
+      return rejectInvalidParam(
+        'Missing or invalid "toFormat" parameter. Format must be a string (e.g., "markdown", "asciidoc").',
+        'INVALID_INPUT'
+      )
     }
     
     // Log original content length for debugging
@@ -362,13 +462,14 @@ router.post('/convert', async (req, res) => {
     // Merge provided options with token if present
     const conversionOptions = {
       ...options,
+      conversionId,
       ...(token && { confirmationToken: token })
     }
     
     // Step 3: Call original conversion service
     // This delegates to the existing conversion infrastructure
     // The main orchestrator handles all the complex conversion logic
-    const conversionResult = await executeConversionRequest(
+    const orchestratorResult = await executeConversionRequest(
       sanitizedContent,
       fromFormat,
       toFormat,
@@ -376,26 +477,47 @@ router.post('/convert', async (req, res) => {
     )
     
     // Step 4: Check conversion result
-    if (conversionResult.success) {
+    if (orchestratorResult.success) {
       // Conversion succeeded – main orchestrator returns outputContent
       const fs = require('fs')
       let resultContent = ''
-      if (conversionResult.outputContent != null && typeof conversionResult.outputContent === 'string') {
-        resultContent = conversionResult.outputContent
-      } else if (conversionResult.outputPath && fs.existsSync(conversionResult.outputPath)) {
-        resultContent = fs.readFileSync(conversionResult.outputPath, 'utf8')
-      } else if (conversionResult.result != null) {
-        resultContent = typeof conversionResult.result === 'string' ? conversionResult.result : String(conversionResult.result)
+      if (orchestratorResult.outputContent != null && typeof orchestratorResult.outputContent === 'string') {
+        resultContent = orchestratorResult.outputContent
+      } else if (orchestratorResult.outputPath && fs.existsSync(orchestratorResult.outputPath)) {
+        resultContent = fs.readFileSync(orchestratorResult.outputPath, 'utf8')
+      } else if (orchestratorResult.result != null) {
+        resultContent = typeof orchestratorResult.result === 'string' ? orchestratorResult.result : String(orchestratorResult.result)
       }
+      const conversionResult = buildProxyConversionResult({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        content: sanitizedContent,
+        fromFormat,
+        toFormat,
+        orchestratorResult,
+        resultContent,
+      })
       return res.json({
         success: true,
-        result: resultContent
+        result: resultContent,
+        conversionResult
       })
     } else {
       // Conversion failed
+      const conversionResult = buildProxyConversionResult({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        content: sanitizedContent,
+        fromFormat,
+        toFormat,
+        orchestratorResult,
+      })
       return res.status(500).json({
         success: false,
-        error: conversionResult.error || 'Conversion failed for unknown reason'
+        error: orchestratorResult.error || 'Conversion failed for unknown reason',
+        conversionResult
       })
     }
     
@@ -403,9 +525,24 @@ router.post('/convert', async (req, res) => {
     // Handle unexpected errors
     console.error('[PROXY] Unexpected error during conversion:', error)
     
+    const { content, fromFormat, toFormat } = req.body || {}
+    const conversionResult = buildProxyConversionResult({
+      conversionId,
+      startedAt,
+      startedAtMs,
+      content: typeof content === 'string' ? content : '',
+      fromFormat: typeof fromFormat === 'string' ? fromFormat : 'unknown',
+      toFormat: typeof toFormat === 'string' ? toFormat : 'unknown',
+      errorOverride: buildRouteError(
+        'INTERNAL_ERROR',
+        error.message || 'An unexpected error occurred during conversion',
+        { stage: 'proxy-internal' }
+      ),
+    })
     return res.status(500).json({
       success: false,
-      error: error.message || 'An unexpected error occurred during conversion'
+      error: error.message || 'An unexpected error occurred during conversion',
+      conversionResult
     })
   }
 })

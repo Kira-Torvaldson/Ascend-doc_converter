@@ -18,13 +18,12 @@
  * - Normalized error handling and secure logging
  */
 
-const { 
-  writeFileSync, 
-  readFileSync, 
-  mkdirSync, 
-  rmSync, 
+const {
+  mkdirSync,
+  rmSync,
   existsSync
 } = require('fs')
+const { writeFile, readFile } = require('fs/promises')
 const { tmpdir } = require('os')
 const path = require('path')
 const { randomBytes, randomUUID } = require('crypto')
@@ -84,8 +83,10 @@ function cleanupExpiredTokens() {
   }
 }
 
-// Run cleanup every 30 seconds
-setInterval(cleanupExpiredTokens, 30000)
+// Run cleanup every 30 seconds.
+// unref() keeps this maintenance timer from holding the event loop open
+// (otherwise test runners and one-shot scripts importing this module never exit).
+setInterval(cleanupExpiredTokens, 30000).unref()
 
 /**
  * Generates a unique and secure confirmation token
@@ -226,33 +227,28 @@ function getTokenStats() {
 // SECURITY CONFIGURATION
 // ============================================================================
 
+const { envMap } = require('../config/envmap.module.js')
+const { getMaxInputSizeBytes } = require('../config/conversion-limits.js')
+
 /**
  * Security configuration
+ * Limits are sourced from EnvMap so every conversion route enforces the
+ * same input size and timeout (see doc/references/configuration.md).
  */
 const SECURITY_CONFIG = {
   // Root directory for isolated conversions
   CONVERSIONS_ROOT: path.join(tmpdir(), 'ascend-conversions'),
   
   // Default timeout (milliseconds)
-  DEFAULT_TIMEOUT: 30000, // 30 seconds
+  DEFAULT_TIMEOUT: envMap.get('CONVERSION_TIMEOUT_MS'),
   
-  // Maximum file size (in bytes)
-  MAX_FILE_SIZE: 50 * 1024 * 1024, // 50 MB
+  // Maximum file size (in bytes) — aligned with MAX_INPUT_SIZE_MB
+  MAX_FILE_SIZE: getMaxInputSizeBytes(),
   
   // Absolute paths to binaries (adapt according to installation)
-  BINARY_PATHS: (() => {
-    // Use EnvMap if available, fallback to a safe default.
-    try {
-      const { envMap } = require('../config/envmap.module.js')
-      return {
-        pandoc: envMap.get('PANDOC_PATH')
-      }
-    } catch (e) {
-      return {
-        pandoc: '/usr/bin/pandoc'
-      }
-    }
-  })(),
+  BINARY_PATHS: {
+    pandoc: envMap.get('PANDOC_PATH')
+  },
   
   // Allowed file extensions (strict whitelist)
   ALLOWED_EXTENSIONS: {
@@ -636,7 +632,7 @@ class ConversionError extends Error {
  */
 class ConfirmationTokenError extends ConversionError {
   constructor(code, message, conversionId) {
-    super(message, code, conversionId)
+    super(code, message, conversionId)
     this.name = 'ConfirmationTokenError'
   }
 }
@@ -775,8 +771,8 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
       )
     }
 
-    // Write input file
-    writeFileSync(inputFile, content, 'utf8')
+    // Write input file (async: does not block the event loop for large documents)
+    await writeFile(inputFile, content, 'utf8')
 
     // Rule 19.2: Real file type validation (Rule 19.2)
     const mimeValidation = MimeTypeDetector.detectAndValidate(inputFile, fromFormat)
@@ -812,7 +808,7 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
     // Use lazy loader for AsciiDoc → Markdown conversions
     if (normalizedFrom === 'asciidoc' && normalizedTo === 'markdown') {
       modulesExecuted.push('downdoc')
-      const { runConverter } = require('./modules/lazyload.module.js')
+      const { runConverter } = require('../modules/lazyload.module.js')
       const result = await runConverter('downdoc', inputFile, outputFile, {
         conversionId: conversionId,
         mode: options?.formatSpecific?.markdown?.parsedown ? 'bookstack' : 'default'
@@ -848,8 +844,8 @@ async function secureConvert(content, fromFormat, toFormat, options = {}) {
       )
     }
 
-    // Step 7: Read result
-    const result = readFileSync(outputFile, 'utf8')
+    // Step 7: Read result (async)
+    const result = await readFile(outputFile, 'utf8')
 
     // Rule 23.3: Abnormal execution profile detection
     const endTime = new Date()

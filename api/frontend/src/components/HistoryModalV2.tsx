@@ -346,7 +346,7 @@ export function HistoryModalV2({
                   e.stopPropagation();
                   setMinimized(false);
                 }}
-                title="Restaurer"
+                data-tooltip="Restaurer"
                 aria-label="Restaurer"
               >
                 □
@@ -363,7 +363,7 @@ export function HistoryModalV2({
                     setMinimized(true);
                   }
                 }}
-                title="Réduire"
+                data-tooltip="Réduire"
                 aria-label="Réduire"
               >
                 −
@@ -377,7 +377,7 @@ export function HistoryModalV2({
                   e.stopPropagation();
                   setMaximized(!maximized);
                 }}
-                title={maximized ? "Restaurer" : "Plein écran"}
+                data-tooltip={maximized ? "Restaurer" : "Plein écran"}
                 aria-label={maximized ? "Restaurer" : "Plein écran"}
               >
                 {maximized ? "⧉" : "□"}
@@ -390,7 +390,7 @@ export function HistoryModalV2({
                 e.stopPropagation();
                 onClose();
               }}
-              title="Fermer"
+              data-tooltip="Fermer"
               aria-label="Fermer"
             >
               ×
@@ -490,7 +490,7 @@ export function HistoryModalV2({
           <div
             className="history-modal-v2-resize-handle"
             onMouseDown={handleResizeStart}
-            title="Redimensionner"
+            data-tooltip="Redimensionner"
             aria-label="Redimensionner"
           />
         )}

@@ -7,9 +7,10 @@
  */
 
 const cors = require('cors')
+const { envMap } = require('../services/config/envmap.module.js')
 
 function getAllowedOrigins() {
-  const frontendUrl = (process.env.FRONTEND_URL || '').trim()
+  const frontendUrl = String(envMap.get('FRONTEND_URL') || '').trim()
   const devOrigins = [
     'http://localhost:8080',
     'http://127.0.0.1:8080',
@@ -21,7 +22,7 @@ function getAllowedOrigins() {
 
 /** En dev, Vite peut utiliser 5174+ si 5173 est pris — autoriser localhost/127.0.0.1 (HTTP). */
 function isDevLocalOrigin(origin) {
-  if (process.env.NODE_ENV === 'production') return false
+  if (envMap.get('NODE_ENV') === 'production') return false
   try {
     const url = new URL(origin)
     return url.protocol === 'http:' &&

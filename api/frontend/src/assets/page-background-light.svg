@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" role="img" aria-hidden="true">
+  <defs>
+    <linearGradient id="skyL" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f2f5ff"/>
+      <stop offset="55%" stop-color="#eef3fc"/>
+      <stop offset="100%" stop-color="#e8eef9"/>
+    </linearGradient>
+    <radialGradient id="blobBlue" cx="78%" cy="12%" r="55%">
+      <stop offset="0%" stop-color="#bfd7fe" stop-opacity="0.55"/>
+      <stop offset="55%" stop-color="#dbeafe" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#eef3fc" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blobLavender" cx="10%" cy="65%" r="50%">
+      <stop offset="0%" stop-color="#ddd6fe" stop-opacity="0.5"/>
+      <stop offset="60%" stop-color="#ede9fe" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#eef3fc" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blobPeach" cx="50%" cy="100%" r="55%">
+      <stop offset="0%" stop-color="#fde8d7" stop-opacity="0.4"/>
+      <stop offset="60%" stop-color="#fef3e2" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#eef3fc" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blobMint" cx="35%" cy="25%" r="40%">
+      <stop offset="0%" stop-color="#d1fae5" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#eef3fc" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="waveL1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#dbe7fb" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#e3e3fb" stop-opacity="0.7"/>
+    </linearGradient>
+    <linearGradient id="waveL2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d3e0f7" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#dcd9f8" stop-opacity="0.55"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#skyL)"/>
+  <rect width="1920" height="1080" fill="url(#blobBlue)"/>
+  <rect width="1920" height="1080" fill="url(#blobLavender)"/>
+  <rect width="1920" height="1080" fill="url(#blobMint)"/>
+  <rect width="1920" height="1080" fill="url(#blobPeach)"/>
+
+  <!-- Gentle horizon waves -->
+  <path fill="url(#waveL1)" d="M0 800 Q 420 730, 860 776 T 1920 744 V 1080 H 0 Z"/>
+  <path fill="url(#waveL2)" d="M0 900 Q 560 842, 1120 884 T 1920 856 V 1080 H 0 Z"/>
+
+  <!-- Soft ascending accent lines -->
+  <path d="M -40 900 Q 480 740, 1000 620 T 1960 300" fill="none" stroke="#93b4f8" stroke-opacity="0.28" stroke-width="2.5"/>
+  <path d="M -40 950 Q 520 800, 1040 690 T 1960 380" fill="none" stroke="#b6a8f5" stroke-opacity="0.18" stroke-width="1.5"/>
+</svg>
