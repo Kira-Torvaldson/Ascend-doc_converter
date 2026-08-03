@@ -1,6 +1,6 @@
 'use strict'
 
-const { writeFileSync, unlinkSync, readFileSync } = require('fs')
+const { mkdir, writeFile, readFile, rm } = require('fs/promises')
 const { tmpdir } = require('os')
 const path = require('path')
 const { randomUUID } = require('crypto')
@@ -8,6 +8,40 @@ const downdoc = require('../../../../lib/index.js')
 const { adaptForBookStack } = require('../../../shared/adapters/bookstack-adapter.js')
 const { safeSpawn } = require('../../../../lib/security/safe-spawn.js')
 const { isSecurityError, SECURITY_ERROR_CODES } = require('../../../../lib/errors/security-errors.js')
+const { getConversionTimeoutMs, getMaxInputSizeBytes } = require('../config/conversion-limits.js')
+const { convertViaServer } = require('./pandoc-server.js')
+
+/**
+ * Runs Pandoc fully in memory: input piped to stdin, output read from stdout.
+ * No temp directory/file round-trip (major win for large documents).
+ *
+ * Tries the persistent pandoc server first (no process startup cost) and
+ * falls back to a one-shot CLI invocation when the server is unavailable.
+ *
+ * @param {string} from - Pandoc input format
+ * @param {string} to - Pandoc output format
+ * @param {string} input - Document content
+ * @returns {Promise<string>} Converted content
+ */
+async function runPandocInMemory(from, to, input) {
+  const viaServer = await convertViaServer(from, to, input)
+  if (viaServer !== null) {
+    return viaServer
+  }
+
+  const result = await safeSpawn('pandoc', ['-f', from, '-t', to], {
+    timeoutMs: getConversionTimeoutMs(),
+    stdinData: input,
+    // Converted output can be larger than the input (markup expansion)
+    maxOutputBytes: Math.max(4 * getMaxInputSizeBytes(), 16 * 1024 * 1024)
+  })
+  if (result.code !== 0) {
+    throw new Error('Pandoc conversion failed')
+  }
+  // Windows CLI emits CRLF while the pandoc server emits LF: normalize so
+  // both paths (and both OSes) produce byte-identical output.
+  return result.stdout.replace(/\r\n/g, '\n')
+}
 
 /**
  * Converts AsciiDoc content to Markdown. Tries downdoc first; on failure falls back to Pandoc.
@@ -22,33 +56,20 @@ function basicCleanup(markdown) {
     return markdown
   }
 
-  let result = markdown
-
-  // Fix horizontal rules: downdoc sometimes converts --- to "- --"
-  result = result.replace(/^-\s*--\s*$/gm, '---')
-  result = result.replace(/^-\s*--$/gm, '---')
-  result = result.replace(/^-\s+--\s*$/gm, '---')
-  result = result.replace(/^-\s*--\s+$/gm, '---')
-  
-  // Line-by-line pass for horizontal rules
-  const lines = result.split('\n')
-  const fixedLines = lines.map(line => {
+  // Single pass over the document: trailing whitespace removal and
+  // horizontal-rule fix ("- --" produced by downdoc → "---") per line.
+  const lines = markdown.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].replace(/[ \t]+$/, '')
     const trimmed = line.trim()
-    if (trimmed === '- --' || trimmed === '-  --' || /^-\s*--\s*$/.test(trimmed)) {
-      const indent = line.match(/^(\s*)/)[1]
-      return indent + '---'
+    if (/^-\s*--$/.test(trimmed)) {
+      line = line.match(/^(\s*)/)[1] + '---'
     }
-    return line
-  })
-  result = fixedLines.join('\n')
-
-  // Remove trailing whitespace
-  result = result.replace(/[ \t]+$/gm, '')
+    lines[i] = line
+  }
 
   // Ensure file ends with a single newline
-  result = result.trimEnd() + '\n'
-
-  return result
+  return lines.join('\n').trimEnd() + '\n'
 }
 
 /**
@@ -594,30 +615,17 @@ async function convertAsciiDocWithPandoc(asciidoc) {
     throw new Error('AsciiDoc content must be a non-empty string')
   }
 
-  const tempDir = path.join(tmpdir(), `ascend-pandoc-${randomUUID()}`)
-  const inputFile = path.join(tempDir, 'input.adoc')
-  const outputFile = path.join(tempDir, 'output.md')
   try {
-    require('fs').mkdirSync(tempDir, { recursive: true })
-    writeFileSync(inputFile, asciidoc, 'utf8')
-    const result = await safeSpawn('pandoc', ['-f', 'asciidoc', '-t', 'markdown', '-o', outputFile, inputFile], {
-      cwd: tempDir,
-      timeoutMs: 30000
-    })
-    if (result.code !== 0) {
-      throw new Error('Pandoc conversion failed')
-    }
-    const stdout = readFileSync(outputFile, 'utf8')
+    const stdout = await runPandocInMemory('asciidoc', 'markdown', asciidoc)
     return basicCleanup(stdout)
   } catch (error) {
     if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
       throw new Error('Pandoc conversion timed out')
     }
+    if (error && error.message === 'Pandoc conversion failed') {
+      throw error
+    }
     throw new Error('Failed to execute Pandoc conversion')
-  } finally {
-    try { if (require('fs').existsSync(inputFile)) unlinkSync(inputFile) } catch (_) {}
-    try { if (require('fs').existsSync(outputFile)) unlinkSync(outputFile) } catch (_) {}
-    try { if (require('fs').existsSync(tempDir)) require('fs').rmSync(tempDir, { recursive: true, force: true }) } catch (_) {}
   }
 }
 
@@ -633,30 +641,17 @@ async function convertMarkdownWithPandoc(markdown) {
     throw new Error('Markdown content must be a non-empty string')
   }
 
-  const tempDir = path.join(tmpdir(), `ascend-pandoc-${randomUUID()}`)
-  const inputFile = path.join(tempDir, 'input.md')
-  const outputFile = path.join(tempDir, 'output.adoc')
   try {
-    require('fs').mkdirSync(tempDir, { recursive: true })
-    writeFileSync(inputFile, markdown, 'utf8')
-    const result = await safeSpawn('pandoc', ['-f', 'markdown', '-t', 'asciidoc', '-o', outputFile, inputFile], {
-      cwd: tempDir,
-      timeoutMs: 30000
-    })
-    if (result.code !== 0) {
-      throw new Error('Pandoc conversion failed')
-    }
-    const stdout = readFileSync(outputFile, 'utf8')
+    const stdout = await runPandocInMemory('markdown', 'asciidoc', markdown)
     return stdout.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
   } catch (error) {
     if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
       throw new Error('Pandoc conversion timed out', { cause: error })
     }
+    if (error && error.message === 'Pandoc conversion failed') {
+      throw error
+    }
     throw new Error('Failed to execute Pandoc conversion', { cause: error })
-  } finally {
-    try { if (require('fs').existsSync(inputFile)) unlinkSync(inputFile) } catch (_) {}
-    try { if (require('fs').existsSync(outputFile)) unlinkSync(outputFile) } catch (_) {}
-    try { if (require('fs').existsSync(tempDir)) require('fs').rmSync(tempDir, { recursive: true, force: true }) } catch (_) {}
   }
 }
 
@@ -735,23 +730,41 @@ async function convertWithPandoc(text, fromFormat, toFormat) {
     throw new Error(`Unsupported output format: ${toFormat}. Supported formats: ${supportedFormats.join(', ')}`)
   }
 
+  // Binary output formats need a real output file (Pandoc refuses stdout);
+  // text formats go through stdin/stdout with no temp files at all.
+  const binaryOutputFormats = ['pdf', 'docx', 'epub']
+  if (!binaryOutputFormats.includes(normalizedTo)) {
+    try {
+      const stdout = await runPandocInMemory(pandocFrom, pandocTo, text)
+      if (['markdown', 'asciidoc', 'rst', 'txt'].includes(normalizedTo)) {
+        return stdout.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
+      }
+      return stdout
+    } catch (error) {
+      if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
+        throw new Error('Pandoc conversion timed out')
+      }
+      if (error && error.message === 'Pandoc conversion failed') {
+        throw error
+      }
+      throw new Error('Failed to execute Pandoc conversion')
+    }
+  }
+
   const tempDir = path.join(tmpdir(), `ascend-pandoc-${randomUUID()}`)
   const inputFile = path.join(tempDir, `input.${normalizedFrom === 'asciidoc' ? 'adoc' : normalizedFrom}`)
   const outputFile = path.join(tempDir, `output.${normalizedTo === 'asciidoc' ? 'adoc' : normalizedTo}`)
   try {
-    require('fs').mkdirSync(tempDir, { recursive: true })
-    writeFileSync(inputFile, text, 'utf8')
+    await mkdir(tempDir, { recursive: true })
+    await writeFile(inputFile, text, 'utf8')
     const result = await safeSpawn('pandoc', ['-f', pandocFrom, '-t', pandocTo, '-o', outputFile, inputFile], {
       cwd: tempDir,
-      timeoutMs: 30000
+      timeoutMs: getConversionTimeoutMs()
     })
     if (result.code !== 0) {
       throw new Error('Pandoc conversion failed')
     }
-    const stdout = readFileSync(outputFile, 'utf8')
-    if (['markdown', 'asciidoc', 'rst', 'txt'].includes(normalizedTo)) {
-      return stdout.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
-    }
+    const stdout = await readFile(outputFile, 'utf8')
     return stdout
   } catch (error) {
     if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
@@ -759,9 +772,7 @@ async function convertWithPandoc(text, fromFormat, toFormat) {
     }
     throw new Error('Failed to execute Pandoc conversion')
   } finally {
-    try { if (require('fs').existsSync(inputFile)) unlinkSync(inputFile) } catch (_) {}
-    try { if (require('fs').existsSync(outputFile)) unlinkSync(outputFile) } catch (_) {}
-    try { if (require('fs').existsSync(tempDir)) require('fs').rmSync(tempDir, { recursive: true, force: true }) } catch (_) {}
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {})
   }
 }
 

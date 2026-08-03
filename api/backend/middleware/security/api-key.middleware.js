@@ -11,8 +11,10 @@
  * - If API_KEY is NOT set: allow all (dev-friendly).
  * - If API_KEY is set: require matching `X-API-Key` header.
  */
+const { envMap } = require('../../services/config/envmap.module.js')
+
 module.exports = function apiKeyMiddleware(req, res, next) {
-  const expected = (process.env.API_KEY || '').trim()
+  const expected = String(envMap.get('API_KEY') || '').trim()
   if (!expected) return next()
 
   const provided = String(req.get('X-API-Key') || '').trim()

@@ -58,7 +58,7 @@ export const Panel: React.FC<PanelProps> = ({
           <button
             onClick={onCopy}
             className="toolbar-button"
-            title="Copier"
+            data-tooltip="Copier"
             disabled={loading || !value.trim()}
           >
             {copied ? '✓ Copié' : '📋 Copier'}
@@ -68,7 +68,7 @@ export const Panel: React.FC<PanelProps> = ({
           <button
             onClick={onEdit}
             className="toolbar-button"
-            title="Modifier"
+            data-tooltip="Modifier"
             disabled={loading || !value.trim()}
           >
             ✏️ Modifier
@@ -78,7 +78,7 @@ export const Panel: React.FC<PanelProps> = ({
           <button
             onClick={onSave}
             className="toolbar-button save-button"
-            title="Enregistrer"
+            data-tooltip="Enregistrer"
             disabled={loading}
           >
             💾 Enregistrer
@@ -88,7 +88,7 @@ export const Panel: React.FC<PanelProps> = ({
           <button
             onClick={onCancel}
             className="toolbar-button cancel-button"
-            title="Annuler"
+            data-tooltip="Annuler"
             disabled={loading}
           >
             ❌ Annuler
@@ -98,7 +98,7 @@ export const Panel: React.FC<PanelProps> = ({
           <button
             onClick={onClear}
             className="toolbar-button clear-button"
-            title="Effacer"
+            data-tooltip="Effacer"
             disabled={loading || !value.trim()}
           >
             🗑️ Effacer

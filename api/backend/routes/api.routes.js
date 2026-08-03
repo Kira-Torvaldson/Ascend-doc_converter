@@ -9,6 +9,7 @@
 const express = require('express')
 const router = express.Router()
 const { z } = require('zod')
+const { randomUUID } = require('crypto')
 const { validate } = require('../middleware/security/validate.middleware.js')
 const {
   generateConfirmationToken,
@@ -25,6 +26,60 @@ const {
 } = require('../services/logging/structured-logger.js')
 const { getLimitsSnapshot } = require('../services/config/conversion-limits.js')
 const { getMetricsSnapshot } = require('../services/metrics/conversion-metrics.js')
+const { createSuccessResult, createFailureResult } = require('../src/utils/conversion-result.js')
+const { buildRouteError } = require('../src/utils/error-envelope.js')
+const { envMap } = require('../services/config/envmap.module.js')
+
+/** Maps secure-converter internal codes to canonical ConversionResult codes. */
+const CONVERT_CODE_MAP = Object.freeze({
+  VALIDATION_ERROR: 'INVALID_INPUT',
+  FILE_VALIDATION_ERROR: 'INVALID_INPUT',
+  TIMEOUT: 'CONVERSION_TIMEOUT',
+  OUTPUT_MISSING: 'OUTPUT_NOT_CREATED',
+  BINARY_NOT_FOUND: 'INTERNAL_ERROR',
+  EXECUTION_ERROR: 'INTERNAL_ERROR',
+  UNEXPECTED_ERROR: 'INTERNAL_ERROR',
+  SYSTEM_OVERLOADED: 'RESOURCE_LIMIT_EXCEEDED',
+  CAPACITY_EXCEEDED: 'RESOURCE_LIMIT_EXCEEDED',
+})
+
+function mapConvertErrorCode(code) {
+  return CONVERT_CODE_MAP[code] || code || 'INTERNAL_ERROR'
+}
+
+function buildConvertFailure({
+  conversionId,
+  startedAt,
+  startedAtMs,
+  content,
+  fromFormat,
+  toFormat,
+  code,
+  message,
+  details = null,
+}) {
+  return createFailureResult({
+    conversionId,
+    converter: fromFormat === 'asciidoc' && toFormat === 'markdown' ? 'downdoc' : 'pandoc',
+    pipeline: [`${fromFormat}->${toFormat}`],
+    inputFormat: fromFormat,
+    outputFormat: toFormat,
+    inputFile: {
+      originalName: `input.${fromFormat}`,
+      storedPath: 'in-memory://request/body',
+      size: Buffer.byteLength(content || '', 'utf8'),
+      mimeType: 'text/plain',
+    },
+    outputFile: null,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    durationMs: Date.now() - startedAtMs,
+    error: buildRouteError(code, message, details),
+    warnings: [],
+    logs: [],
+    meta: { route: '/api/convert', transport: 'in-memory' },
+  })
+}
 
 // Confirmation token request endpoint
 router.post(
@@ -88,26 +143,52 @@ router.post(
     })
   }),
   async (req, res) => {
-  try {
-    const { content, fromFormat, toFormat, token, options } = req.body
+  const routeConversionId = randomUUID()
+  const startedAt = new Date().toISOString()
+  const startedAtMs = Date.now()
+  const { content = '', fromFormat = 'unknown', toFormat = 'unknown', token, options } = req.body || {}
+  const normalizedFrom = String(fromFormat).toLowerCase()
+  const normalizedTo = String(toFormat).toLowerCase()
 
+  const failWith = (status, { code, message, details = null, conversionId = null }) => {
+    const failure = buildConvertFailure({
+      conversionId: conversionId || routeConversionId,
+      startedAt,
+      startedAtMs,
+      content,
+      fromFormat: normalizedFrom,
+      toFormat: normalizedTo,
+      code,
+      message,
+      details,
+    })
+    return res.status(status).json({ ...failure, detail: failure.error.message })
+  }
+
+  try {
     if (!content.trim()) {
-      return res.status(400).json({ error: 'Content is required and must be a non-empty string' })
+      return failWith(400, {
+        code: 'EMPTY_INPUT',
+        message: 'Content is required and must be a non-empty string',
+        details: { stage: 'route-precheck' },
+      })
     }
 
     // Merge and validate options
     const mergedOptions = mergeOptions(options || {})
     const validation = validateOptions(mergedOptions)
     if (!validation.valid) {
-      return res.status(400).json({
-        error: `Invalid options: ${validation.error}`
+      return failWith(400, {
+        code: 'INVALID_INPUT',
+        message: `Invalid options: ${validation.error}`,
+        details: { stage: 'route-precheck' },
       })
     }
 
     // Prepare expected metadata for token validation
     const expectedMetadata = {
-      fromFormat: fromFormat.toLowerCase(),
-      toFormat: toFormat.toLowerCase()
+      fromFormat: normalizedFrom,
+      toFormat: normalizedTo
     }
 
     // Execute secure conversion with token
@@ -124,29 +205,62 @@ router.post(
       }
     )
 
+    const finishedAt = new Date().toISOString()
+    const conversionResult = createSuccessResult({
+      conversionId: routeConversionId,
+      converter: normalizedFrom === 'asciidoc' && normalizedTo === 'markdown' ? 'downdoc' : 'pandoc',
+      pipeline: [`${normalizedFrom}->${normalizedTo}`],
+      inputFormat: normalizedFrom,
+      outputFormat: normalizedTo,
+      inputFile: {
+        originalName: `input.${normalizedFrom}`,
+        storedPath: 'in-memory://request/body',
+        size: Buffer.byteLength(content, 'utf8'),
+        mimeType: 'text/plain',
+      },
+      outputFile: {
+        path: 'in-memory://response/body',
+        size: Buffer.byteLength(result, 'utf8'),
+        mimeType: 'text/plain',
+      },
+      startedAt,
+      finishedAt,
+      durationMs: Date.now() - startedAtMs,
+      warnings: [],
+      logs: [],
+      meta: { route: '/api/convert', transport: 'in-memory' },
+    })
+
     return res.json({
       success: true,
       result: result,
-      format: toFormat
+      format: toFormat,
+      conversionResult
     })
   } catch (error) {
     if (error instanceof ConfirmationTokenError) {
-      return res.status(401).json({
-        error: error.message,
-        code: error.code
+      return failWith(401, {
+        code: mapConvertErrorCode(error.code),
+        message: error.message,
+        details: { stage: 'confirmation-token', secureConverterCode: error.code },
+        conversionId: error.conversionId && error.conversionId !== 'unknown' ? error.conversionId : null,
       })
     }
 
     if (error instanceof ConversionError) {
-      return res.status(500).json({
-        error: error.message,
-        code: error.code
+      return failWith(500, {
+        code: mapConvertErrorCode(error.code),
+        message: error.message,
+        details: { stage: 'secure-converter', secureConverterCode: error.code },
+        conversionId: error.conversionId && error.conversionId !== 'unknown' ? error.conversionId : null,
       })
     }
 
     console.error('[ERROR] Unexpected error in /convert:', error)
-    return res.status(500).json({
-      error: 'Internal server error during conversion'
+    return failWith(500, {
+      code: 'INTERNAL_ERROR',
+      message: 'Internal server error during conversion',
+      details: { stage: 'route-internal' },
     })
   }
 })
@@ -197,8 +311,8 @@ router.get('/config/limits', (req, res) => {
 
 // ASC-007 — Conversion metrics (restrict in production when API_KEY is set)
 router.get('/metrics', (req, res) => {
-  const expectedKey = (process.env.API_KEY || '').trim()
-  if (process.env.NODE_ENV === 'production' && expectedKey) {
+  const expectedKey = String(envMap.get('API_KEY') || '').trim()
+  if (envMap.get('NODE_ENV') === 'production' && expectedKey) {
     const provided = String(req.get('X-API-Key') || '').trim()
     if (provided !== expectedKey) {
       return res.status(403).json({ error: 'Forbidden' })

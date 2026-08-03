@@ -8,12 +8,8 @@
 
 const express = require('express')
 const router = express.Router()
-const { writeFileSync, readFileSync, unlinkSync, mkdirSync } = require('fs')
-const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
-const path = require('path')
-const { runConverter } = require('../services/modules/lazyload.module.js')
-const { convertMarkdownWithPandoc, convertHtmlWithPandoc, convertWithPandoc, text2markdown, removeExperimentalTag, normalizeAsciiDocInput } = require('../services/conversion/convert.js')
+const { convertAsciiDoc, convertMarkdownWithPandoc, convertHtmlWithPandoc, text2markdown } = require('../services/conversion/convert.js')
 const { z } = require('zod')
 const { validate } = require('../middleware/security/validate.middleware.js')
 const { createFailureResult, createSuccessResult } = require('../src/utils/conversion-result.js')
@@ -270,61 +266,34 @@ function extractStandardizedFailureFromError(error) {
   return null
 }
 
-function buildFailureFromSuccessfulResult(result, { code, message, details = null, routeMeta = {} }) {
-  const baseMeta =
-    result.meta && typeof result.meta === 'object' && !Array.isArray(result.meta) ? { ...result.meta } : {}
-  return createFailureResult({
-    conversionId: result.conversionId,
-    converter: result.converter,
-    pipeline: result.pipeline,
-    inputFormat: result.inputFormat,
-    outputFormat: result.outputFormat,
-    inputFile: result.inputFile,
-    outputFile: result.outputFile,
-    durationMs: result.durationMs,
-    startedAt: result.startedAt,
-    finishedAt: new Date().toISOString(),
-    warnings: result.warnings,
-    logs: result.logs,
-    error: routeFailureError(code, message, details),
-    meta: { ...baseMeta, route: '/api/to-markdown', transport: 'in-memory', ...routeMeta },
-  })
-}
-
-/**
- * When lazyload returns a non-standard failure shape, build a full ConversionResult without
- * dropping upstream logs when present.
- */
-function coerceToMarkdownStandardizedFailure(result, routeCtx) {
-  const err = result && result.error
-  const message =
-    err && typeof err === 'object' && typeof err.message === 'string'
-      ? err.message
-      : typeof err === 'string'
-        ? err
-        : 'unknown conversion failure'
-  const code =
-    err && typeof err === 'object' && typeof err.code === 'string' && err.code.length > 0
-      ? err.code
-      : 'CONVERSION_FAILED'
-  const failure = buildToMarkdownFailure({
-    conversionId: result && result.conversionId ? result.conversionId : routeCtx.conversionId,
-    startedAt: routeCtx.startedAt,
-    startedAtMs: routeCtx.startedAtMs,
-    inputText: routeCtx.inputText,
-    code,
-    message,
-    details: { stage: 'route-coerce', reason: 'NON_STANDARD_LAZYLOAD_FAILURE' },
-    meta: { route: '/api/to-markdown', transport: 'in-memory', coercedFrom: 'lazyload' },
-  })
-  const upstreamLogs = Array.isArray(result && result.logs) ? result.logs : []
-  if (upstreamLogs.length > 0) {
-    failure.logs = [...failure.logs, ...upstreamLogs]
+function classifyToMarkdownConversionError(error) {
+  const rawMessage = error && error.message ? String(error.message) : String(error || '')
+  if (rawMessage.includes('Pandoc conversion timed out')) {
+    return {
+      code: 'CONVERSION_TIMEOUT',
+      message: `Conversion error: ${rawMessage}`,
+      details: { stage: 'converter-execution', rawMessage },
+    }
   }
-  return failure
+  if (
+    rawMessage.startsWith('Conversion failed') ||
+    rawMessage.includes('Pandoc conversion failed') ||
+    rawMessage.includes('Failed to execute Pandoc conversion')
+  ) {
+    return {
+      code: 'CONVERSION_FAILED',
+      message: `Conversion error: ${rawMessage}`,
+      details: { stage: 'converter-execution', rawMessage },
+    }
+  }
+  return {
+    code: 'INTERNAL_ERROR',
+    message: `Conversion error: ${rawMessage}`,
+    details: { stage: 'route-internal', rawMessage },
+  }
 }
 
-// Endpoint: AsciiDoc → Markdown (utilise lazy loader avec downdoc)
+// Endpoint: AsciiDoc → Markdown (downdoc en mémoire, fallback Pandoc)
 router.post(
   '/to-markdown',
   validate({
@@ -337,10 +306,6 @@ router.post(
   const conversionId = randomUUID()
   const startedAt = new Date().toISOString()
   const startedAtMs = Date.now()
-  const tempDir = path.join(tmpdir(), `ascend-temp-${conversionId}`)
-  let inputFile = null
-  let outputFile = null
-  let result = null
 
   try {
     const { text, options } = req.body
@@ -375,144 +340,93 @@ router.post(
     const useParsedown = options?.formatSpecific?.markdown?.parsedown || false
     const mode = useParsedown ? 'bookstack' : 'default'
 
-    console.log(`[INFO] Converting ${text.length} characters (AsciiDoc → Markdown) with lazy loader${useParsedown ? ' (Parsedown/BookStack mode)' : ''}`)
+    console.log(`[INFO] Converting ${text.length} characters (AsciiDoc → Markdown) in memory${useParsedown ? ' (Parsedown/BookStack mode)' : ''}`)
 
-    // Remove :experimental: line from header only (no :toc: injection), then normalize
-    let processedText = removeExperimentalTag(text)
-    processedText = normalizeAsciiDocInput(processedText)
+    // Conversion entièrement en mémoire : downdoc (fallback Pandoc via stdin/stdout),
+    // normalisation, cleanup et adaptateur BookStack inclus — aucun fichier temporaire.
+    const { markdown, engineUsed, fallbackReason } = await convertAsciiDoc(text, mode)
 
-    // Créer le dossier temporaire
-    mkdirSync(tempDir, { recursive: true })
-
-    // Créer les fichiers temporaires
-    inputFile = path.join(tempDir, 'input.adoc')
-    outputFile = path.join(tempDir, 'output.md')
-
-    // Écrire le contenu d'entrée normalisé
-    writeFileSync(inputFile, processedText, 'utf8')
-    console.log(`[INFO] Written normalized content to temp file (${processedText.length} chars)`)
-
-    // Utiliser le lazy loader pour exécuter la conversion (downdoc with Pandoc fallback)
-    result = await runConverter('downdoc', inputFile, outputFile, {
-      conversionId: conversionId,
-      mode: mode
-    })
-
-    if (!result.success) {
-      const standardizedFailure = isStandardizedFailureResult(result)
-        ? result
-        : coerceToMarkdownStandardizedFailure(result, {
-            conversionId,
-            startedAt,
-            startedAtMs,
-            inputText: processedText,
-          })
-      const errorMessage =
-        standardizedFailure &&
-        standardizedFailure.error &&
-        typeof standardizedFailure.error === 'object' &&
-        typeof standardizedFailure.error.message === 'string'
-          ? standardizedFailure.error.message
-          : 'unknown conversion failure'
-      console.error(`[ERROR] Conversion failed: ${errorMessage}`)
-      return res.status(500).json({
-        ...standardizedFailure,
-        detail: errorMessage,
-      })
-    }
-
-    // Lire le résultat
-    const markdown = readFileSync(outputFile, 'utf8')
-
-    // Debug: vérifier que le résultat est bien du Markdown et non de l'AsciiDoc
-    if (markdown === processedText) {
-      console.error(`[ERROR] Output is identical to processed input - conversion did not occur!`)
-      console.error(`[ERROR] Processed input length: ${processedText.length}, Output length: ${markdown.length}`)
-      console.error(`[ERROR] First 100 chars of processed input: ${processedText.substring(0, 100)}`)
-      console.error(`[ERROR] First 100 chars of output: ${markdown.substring(0, 100)}`)
-      const msg =
-        'Conversion error: output is identical to processed input. The conversion did not occur.'
-      const failure = buildFailureFromSuccessfulResult(result, {
-        code: 'CONVERSION_FAILED',
-        message: msg,
-        details: { stage: 'route-output-validation', reason: 'OUTPUT_IS_INPUT' },
-        routeMeta: { stage: 'route-output-validation' },
-      })
-      return res.status(500).json({ ...failure, detail: msg })
-    }
-
-    // Vérifier que le résultat contient du Markdown et non de l'AsciiDoc
-    // Détecter les attributs AsciiDoc (commencent par :) ou les titres AsciiDoc (commencent par =)
-    const firstLines = markdown.trim().split('\n').slice(0, 5).join('\n')
+    // Sanity: le résultat doit être du Markdown, pas de l'AsciiDoc
+    const trimmedMarkdown = markdown.trim()
+    const firstLines = trimmedMarkdown.split('\n', 5).join('\n')
     const hasAsciiDocAttributes = /^:[a-zA-Z-]+:/m.test(firstLines)
     const hasAsciiDocTitle = /^=+\s+\w+/m.test(firstLines)
-    const hasMarkdownTitle = /^#+\s+\w+/m.test(markdown.trim())
-    
+    const hasMarkdownTitle = /^#+\s+\w+/m.test(trimmedMarkdown)
+
     if ((hasAsciiDocAttributes || hasAsciiDocTitle) && !hasMarkdownTitle) {
       console.error(`[ERROR] Output appears to be AsciiDoc instead of Markdown!`)
       console.error(`[ERROR] First 200 chars: ${markdown.substring(0, 200)}`)
-      console.error(`[ERROR] Has AsciiDoc attributes: ${hasAsciiDocAttributes}, Has AsciiDoc title: ${hasAsciiDocTitle}, Has Markdown title: ${hasMarkdownTitle}`)
       const msg =
         'Conversion error: output appears to be AsciiDoc instead of Markdown. The conversion did not occur.'
-      const failure = buildFailureFromSuccessfulResult(result, {
+      const failure = buildToMarkdownFailure({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        inputText: text,
         code: 'CONVERSION_FAILED',
         message: msg,
         details: { stage: 'route-output-validation', reason: 'OUTPUT_INVALID_FORMAT' },
-        routeMeta: { stage: 'route-output-validation' },
+        meta: { route: '/api/to-markdown', transport: 'in-memory', stage: 'route-output-validation' },
       })
       return res.status(500).json({ ...failure, detail: msg })
     }
 
-    console.log(`[INFO] Conversion successful: ${markdown.length} Markdown characters generated`)
-    console.log(`[INFO] First 100 chars of output: ${markdown.substring(0, 100)}`)
+    const finishedAt = new Date().toISOString()
+    const conversionResult = createSuccessResult({
+      conversionId,
+      converter: 'downdoc',
+      pipeline: ['asciidoc->markdown'],
+      inputFormat: 'asciidoc',
+      outputFormat: 'markdown',
+      inputFile: {
+        originalName: 'input.adoc',
+        storedPath: 'in-memory://request/body.adoc',
+        size: Buffer.byteLength(text, 'utf8'),
+        mimeType: 'text/x-asciidoc',
+      },
+      outputFile: {
+        path: 'in-memory://response/body.md',
+        size: Buffer.byteLength(markdown, 'utf8'),
+        mimeType: 'text/markdown',
+      },
+      startedAt,
+      finishedAt,
+      durationMs: Date.now() - startedAtMs,
+      warnings: [],
+      logs: [],
+      meta: {
+        route: '/api/to-markdown',
+        transport: 'in-memory',
+        engineUsed,
+        fallbackReason: fallbackReason || null,
+        mode,
+      },
+    })
 
-    return res.json({ markdown, conversionResult: result })
+    console.log(`[INFO] Conversion successful: ${markdown.length} Markdown characters generated (engine: ${engineUsed})`)
+
+    return res.json({ markdown, conversionResult })
   } catch (error) {
     console.error('[ERROR] Error during AsciiDoc → Markdown conversion:', error)
-    const errMsg = error.message || String(error)
-    if (result && result.success && typeof result.conversionId === 'string') {
-      const failure = buildFailureFromSuccessfulResult(result, {
-        code: 'INTERNAL_ERROR',
-        message: `Conversion error: ${errMsg}`,
-        details: { stage: 'route-postprocessing' },
-        routeMeta: { stage: 'route-postprocessing' },
-      })
-      return res.status(500).json({ ...failure, detail: failure.error.message })
-    }
     const standardizedFailureFromError = extractStandardizedFailureFromError(error)
     if (standardizedFailureFromError) {
       const message =
         standardizedFailureFromError.error && typeof standardizedFailureFromError.error.message === 'string'
           ? standardizedFailureFromError.error.message
-          : `Conversion error: ${errMsg}`
+          : `Conversion error: ${error.message || String(error)}`
       return res.status(500).json({ ...standardizedFailureFromError, detail: message })
     }
+    const classified = classifyToMarkdownConversionError(error)
     const failure = buildToMarkdownFailure({
       conversionId,
       startedAt,
       startedAtMs,
       inputText: req.body && req.body.text ? String(req.body.text) : '',
-      code: 'INTERNAL_ERROR',
-      message: `Conversion error: ${errMsg}`,
-      details: { stage: 'route-internal' },
-      outputFile: outputFile ? { path: outputFile, size: 0, mimeType: 'text/markdown' } : null,
+      code: classified.code,
+      message: classified.message,
+      details: classified.details,
     })
     return res.status(500).json({ ...failure, detail: failure.error.message })
-  } finally {
-    // Nettoyer les fichiers temporaires
-    try {
-      if (inputFile && require('fs').existsSync(inputFile)) {
-        unlinkSync(inputFile)
-      }
-      if (outputFile && require('fs').existsSync(outputFile)) {
-        unlinkSync(outputFile)
-      }
-      if (require('fs').existsSync(tempDir)) {
-        require('fs').rmSync(tempDir, { recursive: true, force: true })
-      }
-    } catch (cleanupError) {
-      console.warn(`[WARN] Failed to cleanup temp files: ${cleanupError.message}`)
-    }
   }
 })
 

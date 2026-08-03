@@ -26,41 +26,35 @@ const os = require('os')
 // CONFIGURATION
 // ============================================================================
 
-// Import EnvMap for secure configuration access
-let envMap = null
-try {
-  envMap = require('../config/envmap.module.js').envMap
-} catch (e) {
-  // Fallback if EnvMap not available (backward compatibility)
-  envMap = null
-}
+// EnvMap is the single source of truth for security configuration
+const { envMap } = require('../config/envmap.module.js')
 
 const SECURITY_CONFIG = {
   // Limite maximale de conversions simultanées (Règle 21)
-  MAX_CONCURRENT_CONVERSIONS: envMap ? envMap.get('MAX_CONCURRENT_CONVERSIONS') : parseInt(process.env.MAX_CONCURRENT_CONVERSIONS || '5', 10),
-  
+  MAX_CONCURRENT_CONVERSIONS: envMap.get('MAX_CONCURRENT_CONVERSIONS'),
+
   // Budget de ressources par conversion (Règle 22)
   RESOURCE_BUDGET: {
-    MAX_CPU_TIME: envMap ? envMap.get('MAX_CPU_TIME_MS') : parseInt(process.env.MAX_CPU_TIME_MS || '30000', 10), // 30s
-    MAX_MEMORY_MB: envMap ? envMap.get('MAX_MEMORY_MB') : parseInt(process.env.MAX_MEMORY_MB || '512', 10), // 512 MB
-    MAX_WALL_TIME: envMap ? envMap.get('MAX_WALL_TIME_MS') : parseInt(process.env.MAX_WALL_TIME_MS || '60000', 10) // 60s
+    MAX_CPU_TIME: envMap.get('MAX_CPU_TIME_MS'), // 30s
+    MAX_MEMORY_MB: envMap.get('MAX_MEMORY_MB'), // 512 MB
+    MAX_WALL_TIME: envMap.get('MAX_WALL_TIME_MS') // 60s
   },
-  
+
   // Seuils de surcharge pour dégradation contrôlée (Règle 24)
   OVERLOAD_THRESHOLDS: {
-    CPU_PERCENT: envMap ? envMap.get('OVERLOAD_CPU_PERCENT') : parseFloat(process.env.OVERLOAD_CPU_PERCENT || '80.0'),
-    MEMORY_PERCENT: envMap ? envMap.get('OVERLOAD_MEMORY_PERCENT') : parseFloat(process.env.OVERLOAD_MEMORY_PERCENT || '80.0'),
-    FAILURE_RATE: envMap ? envMap.get('OVERLOAD_FAILURE_RATE') : parseFloat(process.env.OVERLOAD_FAILURE_RATE || '0.2') // 20%
+    CPU_PERCENT: envMap.get('OVERLOAD_CPU_PERCENT'),
+    MEMORY_PERCENT: envMap.get('OVERLOAD_MEMORY_PERCENT'),
+    FAILURE_RATE: envMap.get('OVERLOAD_FAILURE_RATE') // 20%
   },
-  
+
   // Profils d'exécution anormaux (Règle 23.3)
   ABNORMAL_PROFILE_MULTIPLIERS: {
-    DURATION: envMap ? envMap.get('ABNORMAL_DURATION_MULT') : parseFloat(process.env.ABNORMAL_DURATION_MULT || '3.0'),
-    MEMORY: envMap ? envMap.get('ABNORMAL_MEMORY_MULT') : parseFloat(process.env.ABNORMAL_MEMORY_MULT || '2.0')
+    DURATION: envMap.get('ABNORMAL_DURATION_MULT'),
+    MEMORY: envMap.get('ABNORMAL_MEMORY_MULT')
   },
-  
+
   // Chemin pour stocker les logs de sécurité (Règle 18)
-  SECURITY_LOG_PATH: envMap ? envMap.get('SECURITY_LOG_PATH') : (process.env.SECURITY_LOG_PATH || path.join(os.tmpdir(), 'ascend-security-logs')),
+  SECURITY_LOG_PATH: envMap.get('SECURITY_LOG_PATH'),
   
   // Hash attendus des modules (vérification d'intégrité)
   MODULE_INTEGRITY: {
@@ -233,8 +227,10 @@ class MimeTypeDetector {
    */
   static detectAndValidate(filePath, declaredFormat) {
     try {
-      // Règle 19.2 : Lecture des magic bytes / en-têtes
-      const buffer = readFileSync(filePath, { encoding: null, flag: 'r' })
+      // Règle 19.2 : Lecture des magic bytes / en-têtes.
+      // Seul un échantillon est nécessaire : évite de relire tout le fichier
+      // (coûteux pour les gros documents).
+      const buffer = MimeTypeDetector.readSample(filePath, 4096)
       const detectedType = this.detectFromContent(buffer)
       
       // Règle 19.2 : Comparaison avec le format déclaré
@@ -265,8 +261,25 @@ class MimeTypeDetector {
   }
 
   /**
+   * Lit les premiers octets d'un fichier sans le charger entièrement.
+   * @param {string} filePath - Chemin vers le fichier
+   * @param {number} maxBytes - Nombre maximal d'octets à lire
+   * @returns {Buffer} Échantillon du début du fichier
+   */
+  static readSample(filePath, maxBytes) {
+    const fd = fs.openSync(filePath, 'r')
+    try {
+      const buffer = Buffer.alloc(maxBytes)
+      const bytesRead = fs.readSync(fd, buffer, 0, maxBytes, 0)
+      return buffer.subarray(0, bytesRead)
+    } finally {
+      fs.closeSync(fd)
+    }
+  }
+
+  /**
    * Détecte le type MIME à partir du contenu (magic bytes)
-   * @param {Buffer} buffer - Contenu du fichier
+   * @param {Buffer} buffer - Contenu du fichier (échantillon des premiers octets)
    * @returns {string} Type MIME détecté
    */
   static detectFromContent(buffer) {
@@ -322,11 +335,15 @@ class MimeTypeDetector {
     try {
       const text = buffer.toString('utf8')
       // Si plus de 90% du contenu est du texte valide, on considère que c'est du texte
-      const validChars = text.split('').filter(c => {
-        const code = c.charCodeAt(0)
-        return (code >= 32 && code <= 126) || code === 9 || code === 10 || code === 13
-      }).length
-      
+      // (boucle sur les charCodes : pas d'allocation d'un tableau par caractère)
+      let validChars = 0
+      for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i)
+        if ((code >= 32 && code <= 126) || code === 9 || code === 10 || code === 13) {
+          validChars++
+        }
+      }
+
       if (validChars / text.length > 0.9) {
         return 'text/plain'
       }
@@ -499,7 +516,7 @@ class AnomalyDetector {
    * @param {string} conversionId - ID de la conversion
    * @returns {Object} { isAnomaly: boolean, details?: Object }
    */
-  static detectUnauthorizedAccess(filePath, allowedBaseDir, conversionId) {
+  detectUnauthorizedAccess(filePath, allowedBaseDir, conversionId) {
     const validation = PathValidator.validatePath(filePath, allowedBaseDir)
     
     if (!validation.valid) {
@@ -692,8 +709,12 @@ const gracefulDegradationManager = new GracefulDegradationManager()
  * Implémente la Règle 18 de PIPELINE.md
  */
 class SecurityLogger {
-  constructor() {
-    // S'assurer que le répertoire de logs existe
+  /**
+   * S'assure que le répertoire de logs existe.
+   * Les méthodes de log étant statiques, le constructeur n'est jamais
+   * appelé : la création doit se faire au moment de l'écriture.
+   */
+  static ensureLogDirectory() {
     if (!fs.existsSync(SECURITY_CONFIG.SECURITY_LOG_PATH)) {
       fs.mkdirSync(SECURITY_CONFIG.SECURITY_LOG_PATH, { recursive: true, mode: 0o700 })
     }
@@ -734,6 +755,7 @@ class SecurityLogger {
     )
 
     try {
+      SecurityLogger.ensureLogDirectory()
       fs.appendFileSync(logFile, logLine, { encoding: 'utf8', mode: 0o600 })
     } catch (error) {
       console.error(`[SECURITY_LOGGER] Failed to write security log: ${error.message}`)
@@ -764,6 +786,7 @@ class SecurityLogger {
     )
 
     try {
+      SecurityLogger.ensureLogDirectory()
       fs.appendFileSync(logFile, logLine, { encoding: 'utf8', mode: 0o600 })
       console.error(`[SECURITY_ANOMALY] ${logLine.trim()}`)
     } catch (error) {

@@ -524,6 +524,7 @@ Each environment variable in the schema defines:
 #### Pandoc Configuration
 
 - **`PANDOC_PATH`**: Path to Pandoc binary (path, default: '/usr/bin/pandoc')
+- **`PANDOC_SERVER_ENABLED`**: Use a persistent `pandoc server` process for text conversions instead of one CLI invocation per request (boolean, default: true). Requires Pandoc >= 3.0; when the server cannot start, conversions transparently fall back to the CLI path.
 
 #### Logging Configuration
 

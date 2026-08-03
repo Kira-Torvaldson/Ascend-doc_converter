@@ -17,7 +17,8 @@
  * - downdoc.module.md: Downdoc module specification
  */
 
-const { readFileSync, writeFileSync, statSync, existsSync, unlinkSync } = require('fs')
+const { statSync, existsSync, unlinkSync } = require('fs')
+const { readFile, writeFile } = require('fs/promises')
 const path = require('path')
 const { adaptForBookStack } = require('../../../shared/adapters/bookstack-adapter.js')
 const { convertAsciiDocWithPandoc } = require('../conversion/convert.js')
@@ -209,33 +210,20 @@ function basicCleanup(markdown) {
     return markdown
   }
 
-  let result = markdown
-
-  // Fix malformed horizontal rules (- -- -> ---)
-  result = result.replace(/^-\s*--\s*$/gm, '---')
-  result = result.replace(/^-\s*--$/gm, '---')
-  result = result.replace(/^-\s+--\s*$/gm, '---')
-  result = result.replace(/^-\s*--\s+$/gm, '---')
-  
-  // Line-by-line pass for horizontal rules
-  const lines = result.split('\n')
-  const fixedLines = lines.map(line => {
+  // Single pass over the document: trailing whitespace removal and
+  // horizontal-rule fix ("- --" produced by downdoc → "---") per line.
+  const lines = markdown.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].replace(/[ \t]+$/, '')
     const trimmed = line.trim()
-    if (trimmed === '- --' || trimmed === '-  --' || /^-\s*--\s*$/.test(trimmed)) {
-      const indent = line.match(/^(\s*)/)[1]
-      return indent + '---'
+    if (/^-\s*--$/.test(trimmed)) {
+      line = line.match(/^(\s*)/)[1] + '---'
     }
-    return line
-  })
-  result = fixedLines.join('\n')
-
-  // Remove trailing spaces
-  result = result.replace(/[ \t]+$/gm, '')
+    lines[i] = line
+  }
 
   // Normalize file endings (single final newline)
-  result = result.trimEnd() + '\n'
-
-  return result
+  return lines.join('\n').trimEnd() + '\n'
 }
 
 // ============================================================================
@@ -360,7 +348,7 @@ const downdocModule = {
       logs.push(`[${conversionId}] Reading input file...`)
       let asciidocContent
       try {
-        asciidocContent = readFileSync(inputPath, 'utf8')
+        asciidocContent = await readFile(inputPath, 'utf8')
       } catch (error) {
         logs.push(`[${conversionId}] Failed to read input file: ${error.message}`)
         return createDowndocFailure({
@@ -556,71 +544,22 @@ const downdocModule = {
       }
       
       try {
-        writeFileSync(outputPath, markdown, 'utf8')
-        
-        // Verify file was written correctly
-        if (!existsSync(outputPath)) {
-          logs.push(`[${conversionId}] ERROR: Output file was not created`)
-          return createDowndocFailure({
-            conversionId,
-            startTime,
-            logs,
-            inputPath,
-            outputPath,
-            errorCode: 'OUTPUT_NOT_CREATED',
-            message: 'Output file was not created',
-            details: null,
-            recoverable: false,
-            meta: { stage: 'write_output' },
-          })
-        }
-        
-        // Verify file content matches what we wrote
-        const writtenContent = readFileSync(outputPath, 'utf8')
-        if (writtenContent !== markdown) {
-          logs.push(`[${conversionId}] WARNING: Written content differs from expected markdown`)
-          logs.push(`[${conversionId}] Expected length: ${markdown.length}, Written length: ${writtenContent.length}`)
-        }
-        
-        // Final verification: ensure output is Markdown, not AsciiDoc
-        if (writtenContent === asciidocContent) {
-          logs.push(`[${conversionId}] CRITICAL ERROR: Written file content is identical to input AsciiDoc!`)
-          logs.push(`[${conversionId}] This means the conversion did not happen or the wrong file was written`)
-          
-          // Try to remove the incorrect file
-          try {
-            unlinkSync(outputPath)
-            logs.push(`[${conversionId}] Incorrect output file removed`)
-          } catch (unlinkError) {
-            logs.push(`[${conversionId}] Warning: Failed to remove incorrect output file`)
-          }
-          
-          return createDowndocFailure({
-            conversionId,
-            startTime,
-            logs,
-            inputPath,
-            outputPath,
-            errorCode: 'CONVERSION_FAILED',
-            message: 'Conversion failed: output file contains AsciiDoc instead of Markdown. The conversion did not occur.',
-            details: null,
-            recoverable: false,
-            meta: { stage: 'verify_output' },
-          })
-        }
-        
-        // Verify output looks like Markdown (basic check: should have # for headers, not =)
-        // Also check for AsciiDoc attributes (lines starting with :)
-        const firstLines = writtenContent.trim().split('\n').slice(0, 5).join('\n')
+        await writeFile(outputPath, markdown, 'utf8')
+
+        // Format verification on the in-memory content (identical to what was
+        // written; avoids re-reading the whole file from disk).
+        // Ensure output looks like Markdown, not AsciiDoc.
+        const trimmedMarkdown = markdown.trim()
+        const firstLines = trimmedMarkdown.split('\n', 5).join('\n')
         const hasAsciiDocAttributes = /^:[a-zA-Z-]+:/m.test(firstLines)
         const hasAsciiDocTitle = /^=+\s+\w+/m.test(firstLines)
-        const hasMarkdownTitle = /^#+\s+\w+/m.test(writtenContent.trim())
-        
+        const hasMarkdownTitle = /^#+\s+\w+/m.test(trimmedMarkdown)
+
         if ((hasAsciiDocAttributes || hasAsciiDocTitle) && !hasMarkdownTitle) {
-          logs.push(`[${conversionId}] CRITICAL ERROR: Output file contains AsciiDoc syntax instead of Markdown!`)
+          logs.push(`[${conversionId}] CRITICAL ERROR: Output contains AsciiDoc syntax instead of Markdown!`)
           logs.push(`[${conversionId}] Has AsciiDoc attributes: ${hasAsciiDocAttributes}, Has AsciiDoc title: ${hasAsciiDocTitle}, Has Markdown title: ${hasMarkdownTitle}`)
-          logs.push(`[${conversionId}] First 200 chars: ${writtenContent.substring(0, 200)}`)
-          
+          logs.push(`[${conversionId}] First 200 chars: ${markdown.substring(0, 200)}`)
+
           // Try to remove the incorrect file
           try {
             unlinkSync(outputPath)
@@ -628,7 +567,7 @@ const downdocModule = {
           } catch (unlinkError) {
             logs.push(`[${conversionId}] Warning: Failed to remove incorrect output file`)
           }
-          
+
           return createDowndocFailure({
             conversionId,
             startTime,
@@ -642,10 +581,10 @@ const downdocModule = {
             meta: { stage: 'verify_output' },
           })
         }
-        
+
         logs.push(`[${conversionId}] Output file written successfully`)
-        logs.push(`[${conversionId}] Output file size: ${writtenContent.length} characters`)
-        logs.push(`[${conversionId}] Output preview (first 200 chars): ${writtenContent.substring(0, 200)}...`)
+        logs.push(`[${conversionId}] Output file size: ${markdown.length} characters`)
+        logs.push(`[${conversionId}] Output preview (first 200 chars): ${markdown.substring(0, 200)}...`)
       } catch (error) {
         // Obligation 3 - Secure error handling: do not create partial file
         // If writing fails, remove file if it was partially created

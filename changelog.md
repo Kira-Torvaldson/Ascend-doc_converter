@@ -13,6 +13,46 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.8 (2026-08-03)
+
+#### Added
+- `POST /api/convert` — standardized `ConversionResult` contract: success returns legacy fields plus `conversionResult`; failures return the ConversionResult shape with `detail` (same convention as the migrated conversion routes).
+- `POST /api/proxy/convert` — `conversionResult` added alongside the legacy `{ success, result | error }` shape (kept for bulk-processor compatibility).
+- Contract verification scripts `verify-e2e-convert-contract.js` and `verify-e2e-proxy-convert-contract.js`, wired into `check:ascend:ci`.
+- Error envelope: `CONFIRMATION_*` codes mapped to `VALIDATION_ERROR` category with French hints.
+- EnvMap schema keys: `API_KEY` (sensitive), `FRONTEND_URL`, `ASCEND_REPORTS_DIR`.
+- Pandoc scenario (markdown → html) in `verify-e2e-convert-contract.js`, executed when the Pandoc binary is available (CI/Docker) and skipped otherwise.
+- `POST /api/roundtrip` — `conversionResult` added alongside the legacy `{ success, state, logs, errors }` shape (last conversion route without the contract).
+- Contract verification script `verify-e2e-roundtrip-contract.js`, wired into `check:ascend:ci` (success scenario conditional on Pandoc availability).
+
+#### Performance
+- Persistent Pandoc server (`pandoc server`, Pandoc >= 3.0): text conversions skip the per-request binary startup (~50 ms saved per request locally, more under load); lazy start, automatic CLI fallback when unavailable, opt-out via `PANDOC_SERVER_ENABLED=false` (new EnvMap key). Pandoc output line endings normalized to LF on both paths.
+- `/api/to-markdown` runs fully in memory (direct `convertAsciiDoc`: downdoc with Pandoc fallback) — no temp directory, no disk I/O at all on the hot path.
+- Pandoc helpers (`/api/to-asciidoc`, `/api/from-html` text formats) pipe input via stdin and read stdout (`safeSpawn` gained `stdinData` support) — no temp files; binary output formats (pdf/docx/epub) keep the file-based path.
+- Conversion routes and converters no longer block the event loop on large documents: all remaining temp-file I/O in the request path (`adoc-to-md.converter`, `secure-converter`, roundtrip pipeline and route) is now async (`fs/promises`).
+- `MimeTypeDetector` reads a 4 KB sample instead of the whole file, and the plain-text heuristic loops over char codes instead of allocating one string per character.
+- `basicCleanup` (downdoc post-processing) rewritten as a single pass over the document instead of ~7 full regex/split passes (golden corpus verified identical).
+- Roundtrip pipeline reuses already-read contents instead of re-reading both output files on success.
+- HTTP response compression (`compression`, threshold 1 KB): multi-MB converted documents shrink drastically over the wire.
+- Pandoc helpers in `convert.js` use the EnvMap `CONVERSION_TIMEOUT_MS` instead of a hardcoded 30 s.
+- New `bench-large-doc.js` script to measure large-document latency (4 MB ≈ 0.5 s on `/api/to-markdown`).
+
+#### Changed
+- `api-key.middleware`, `cors.middleware`, and `/api/metrics` now read configuration through EnvMap instead of `process.env`.
+- Zod validation failures (`validate.middleware`) now return the standardized error envelope (`error.code = INVALID_INPUT`, category, hint, issues in `error.details`) instead of `{ error: 'Invalid request', issues }`.
+- EnvMap is now the single configuration source: `server.js`, `error-handler.middleware`, `structured-logger`, and `pipeline-security` no longer read `process.env` directly (legacy fallbacks removed).
+- `secure-converter.js` limits aligned with EnvMap: `MAX_FILE_SIZE` follows `MAX_INPUT_SIZE_MB` and `DEFAULT_TIMEOUT` follows `CONVERSION_TIMEOUT_MS` (previously hardcoded 50 MB / 30 s).
+
+#### Fixed
+- `/api/convert` was failing at runtime for every conversion: `detectUnauthorizedAccess` was declared `static` but called on the instance, and the lazyload module require path was wrong in `secure-converter.js`.
+- `ConfirmationTokenError` swapped `code` and `message` fields (constructor argument order).
+- Token cleanup interval in `secure-converter.js` kept one-shot scripts and test runners from exiting (`unref()`).
+- `SecurityLogger` never created its log directory (directory creation lived in a constructor that static methods never invoke), so security and anomaly logs failed with `ENOENT`.
+
+#### Removed
+- `api/backend/config/index.js` — dead configuration module (no remaining references).
+- `api/backend/server-legacy.js` — legacy server entry point (no remaining references).
+
 ### 0.0.1.7 (2026-06-17)
 
 #### Added

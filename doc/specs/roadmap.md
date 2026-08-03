@@ -6,15 +6,24 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.7 (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** Patch UX + CI Docker frontend  
-**Focus:** modale erreur, visibilité fond, `check:docker:frontend`
+**Version:** 0.0.1.8 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** Patch contrat ConversionResult + EnvMap  
+**Focus:** `/api/convert` + `/api/proxy/convert` standardisés, correctifs secure-converter, EnvMap complété
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.7 (Current — Ascend)
+### 0.0.1.8 (Current — Ascend)
+
+**Delivered:**
+- Contrat `ConversionResult` sur `/api/convert` et `/api/proxy/convert` (+ scripts contrat en CI)
+- Correctifs `/api/convert` (anomaly detector static, chemin lazyload, `ConfirmationTokenError`)
+- EnvMap : `API_KEY`, `FRONTEND_URL`, `ASCEND_REPORTS_DIR` ; middlewares migrés
+
+**Docs:** `doc/specs/axes-ameliorations-0.0.1.8.md`, `doc/releases/v0.0.1.8-notes.md`
+
+### 0.0.1.7
 
 **Delivered:**
 - Modale erreur structurée (`error.code`, hint, `requestId`)
