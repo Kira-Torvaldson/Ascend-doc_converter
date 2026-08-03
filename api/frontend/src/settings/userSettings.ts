@@ -9,6 +9,8 @@ export type SettingsValidationErrors = {
   organization?: string;
 };
 
+export type BackgroundMode = 'default' | 'server' | 'custom';
+
 export type UserSettings = {
   profile: {
     displayName: string;
@@ -23,6 +25,7 @@ export type UserSettings = {
   };
   ui: {
     theme: 'default' | 'dark';
+    backgroundMode: BackgroundMode;
     editorFontSize: number;
     compactMode: boolean;
     editorWordWrap: boolean;
@@ -46,6 +49,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   },
   ui: {
     theme: 'default',
+    backgroundMode: 'default',
     editorFontSize: 14,
     compactMode: false,
     editorWordWrap: false,
@@ -86,6 +90,10 @@ export function loadUserSettings(): UserSettings {
         },
         ui: {
           theme: ['default', 'dark'].includes(u.theme) ? u.theme : 'default',
+          backgroundMode:
+            u.backgroundMode === 'server' || u.backgroundMode === 'custom' || u.backgroundMode === 'default'
+              ? u.backgroundMode
+              : 'default',
           editorFontSize:
             typeof u.editorFontSize === 'number' && u.editorFontSize >= 8 && u.editorFontSize <= 32
               ? u.editorFontSize
@@ -122,6 +130,7 @@ export function areUserSettingsEqual(a: UserSettings, b: UserSettings): boolean 
     a.conversion.defaultTocEnabled === b.conversion.defaultTocEnabled &&
     a.conversion.saveConversionHistory === b.conversion.saveConversionHistory &&
     a.ui.theme === b.ui.theme &&
+    a.ui.backgroundMode === b.ui.backgroundMode &&
     a.ui.editorFontSize === b.ui.editorFontSize &&
     a.ui.compactMode === b.ui.compactMode &&
     a.ui.editorWordWrap === b.ui.editorWordWrap &&
