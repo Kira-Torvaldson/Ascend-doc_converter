@@ -6,4 +6,6 @@
 
 export { useHeadings } from './useHeadings';
 export { useFileHandling } from './useFileHandling';
-export { useNavigationWindow } from './useNavigationWindow';
+export { useFloatingWindow } from './useFloatingWindow';
+export { useAppKeyboardShortcuts } from './useAppKeyboardShortcuts';
+export type { AppKeyboardShortcutsHandlers } from './useAppKeyboardShortcuts';

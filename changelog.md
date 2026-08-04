@@ -13,6 +13,19 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.8.2 (2026-08-04)
+
+#### Added
+- Custom format / settings listboxes; « Autres options » category picker; panel actions menu (⋯) and dedicated clear buttons.
+- Unified snackbar; mobile Source/Résultat tabs and drawer sidebar; live page-background preview in Settings.
+- Keyboard shortcuts hook (`Ctrl/Cmd+Enter`, `S`, `K`, `H`, `/`) with modernized help modal.
+- Conversion warnings banner from `ConversionResult.warnings` (success path).
+- Extracted UI modules: `AppHeader`, `NavigationWindow`, `SourcePanel`, `ResultPanel`, `OtherOptionsPanel`, `AppFooter`, `ShortcutsHelpModal`.
+
+#### Changed
+- Footer simplified (brand, version, license, author).
+- `App.tsx` further split for maintainability; `ConversionOptions` type moved to shared types.
+
 ### 0.0.1.8.1 (2026-08-03)
 
 #### Added

@@ -6,15 +6,24 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.8.1 (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** Patch contrat ConversionResult + EnvMap  
-**Focus:** `/api/convert` + `/api/proxy/convert` standardisés, correctifs secure-converter, EnvMap complété
+**Version:** 0.0.1.8.2 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** Patch UI + découpe App + warnings ConversionResult  
+**Focus:** Polish UX, raccourcis, bannière warnings, extraction composants
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.8.1 (Current — Ascend)
+### 0.0.1.8.2 (Current — Ascend)
+
+**Delivered:**
+- Listboxes formats/paramètres, Autres options, menu Actions, snackbar, mobile
+- Raccourcis clavier + aide ; bannière `ConversionResult.warnings`
+- Extraction `AppHeader`, panneaux Source/Résultat, Navigation, footer
+
+**Docs:** `doc/releases/v0.0.1.8.2-notes.md`
+
+### 0.0.1.8.1
 
 **Delivered:**
 - Fond d’écran personnalisable + adaptation écran ; sidebar/navbar opaques (thème)

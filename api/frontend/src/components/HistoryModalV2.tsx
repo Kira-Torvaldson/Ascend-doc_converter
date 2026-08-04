@@ -4,6 +4,7 @@
 
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { ConversionHistoryItem, FormatType } from "../types";
+import { useFloatingWindow } from "../hooks/useFloatingWindow";
 
 const DEFAULT_WIDTH = 520;
 const DEFAULT_HEIGHT = 440;
@@ -107,44 +108,6 @@ function previewSnippet(text: string, max = 120): string {
   return clean.length > max ? `${clean.slice(0, max)}…` : clean;
 }
 
-function loadGeometry(): { position: { x: number; y: number }; size: { width: number; height: number } } | null {
-  try {
-    const raw = localStorage.getItem(GEOMETRY_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (
-      typeof parsed?.position?.x === "number" &&
-      typeof parsed?.position?.y === "number" &&
-      typeof parsed?.size?.width === "number" &&
-      typeof parsed?.size?.height === "number"
-    ) {
-      return parsed;
-    }
-  } catch {
-    /* ignore */
-  }
-  return null;
-}
-
-function saveGeometry(
-  position: { x: number; y: number },
-  size: { width: number; height: number }
-) {
-  try {
-    localStorage.setItem(GEOMETRY_KEY, JSON.stringify({ position, size }));
-  } catch {
-    /* ignore */
-  }
-}
-
-function defaultPosition() {
-  if (typeof window === "undefined") return { x: 80, y: 80 };
-  return {
-    x: Math.max(0, (window.innerWidth - DEFAULT_WIDTH) / 2),
-    y: Math.max(0, (window.innerHeight - DEFAULT_HEIGHT) / 2),
-  };
-}
-
 function loadFilters(): { query: string; statusFilter: StatusFilter } {
   try {
     const raw = localStorage.getItem(FILTERS_KEY);
@@ -205,23 +168,24 @@ export function HistoryModalV2({
   onClear,
   getFormatTitle,
 }: HistoryModalV2Props) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const saved = useMemo(() => loadGeometry(), []);
   const savedFilters = useMemo(() => loadFilters(), []);
-  const [position, setPosition] = useState(() => saved?.position ?? defaultPosition());
-  const [size, setSize] = useState(() => saved?.size ?? { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
-  const [minimized, setMinimized] = useState(false);
-  const [maximized, setMaximized] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isResizing, setIsResizing] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [resizeStart, setResizeStart] = useState({
-    x: 0,
-    y: 0,
-    width: DEFAULT_WIDTH,
-    height: DEFAULT_HEIGHT,
+  const {
+    panelRef,
+    maximized,
+    setMaximized,
+    minimized,
+    setMinimized,
+    isDragging,
+    isResizing,
+    handleDragStart,
+    handleResizeStart,
+    panelStyle: floatingStyle,
+  } = useFloatingWindow({
+    defaultSize: { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT },
+    minSize: { width: MIN_WIDTH, height: MIN_HEIGHT },
+    persistKey: GEOMETRY_KEY,
+    initialPosition: "center",
   });
   const [query, setQuery] = useState(savedFilters.query);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(savedFilters.statusFilter);
@@ -232,111 +196,6 @@ export function HistoryModalV2({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => loadCollapsedGroups());
   const [nowTick, setNowTick] = useState(0);
   const searchRef = useRef<HTMLInputElement | null>(null);
-
-  const handleDragStart = useCallback(
-    (e: React.MouseEvent) => {
-      if (maximized || !panelRef.current) return;
-      const target = e.target as HTMLElement;
-      if (target.closest("button, input, select, textarea, a")) return;
-      e.preventDefault();
-      const rect = panelRef.current.getBoundingClientRect();
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-      setDragOffset({ x: 0, y: 0 });
-    },
-    [maximized]
-  );
-
-  const handleDrag = useCallback(
-    (e: MouseEvent) => {
-      if (!isDragging || maximized) return;
-      const newX = e.clientX - dragStart.x;
-      const newY = e.clientY - dragStart.y;
-      const offsetX = newX - position.x;
-      const offsetY = newY - position.y;
-      const w = size.width;
-      const h = minimized ? 60 : size.height;
-      const maxX = window.innerWidth - w;
-      const maxY = window.innerHeight - h;
-      setDragOffset({
-        x: Math.max(-position.x, Math.min(offsetX, maxX - position.x)),
-        y: Math.max(-position.y, Math.min(offsetY, maxY - position.y)),
-      });
-    },
-    [isDragging, maximized, minimized, dragStart, position, size]
-  );
-
-  const handleDragEnd = useCallback(() => {
-    if (isDragging) {
-      const w = size.width;
-      const h = minimized ? 60 : size.height;
-      const maxX = window.innerWidth - w;
-      const maxY = window.innerHeight - h;
-      const next = {
-        x: Math.max(0, Math.min(position.x + dragOffset.x, maxX)),
-        y: Math.max(0, Math.min(position.y + dragOffset.y, maxY)),
-      };
-      setPosition(next);
-      setDragOffset({ x: 0, y: 0 });
-      saveGeometry(next, size);
-    }
-    setIsDragging(false);
-  }, [isDragging, dragOffset, position, size, minimized]);
-
-  const handleResizeStart = useCallback(
-    (e: React.MouseEvent) => {
-      if (maximized || minimized) return;
-      e.stopPropagation();
-      setIsResizing(true);
-      setResizeStart({ x: e.clientX, y: e.clientY, width: size.width, height: size.height });
-    },
-    [maximized, minimized, size]
-  );
-
-  const handleResize = useCallback(
-    (e: MouseEvent) => {
-      if (!isResizing || maximized || minimized) return;
-      const deltaX = e.clientX - resizeStart.x;
-      const deltaY = e.clientY - resizeStart.y;
-      const maxW = window.innerWidth - position.x;
-      const maxH = window.innerHeight - position.y;
-      setSize({
-        width: Math.max(MIN_WIDTH, Math.min(resizeStart.width + deltaX, maxW)),
-        height: Math.max(MIN_HEIGHT, Math.min(resizeStart.height + deltaY, maxH)),
-      });
-    },
-    [isResizing, maximized, minimized, resizeStart, position]
-  );
-
-  const handleResizeEnd = useCallback(() => {
-    if (isResizing) {
-      setSize((current) => {
-        saveGeometry(position, current);
-        return current;
-      });
-    }
-    setIsResizing(false);
-  }, [isResizing, position]);
-
-  useEffect(() => {
-    if (!isDragging) return;
-    window.addEventListener("mousemove", handleDrag);
-    window.addEventListener("mouseup", handleDragEnd);
-    return () => {
-      window.removeEventListener("mousemove", handleDrag);
-      window.removeEventListener("mouseup", handleDragEnd);
-    };
-  }, [isDragging, handleDrag, handleDragEnd]);
-
-  useEffect(() => {
-    if (!isResizing) return;
-    window.addEventListener("mousemove", handleResize);
-    window.addEventListener("mouseup", handleResizeEnd);
-    return () => {
-      window.removeEventListener("mousemove", handleResize);
-      window.removeEventListener("mouseup", handleResizeEnd);
-    };
-  }, [isResizing, handleResize, handleResizeEnd]);
 
   useEffect(() => {
     if (!open) {
@@ -549,21 +408,7 @@ export function HistoryModalV2({
     row.sourceFilename ?? getFormatTitle(row.restorable.fromFormat);
   const targetLabel = (row: HistoryRow) => getFormatTitle(row.restorable.toFormat);
 
-  const panelStyle: React.CSSProperties = {
-    position: "fixed",
-    zIndex: 10003,
-    left: maximized ? "50%" : `${position.x}px`,
-    top: maximized ? "50%" : `${position.y}px`,
-    width: maximized ? "95vw" : `${size.width}px`,
-    height: maximized ? "95vh" : minimized ? "auto" : `${size.height}px`,
-    maxWidth: maximized ? "95vw" : "90vw",
-    maxHeight: maximized ? "95vh" : "90vh",
-    transform: maximized
-      ? "translate(-50%, -50%)"
-      : isDragging
-        ? `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`
-        : "translate3d(0, 0, 0)",
-  };
+  const panelStyle: React.CSSProperties = { ...floatingStyle, zIndex: 10003 };
 
   const panelClasses = [
     "floating-window",

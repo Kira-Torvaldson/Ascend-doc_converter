@@ -4,6 +4,7 @@ import { extractHeadings, getFormatPlaceholder, getFormatTitle } from './formatH
 describe('formatHelpers', () => {
   it('retourne le titre et placeholder d un format connu', () => {
     expect(getFormatTitle('markdown')).toBe('Markdown')
+    expect(getFormatTitle('txt')).toBe('TEXT')
     expect(getFormatPlaceholder('txt')).toContain('texte brut')
   })
 
