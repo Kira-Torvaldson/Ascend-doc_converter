@@ -1,35 +1,33 @@
 /**
- * ============================================================================
- * COMPONENT: FormatSelector — listbox formats (disponibles / bientôt)
- * ============================================================================
+ * Listbox sidebar — même style que FormatSelector (options de conversion).
  */
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { FormatType } from '../types';
-import { getFormatTitle } from '../utils/formatHelpers';
 
-const COMING_SOON: FormatType[] = ['html', 'pdf', 'yaml', 'json', 'txt'];
-
-interface FormatSelectorProps {
+export interface SidebarListboxOption {
+  value: string;
   label: string;
-  value: FormatType;
-  onChange: (format: FormatType) => void;
-  /** Formats disponibles (sélectionnables) */
-  formats?: FormatType[];
-  /** Formats listés mais désactivés */
-  comingSoon?: FormatType[];
-  disabled?: boolean;
-  id?: string;
 }
 
-export const FormatSelector: React.FC<FormatSelectorProps> = ({
+interface SidebarListboxProps {
+  label: string;
+  value: string;
+  options: SidebarListboxOption[];
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  id?: string;
+  /** Classe extra (ex. settings-listbox) */
+  className?: string;
+}
+
+export const SidebarListbox: React.FC<SidebarListboxProps> = ({
   label,
   value,
+  options,
   onChange,
-  formats = ['asciidoc', 'markdown'],
-  comingSoon = COMING_SOON,
   disabled = false,
   id,
+  className,
 }) => {
   const autoId = useId();
   const listboxId = id ?? autoId;
@@ -39,29 +37,26 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const selectable = formats;
+  const selectedLabel = options.find((o) => o.value === value)?.label ?? value;
 
   const close = useCallback(() => {
     setOpen(false);
     buttonRef.current?.focus();
   }, []);
 
-  const selectFormat = useCallback(
-    (format: FormatType) => {
-      if (!formats.includes(format)) return;
-      onChange(format);
+  const selectValue = useCallback(
+    (next: string) => {
+      onChange(next);
       setOpen(false);
       buttonRef.current?.focus();
     },
-    [formats, onChange],
+    [onChange],
   );
 
   useEffect(() => {
     if (!open) return;
-
-    const idx = selectable.indexOf(value);
+    const idx = options.findIndex((o) => o.value === value);
     setActiveIndex(idx >= 0 ? idx : 0);
-
     const focusTimer = window.setTimeout(() => listRef.current?.focus(), 0);
 
     const onDocPointer = (e: MouseEvent) => {
@@ -82,14 +77,13 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
       document.removeEventListener('mousedown', onDocPointer);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open, value, selectable, close]);
+  }, [open, value, options, close]);
 
   useEffect(() => {
     if (!open || !listRef.current) return;
-    const option = listRef.current.querySelector<HTMLElement>(
-      `[data-format-index="${activeIndex}"]`,
-    );
-    option?.scrollIntoView({ block: 'nearest' });
+    listRef.current
+      .querySelector<HTMLElement>(`[data-listbox-index="${activeIndex}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
   }, [open, activeIndex]);
 
   const onTriggerKeyDown = (e: React.KeyboardEvent) => {
@@ -103,7 +97,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
   const onListKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActiveIndex((i) => Math.min(i + 1, selectable.length - 1));
+      setActiveIndex((i) => Math.min(i + 1, options.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActiveIndex((i) => Math.max(i - 1, 0));
@@ -112,18 +106,20 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
       setActiveIndex(0);
     } else if (e.key === 'End') {
       e.preventDefault();
-      setActiveIndex(selectable.length - 1);
+      setActiveIndex(options.length - 1);
     } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      const next = selectable[activeIndex];
-      if (next) selectFormat(next);
+      const next = options[activeIndex];
+      if (next) selectValue(next.value);
     } else if (e.key === 'Tab') {
       setOpen(false);
     }
   };
 
   return (
-    <div className={`format-selector-group${open ? ' is-open' : ''}`}>
+    <div
+      className={`format-selector-group${open ? ' is-open' : ''}${className ? ` ${className}` : ''}`}
+    >
       <span className="format-label" id={labelId}>
         {label}
       </span>
@@ -137,11 +133,11 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
           aria-expanded={open}
           aria-labelledby={labelId}
           aria-controls={`${listboxId}-list`}
-          disabled={disabled}
+          disabled={disabled || options.length === 0}
           onClick={() => !disabled && setOpen((v) => !v)}
           onKeyDown={onTriggerKeyDown}
         >
-          <span className="format-select-value">{getFormatTitle(value)}</span>
+          <span className="format-select-value">{selectedLabel}</span>
           <span className={`format-select-chevron${open ? ' is-open' : ''}`} aria-hidden="true" />
         </button>
 
@@ -155,47 +151,25 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
             tabIndex={-1}
             onKeyDown={onListKeyDown}
           >
-            <div className="format-select-group-label" role="presentation">
-              Disponibles
-            </div>
-            {formats.map((format, index) => {
-              const selected = format === value;
+            {options.map((option, index) => {
+              const selected = option.value === value;
               const active = index === activeIndex;
               return (
                 <button
-                  key={format}
+                  key={option.value}
                   type="button"
                   role="option"
-                  data-format-index={index}
+                  data-listbox-index={index}
                   aria-selected={selected}
                   className={`format-select-option${selected ? ' is-selected' : ''}${active ? ' is-active' : ''}`}
                   onMouseEnter={() => setActiveIndex(index)}
-                  onClick={() => selectFormat(format)}
+                  onClick={() => selectValue(option.value)}
                 >
-                  <span>{getFormatTitle(format)}</span>
+                  <span>{option.label}</span>
                   {selected && <span className="format-select-check" aria-hidden="true" />}
                 </button>
               );
             })}
-
-            {comingSoon.length > 0 && (
-              <>
-                <div className="format-select-group-label format-select-group-label--soon" role="presentation">
-                  Bientôt
-                </div>
-                {comingSoon.map((format) => (
-                  <div
-                    key={format}
-                    className="format-select-option is-disabled"
-                    aria-disabled="true"
-                    title="Bientôt disponible"
-                  >
-                    <span>{getFormatTitle(format)}</span>
-                    <span className="format-select-badge">Bientôt</span>
-                  </div>
-                ))}
-              </>
-            )}
           </div>
         )}
       </div>

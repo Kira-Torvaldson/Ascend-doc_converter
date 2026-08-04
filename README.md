@@ -1,17 +1,16 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.8.1-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.8.2-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.8.1)
+## Latest changes (v0.0.1.8.2)
 
-- **UI polish**
-  - Custom page background (SVG / server photo / personal image), adapted to screen without heavy crop.
-  - Opaque theme-colored sidebar and header when a photo background is active.
-  - Unified floating windows (Settings / History / Navigation) and Ascend confirmation modals.
-  - Empty editor states with sample documents; richer conversion history.
+- **UI / UX**
+  - Format & settings listboxes, Autres options picker, panel actions menu, snackbar, mobile panes.
+  - Keyboard shortcuts (`Ctrl+Enter`, `H` history, `/` help) and conversion warnings banner.
+  - Further `App.tsx` split (`AppHeader`, panels, navigation, footer).
 
 ## Overview
 

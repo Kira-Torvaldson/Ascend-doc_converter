@@ -49,21 +49,102 @@ export interface ResizeStart {
 }
 
 export interface ConversionOptions {
-  normalization?: {
-    tabs?: {
-      convertToSpaces?: boolean;
+  contentAnalysis?: {
+    analysisMode?: 'basic' | 'heuristic' | 'strict';
+    headingDetection?: {
+      enabled?: boolean;
+      detectAllCaps?: boolean;
+      detectSeparators?: boolean;
+      detectNumbering?: boolean;
+    };
+    listDetection?: {
+      enabled?: boolean;
+      detectBullets?: boolean;
+      detectNumbered?: boolean;
+      normalizeIndentation?: boolean;
     };
   };
-  encoding?: {
-    [key: string]: any;
+  normalization?: {
+    encoding?: 'utf-8' | 'latin1' | 'ascii';
+    lineBreaks?: {
+      normalize?: boolean;
+      target?: 'unix' | 'windows' | 'mac';
+    };
+    tabs?: {
+      convertToSpaces?: boolean;
+      tabSize?: number;
+    };
+    advanced?: {
+      unicode?: {
+        normalization?: 'none' | 'NFC' | 'NFKC';
+        detectConfusables?: boolean;
+        confusablesAction?: 'none' | 'warn' | 'replace';
+      };
+      characterCleaning?: {
+        removeControlChars?: boolean;
+        removeDirectionalChars?: boolean;
+        removeNonPrintableChars?: boolean;
+        preserveWhitespace?: boolean;
+      };
+      transliteration?: {
+        strategy?: 'none' | 'simple' | 'configurable';
+        enableTransliteration?: boolean;
+        unicodeToAscii?: {
+          enabled?: boolean;
+          method?: 'remove' | 'replace' | 'transliterate';
+          replacementChar?: string;
+        };
+      };
+      validation?: {
+        rejectInvalidSequences?: boolean;
+        rejectPrivateChars?: boolean;
+        warnOutOfRange?: boolean;
+        allowedRanges?: Array<{ start: number; end: number }>;
+      };
+      processingMode?: {
+        mode?: 'strict' | 'tolerant';
+        throwOnError?: boolean;
+        logWarnings?: boolean;
+        continueOnWarning?: boolean;
+      };
+    };
+  };
+  rendering?: {
+    tableOfContents?: {
+      enabled?: boolean;
+      depth?: number;
+    };
+    sectionNumbering?: {
+      enabled?: boolean;
+      depth?: number;
+    };
+    lineWrap?: {
+      enabled?: boolean;
+      maxWidth?: number;
+    };
   };
   formatSpecific?: {
     markdown?: {
+      flavor?: 'commonmark' | 'gfm' | 'markdown';
       parsedown?: boolean;
     };
-    [key: string]: any;
+    asciidoc?: {
+      compatMode?: 'asciidoctor' | 'asciidoc';
+    };
   };
-  [key: string]: any;
+  security?: {
+    maxFileSize?: number;
+    conversionTimeout?: number;
+  };
+  metadata?: {
+    title?: string | null;
+    author?: string | null;
+    organization?: string | null;
+    language?: string;
+  };
+  developer?: {
+    debugMode?: boolean;
+  };
 }
 
 export interface ConversionHistoryItem {

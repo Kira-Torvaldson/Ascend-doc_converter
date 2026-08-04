@@ -11,7 +11,7 @@ export const FORMAT_TITLES: Record<string, string> = {
   pdf: 'PDF',
   yaml: 'YAML',
   json: 'JSON',
-  txt: 'Texte brut'
+  txt: 'TEXT'
 };
 
 export const FORMAT_PLACEHOLDERS: Record<string, string> = {

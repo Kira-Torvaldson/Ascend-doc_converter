@@ -397,9 +397,16 @@ export async function convertMarkdownToAsciiDoc(
 
     if (setBackendConversionResult) setBackendConversionResult(conversionResult);
     setOutput(data.asciidoc);
-    setStatus('Conversion réussie ✔');
+    const warningCount = Array.isArray(conversionResult.warnings)
+      ? conversionResult.warnings.length
+      : 0;
+    const successMessage =
+      warningCount > 0
+        ? `Conversion réussie ✔ (${warningCount} avertissement${warningCount > 1 ? 's' : ''})`
+        : 'Conversion réussie ✔';
+    setStatus(successMessage);
     setNotification({
-      message: 'Conversion réussie ✔',
+      message: successMessage,
       type: 'success',
       visible: true,
     });

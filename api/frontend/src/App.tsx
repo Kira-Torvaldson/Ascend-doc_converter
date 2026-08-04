@@ -57,16 +57,31 @@ import {
   convertText,
   requestConfirmationToken
 } from "./converters";
-import { FormatType, ConversionHistoryItem } from "./types";
+import { FormatType, ConversionHistoryItem, ConversionOptions } from "./types";
 import { HistoryModalV2, useNewHistoryModal, type DisplayHistoryEntryShape } from "./components/HistoryModalV2";
 import { buildDisplayHistory } from "./utils/displayHistory";
-import { ConversionLoadingBanner, HeaderStatusPill, EmptyEditorState, Modal } from "./components";
+import {
+  HeaderStatusPill,
+  Modal,
+  FormatSelector,
+  SidebarListbox,
+  Snackbar,
+  ShortcutsHelpModal,
+  AppFooter,
+  OtherOptionsPanel,
+  SourcePanel,
+  ResultPanel,
+  AppHeader,
+  NavigationWindow,
+  ConversionWarningsBanner,
+} from "./components";
+import type { PanelActionItem } from "./components";
 import { removeExperimentalTag } from "./utils/asciidocHelpers";
+import { extractConversionWarnings } from "./utils/conversionWarnings";
 import packageJson from "../package.json";
 import { fetchConversionLimits } from "./converters/api";
 import { formatConversionErrorForUi, getHintForCode } from "./converters/error-code-messages";
 import defaultLogo from "./assets/ascend-logo.svg";
-import { getSampleDocument } from "./examples/sampleDocuments";
 import {
   type UserSettings,
   type SettingsValidationErrors,
@@ -85,6 +100,7 @@ import {
   persistCustomPageBackground,
   SERVER_BG_URL,
 } from "./settings/pageBackground";
+import { useFloatingWindow, useAppKeyboardShortcuts } from "./hooks";
 
 const DEFAULT_MAX_SOURCE_SIZE_MB = 5;
 const SIDEBAR_COLLAPSED_KEY = 'ascend_sidebar_collapsed';
@@ -323,40 +339,31 @@ function App() {
   
   /** Indicates if navigation window is open */
   const [navigationWindowOpen, setNavigationWindowOpen] = useState<boolean>(false);
-  
-  /** Indicates if window is minimized (hidden but visible in taskbar) */
-  const [navigationWindowMinimized, setNavigationWindowMinimized] = useState<boolean>(false);
 
   /** Indicates if history modal (V2) is minimized and shown in taskbar */
   const [historyWindowMinimized, setHistoryWindowMinimized] = useState<boolean>(false);
-  
-  /** Indicates if window is maximized (full screen, 95vw x 95vh) */
-  const [navigationWindowMaximized, setNavigationWindowMaximized] = useState<boolean>(false);
-  
-  /** Window position on screen (x, y coordinates) */
-  const [navigationWindowPosition, setNavigationWindowPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  
-  /** Window size (width, height in pixels) */
-  const [navigationWindowSize, setNavigationWindowSize] = useState<{ width: number; height: number }>({ width: 500, height: 400 });
-  
-  /** Indicates if user is currently dragging the window */
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-  
-  /** Indicates if user is currently resizing the window */
-  const [isResizing, setIsResizing] = useState<boolean>(false);
-  
-  /** Drag start position (to calculate displacement) */
-  const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  
-  /** Resize start state (position + initial size) */
-  const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
-  
-  /** Current offset during drag (for CSS transformation) */
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  
-  /** React reference to window DOM element (for manipulations) */
-  const navigationWindowRef = useRef<HTMLDivElement | null>(null);
-  
+
+  const navWin = useFloatingWindow({
+    defaultSize: { width: 500, height: 400 },
+    minSize: { width: 300, height: 200 },
+    initialPosition: { x: 0, y: 0 },
+  });
+  const {
+    panelRef: navigationWindowRef,
+    position: navigationWindowPosition,
+    size: navigationWindowSize,
+    setPosition: setNavigationWindowPosition,
+    maximized: navigationWindowMaximized,
+    setMaximized: setNavigationWindowMaximized,
+    minimized: navigationWindowMinimized,
+    setMinimized: setNavigationWindowMinimized,
+    isDragging,
+    isResizing,
+    handleDragStart,
+    handleResizeStart,
+    panelStyle: navigationPanelStyle,
+  } = navWin;
+
   /** Indicates if settings panel is open */
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(loadSidebarCollapsed);
@@ -373,231 +380,63 @@ function App() {
     });
   }, []);
 
-  /** Settings panel size (resizable) */
   const SETTINGS_MIN_W = 320;
   const SETTINGS_MIN_H = 200;
   const SETTINGS_DEFAULT_W = 480;
   const SETTINGS_DEFAULT_H = 420;
-  const [settingsPanelSize, setSettingsPanelSize] = useState<{ width: number; height: number }>({ width: SETTINGS_DEFAULT_W, height: SETTINGS_DEFAULT_H });
-  const [isResizingSettings, setIsResizingSettings] = useState<boolean>(false);
-  const [settingsResizeStart, setSettingsResizeStart] = useState<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
-
-  /** Position du panneau Paramètres (déplaçable) */
-  const [settingsPanelPosition, setSettingsPanelPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [isDraggingSettings, setIsDraggingSettings] = useState<boolean>(false);
-  const [settingsDragStart, setSettingsDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [settingsDragOffset, setSettingsDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [settingsMinimized, setSettingsMinimized] = useState(false);
-  const [settingsMaximized, setSettingsMaximized] = useState(false);
+  const settingsWin = useFloatingWindow({
+    defaultSize: { width: SETTINGS_DEFAULT_W, height: SETTINGS_DEFAULT_H },
+    minSize: { width: SETTINGS_MIN_W, height: SETTINGS_MIN_H },
+    maxSize: {
+      width: 900,
+      height: typeof window !== 'undefined' ? Math.round((85 * window.innerHeight) / 100) : 800,
+    },
+    initialPosition: 'center',
+  });
+  const {
+    panelRef: settingsPanelRef,
+    size: settingsPanelSize,
+    maximized: settingsMaximized,
+    setMaximized: setSettingsMaximized,
+    minimized: settingsMinimized,
+    setMinimized: setSettingsMinimized,
+    isDragging: isDraggingSettings,
+    isResizing: isResizingSettings,
+    handleDragStart: handleSettingsDragStart,
+    handleResizeStart: handleSettingsResizeStart,
+    center: centerSettingsPanel,
+    panelStyle: settingsPanelStyle,
+  } = settingsWin;
 
   useLayoutEffect(() => {
     if (settingsOpen && !settingsMaximized) {
-      setSettingsPanelPosition({
-        x: Math.max(0, (window.innerWidth - settingsPanelSize.width) / 2),
-        y: Math.max(0, (window.innerHeight - settingsPanelSize.height) / 2),
-      });
+      centerSettingsPanel();
     }
-  }, [settingsOpen, settingsPanelSize.width, settingsPanelSize.height, settingsMaximized]);
+  }, [settingsOpen, settingsMaximized, settingsPanelSize.width, settingsPanelSize.height, centerSettingsPanel]);
 
-  const handleSettingsDragStart = useCallback((e: React.MouseEvent) => {
-    if (isResizingSettings || settingsMaximized) return;
-    e.preventDefault();
-    setIsDraggingSettings(true);
-    setSettingsDragStart({ x: e.clientX - settingsPanelPosition.x, y: e.clientY - settingsPanelPosition.y });
-    setSettingsDragOffset({ x: 0, y: 0 });
-  }, [settingsPanelPosition, isResizingSettings, settingsMaximized]);
-
-  const handleSettingsDrag = useCallback((e: MouseEvent) => {
-    if (!isDraggingSettings) return;
-    const newX = e.clientX - settingsDragStart.x;
-    const newY = e.clientY - settingsDragStart.y;
-    const maxX = window.innerWidth - settingsPanelSize.width;
-    const maxY = window.innerHeight - settingsPanelSize.height;
-    setSettingsDragOffset({
-      x: Math.max(-settingsPanelPosition.x, Math.min(newX - settingsPanelPosition.x, maxX - settingsPanelPosition.x)),
-      y: Math.max(-settingsPanelPosition.y, Math.min(newY - settingsPanelPosition.y, maxY - settingsPanelPosition.y)),
-    });
-  }, [isDraggingSettings, settingsDragStart, settingsPanelPosition, settingsPanelSize]);
-
-  const handleSettingsDragEnd = useCallback(() => {
-    if (isDraggingSettings) {
-      const maxX = window.innerWidth - settingsPanelSize.width;
-      const maxY = window.innerHeight - settingsPanelSize.height;
-      setSettingsPanelPosition({
-        x: Math.max(0, Math.min(settingsPanelPosition.x + settingsDragOffset.x, maxX)),
-        y: Math.max(0, Math.min(settingsPanelPosition.y + settingsDragOffset.y, maxY)),
-      });
-      setSettingsDragOffset({ x: 0, y: 0 });
-    }
-    setIsDraggingSettings(false);
-  }, [isDraggingSettings, settingsPanelPosition, settingsDragOffset, settingsPanelSize]);
-
-  useEffect(() => {
-    if (!isDraggingSettings) return;
-    window.addEventListener('mousemove', handleSettingsDrag);
-    window.addEventListener('mouseup', handleSettingsDragEnd);
-    return () => {
-      window.removeEventListener('mousemove', handleSettingsDrag);
-      window.removeEventListener('mouseup', handleSettingsDragEnd);
-    };
-  }, [isDraggingSettings, handleSettingsDrag, handleSettingsDragEnd]);
-
-  const handleSettingsResizeStart = useCallback((e: React.MouseEvent) => {
-    if (settingsMaximized || settingsMinimized) return;
-    e.stopPropagation();
-    setIsResizingSettings(true);
-    setSettingsResizeStart({ x: e.clientX, y: e.clientY, width: settingsPanelSize.width, height: settingsPanelSize.height });
-  }, [settingsPanelSize, settingsMaximized, settingsMinimized]);
-
-  const handleSettingsResize = useCallback((e: MouseEvent) => {
-    if (!isResizingSettings) return;
-    const deltaX = e.clientX - settingsResizeStart.x;
-    const deltaY = e.clientY - settingsResizeStart.y;
-    const maxW = Math.min(window.innerWidth - 40, 900);
-    const maxH = Math.min(window.innerHeight - 40, 85 * window.innerHeight / 100);
-    setSettingsPanelSize({
-      width: Math.max(SETTINGS_MIN_W, Math.min(settingsResizeStart.width + deltaX, maxW)),
-      height: Math.max(SETTINGS_MIN_H, Math.min(settingsResizeStart.height + deltaY, maxH)),
-    });
-  }, [isResizingSettings, settingsResizeStart]);
-
-  const handleSettingsResizeEnd = useCallback(() => setIsResizingSettings(false), []);
-
-  useEffect(() => {
-    if (!isResizingSettings) return;
-    window.addEventListener('mousemove', handleSettingsResize);
-    window.addEventListener('mouseup', handleSettingsResizeEnd);
-    return () => {
-      window.removeEventListener('mousemove', handleSettingsResize);
-      window.removeEventListener('mouseup', handleSettingsResizeEnd);
-    };
-  }, [isResizingSettings, handleSettingsResize, handleSettingsResizeEnd]);
-  
   // ==========================================================================
   // STATES: CONVERSION OPTIONS
   // ==========================================================================
-  // These options allow customizing conversion behavior:
-  // - Unicode normalization, encoding
-  // - Structure detection (headings, lists)
-  // - Format-specific options
-  // - Security parameters
-  
-  /**
-   * Type defining all available conversion options
-   * 
-   * STRUCTURE:
-   * - contentAnalysis: Automatic structure analysis and detection
-   * - normalization: Unicode normalization, encoding, cleaning
-   * - rendering: Display options (table of contents, numbering)
-   * - formatSpecific: Format-specific options (Markdown, AsciiDoc)
-   * - security: Security limits (max size, timeout)
-   * - metadata: Document metadata (title, author, language)
-   * - developer: Debug options
-   */
-  type ConversionOptions = {
-    contentAnalysis?: {
-      analysisMode?: 'basic' | 'heuristic' | 'strict';
-      headingDetection?: {
-        enabled?: boolean;
-        detectAllCaps?: boolean;
-        detectSeparators?: boolean;
-        detectNumbering?: boolean;
-      };
-      listDetection?: {
-        enabled?: boolean;
-        detectBullets?: boolean;
-        detectNumbered?: boolean;
-        normalizeIndentation?: boolean;
-      };
-    };
-    normalization?: {
-      encoding?: 'utf-8' | 'latin1' | 'ascii';
-      lineBreaks?: {
-        normalize?: boolean;
-        target?: 'unix' | 'windows' | 'mac';
-      };
-      tabs?: {
-        convertToSpaces?: boolean;
-        tabSize?: number;
-      };
-      advanced?: {
-        unicode?: {
-          normalization?: 'none' | 'NFC' | 'NFKC';
-          detectConfusables?: boolean;
-          confusablesAction?: 'none' | 'warn' | 'replace';
-        };
-        characterCleaning?: {
-          removeControlChars?: boolean;
-          removeDirectionalChars?: boolean;
-          removeNonPrintableChars?: boolean;
-          preserveWhitespace?: boolean;
-        };
-        transliteration?: {
-          strategy?: 'none' | 'simple' | 'configurable';
-          enableTransliteration?: boolean;
-          unicodeToAscii?: {
-            enabled?: boolean;
-            method?: 'remove' | 'replace' | 'transliterate';
-            replacementChar?: string;
-          };
-        };
-        validation?: {
-          rejectInvalidSequences?: boolean;
-          rejectPrivateChars?: boolean;
-          warnOutOfRange?: boolean;
-          allowedRanges?: Array<{start: number, end: number}>;
-        };
-        processingMode?: {
-          mode?: 'strict' | 'tolerant';
-          throwOnError?: boolean;
-          logWarnings?: boolean;
-          continueOnWarning?: boolean;
-        };
-      };
-    };
-    rendering?: {
-      tableOfContents?: {
-        enabled?: boolean;
-        depth?: number;
-      };
-      sectionNumbering?: {
-        enabled?: boolean;
-        depth?: number;
-      };
-      lineWrap?: {
-        enabled?: boolean;
-        maxWidth?: number;
-      };
-    };
-    formatSpecific?: {
-      markdown?: {
-        flavor?: 'commonmark' | 'gfm' | 'markdown';
-        parsedown?: boolean; // Parsedown compatibility (BookStack)
-      };
-      asciidoc?: {
-        compatMode?: 'asciidoctor' | 'asciidoc';
-      };
-    };
-    security?: {
-      maxFileSize?: number;
-      conversionTimeout?: number;
-    };
-    metadata?: {
-      title?: string | null;
-      author?: string | null;
-      organization?: string | null;
-      language?: string;
-    };
-    developer?: {
-      debugMode?: boolean;
-    };
-  };
   
   /** Currently configured conversion options */
   const [conversionOptions, setConversionOptions] = useState<ConversionOptions>({});
   
   /** Set of settings panel sections that are currently open */
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set([]));
+
+  /** Catégorie affichée dans « Autres options » (menu déroulant) */
+  const [otherOptionsCategory, setOtherOptionsCategory] = useState('contentAnalysis');
+
+  /** Snackbar de confirmation (copie, paramètres, etc.) */
+  const [snackbarMessage, setSnackbarMessage] = useState<string | null>(null);
+  const showSnackbar = useCallback((message: string) => {
+    setSnackbarMessage(message);
+  }, []);
+  const dismissSnackbar = useCallback(() => setSnackbarMessage(null), []);
+  const [warningsDismissed, setWarningsDismissed] = useState(false);
+
+  /** Onglet mobile Source / Résultat */
+  const [mobilePane, setMobilePane] = useState<'source' | 'result'>('source');
   
   /**
    * Toggles the open/closed state of a settings panel section
@@ -612,6 +451,27 @@ function App() {
     }
     setExpandedSections(newExpanded);
   };
+
+  const otherOptionsCategories = useMemo(() => {
+    const items: Array<{ value: string; label: string }> = [];
+    if (sourceFormat === 'asciidoc' || sourceFormat === 'markdown') {
+      items.push({ value: 'navigation', label: 'Navigation' });
+    }
+    items.push(
+      { value: 'contentAnalysis', label: 'Analyse du contenu' },
+      { value: 'normalization', label: 'Normalisation' },
+      { value: 'rendering', label: 'Rendu documentaire' },
+      { value: 'formatSpecific', label: 'Options de format' },
+      { value: 'metadata', label: 'Métadonnées' },
+    );
+    return items;
+  }, [sourceFormat]);
+
+  useEffect(() => {
+    if (!otherOptionsCategories.some((c) => c.value === otherOptionsCategory)) {
+      setOtherOptionsCategory(otherOptionsCategories[0]?.value ?? 'contentAnalysis');
+    }
+  }, [otherOptionsCategories, otherOptionsCategory]);
 
   // Single localStorage read at startup for committed + draft
   const [settingsBootstrap] = useState(() => {
@@ -667,13 +527,32 @@ function App() {
     applyPageBackgroundToDocument(ui.backgroundMode, customBg);
   }, [applyThemeToDocument, pageBgImage]);
 
-  // UI prefs apply only from committed settings (after Apply)
+  // UI prefs apply from committed settings — fond en aperçu live si Paramètres ouverts
   useEffect(() => {
+    if (settingsOpen) {
+      applyThemeToDocument(userSettings.ui.theme);
+      const root = document.documentElement;
+      root.setAttribute('data-editor-word-wrap', userSettings.ui.editorWordWrap ? 'true' : 'false');
+      root.setAttribute('data-reduce-motion', userSettings.ui.reduceMotion ? 'true' : 'false');
+      root.setAttribute('data-compact-mode', userSettings.ui.compactMode ? 'true' : 'false');
+      root.setAttribute('data-tab-size', String(userSettings.ui.tabSize));
+      root.setAttribute('data-show-tooltips', userSettings.ui.showTooltips ? 'true' : 'false');
+      root.style.setProperty('--editor-font-size', `${userSettings.ui.editorFontSize}px`);
+      applyPageBackgroundToDocument(draftSettings.ui.backgroundMode, draftPageBgImage);
+      return;
+    }
     applyUiPreferencesToDocument(userSettings.ui, pageBgImage);
-  }, [applyUiPreferencesToDocument, userSettings.ui, pageBgImage]);
+  }, [
+    settingsOpen,
+    userSettings.ui,
+    pageBgImage,
+    draftSettings.ui.backgroundMode,
+    draftPageBgImage,
+    applyUiPreferencesToDocument,
+    applyThemeToDocument,
+  ]);
 
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
-  const settingsPanelRef = useRef<HTMLDivElement>(null);
 
   const openSettingsPanel = useCallback(() => {
     setDraftSettings(cloneUserSettings(userSettings));
@@ -683,7 +562,7 @@ function App() {
     setSettingsMinimized(false);
     setSettingsMaximized(false);
     setSettingsOpen(true);
-  }, [userSettings, pageBgImage]);
+  }, [userSettings, pageBgImage, setSettingsMinimized, setSettingsMaximized]);
 
   const forceCloseSettingsPanel = useCallback(() => {
     setShowDiscardSettingsModal(false);
@@ -694,7 +573,7 @@ function App() {
     setDraftPageBgImage(pageBgImage);
     setPageBgError(null);
     setSettingsErrors({});
-  }, [userSettings, pageBgImage]);
+  }, [userSettings, pageBgImage, setSettingsMinimized, setSettingsMaximized]);
 
   const closeSettingsPanel = useCallback((opts?: { force?: boolean }) => {
     const dirty = !areUserSettingsEqual(draftSettings, userSettings);
@@ -848,10 +727,11 @@ function App() {
     }
     setPageBgError(null);
     setStatus('Paramètres appliqués');
+    showSnackbar('Paramètres appliqués');
     setSettingsMinimized(false);
     setSettingsMaximized(false);
     setSettingsOpen(false);
-  }, [draftSettings, draftPageBgImage, applyUiPreferencesToDocument, sourceFormat]);
+  }, [draftSettings, draftPageBgImage, applyUiPreferencesToDocument, sourceFormat, showSnackbar, setSettingsMinimized, setSettingsMaximized]);
   
   // ==========================================================================
   // STATES: NOTIFICATIONS
@@ -908,6 +788,15 @@ function App() {
   // ==========================================================================
   // MEMOIZED CALCULATIONS (useMemo)
   // ==========================================================================
+
+  useEffect(() => {
+    setWarningsDismissed(false);
+  }, [lastBackendConversionResult]);
+
+  const conversionWarnings = useMemo(
+    () => extractConversionWarnings(lastBackendConversionResult),
+    [lastBackendConversionResult]
+  );
 
   const conversionErrorDetails = useMemo(() => {
     const failure = lastBackendConversionResult;
@@ -1104,10 +993,9 @@ function App() {
         if (navigationWindowPosition.x === 0 && navigationWindowPosition.y === 0) {
           setNavigationWindowPosition({
             x: (window.innerWidth - navigationWindowSize.width) / 2,
-            y: (window.innerHeight - navigationWindowSize.height) / 2
+            y: (window.innerHeight - navigationWindowSize.height) / 2,
           });
         }
-        // Ensure window is not in minimized mode when it opens
         setNavigationWindowMinimized(false);
         setNavigationWindowOpen(true);
       } else {
@@ -1120,188 +1008,6 @@ function App() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigationEnabled, sourceFormat, targetFormat, adocInput, mdOutput, headings, justConverted, loading]);
-
-  // ==========================================================================
-  // HANDLERS: NAVIGATION WINDOW DRAGGING (DRAG & DROP)
-  // ==========================================================================
-  
-  /**
-   * Starts navigation window dragging
-   *
-   * Computes the start position relative to the window and initializes
-   * drag state. Does nothing when the window is maximized.
-   *
-   * @param e - Mouse event (mousedown on the header)
-   */
-  const handleDragStart = (e: React.MouseEvent) => {
-    if (navigationWindowMaximized || !navigationWindowRef.current) return;
-    const rect = navigationWindowRef.current.getBoundingClientRect();
-    setIsDragging(true);
-    setDragStart({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    });
-    setDragOffset({ x: 0, y: 0 });
-  };
-
-  /**
-   * Handles continuous window movement during drag
-   * 
-   * Calculates offset relative to initial position and limits
-   * movement to screen boundaries.
-   * 
-   * @param e - Mouse event (global mousemove)
-   * 
-   * DEPENDENCIES: isDragging, dragStart, navigationWindowMaximized,
-   *              navigationWindowMinimized, navigationWindowSize, navigationWindowPosition
-   */
-  const handleDrag = useCallback((e: MouseEvent) => {
-    if (!isDragging || navigationWindowMaximized) return;
-    
-    const newX = e.clientX - dragStart.x;
-    const newY = e.clientY - dragStart.y;
-    
-    // Calculate offset relative to base position
-    const offsetX = newX - navigationWindowPosition.x;
-    const offsetY = newY - navigationWindowPosition.y;
-    
-    // Limit position to screen boundaries
-    const maxX = window.innerWidth - navigationWindowSize.width;
-    const maxY = window.innerHeight - (navigationWindowMinimized ? 60 : navigationWindowSize.height);
-    
-    const clampedOffsetX = Math.max(-navigationWindowPosition.x, Math.min(offsetX, maxX - navigationWindowPosition.x));
-    const clampedOffsetY = Math.max(-navigationWindowPosition.y, Math.min(offsetY, maxY - navigationWindowPosition.y));
-    
-    setDragOffset({
-      x: clampedOffsetX,
-      y: clampedOffsetY
-    });
-  }, [isDragging, dragStart, navigationWindowMaximized, navigationWindowMinimized, navigationWindowSize, navigationWindowPosition]);
-
-  /**
-   * Ends dragging and applies final position
-   * 
-   * Applies calculated offset to window position and resets drag state.
-   * Position is limited to screen boundaries.
-   * 
-   * DEPENDENCIES: isDragging, dragOffset, navigationWindowPosition,
-   *              navigationWindowSize, navigationWindowMinimized
-   */
-  const handleDragEnd = useCallback(() => {
-    if (isDragging) {
-      // Apply offset to final position
-      const maxX = window.innerWidth - navigationWindowSize.width;
-      const maxY = window.innerHeight - (navigationWindowMinimized ? 60 : navigationWindowSize.height);
-      
-      setNavigationWindowPosition({
-        x: Math.max(0, Math.min(navigationWindowPosition.x + dragOffset.x, maxX)),
-        y: Math.max(0, Math.min(navigationWindowPosition.y + dragOffset.y, maxY))
-      });
-      setDragOffset({ x: 0, y: 0 });
-    }
-    setIsDragging(false);
-  }, [isDragging, dragOffset, navigationWindowPosition, navigationWindowSize, navigationWindowMinimized]);
-
-  // ==========================================================================
-  // HANDLERS: NAVIGATION WINDOW RESIZING
-  // ==========================================================================
-  
-  /**
-   * Starts window resizing
-   * 
-   * Saves starting position and current size to calculate delta.
-   * Doesn't work if window is maximized or minimized.
-   * 
-   * @param e - Mouse event (mousedown on resize handle)
-   */
-  const handleResizeStart = (e: React.MouseEvent) => {
-    if (navigationWindowMaximized || navigationWindowMinimized) return;
-    e.stopPropagation();
-    setIsResizing(true);
-    setResizeStart({
-      x: e.clientX,
-      y: e.clientY,
-      width: navigationWindowSize.width,
-      height: navigationWindowSize.height
-    });
-  };
-
-  /**
-   * Handles continuous window resizing
-   * 
-   * Calculates new size based on mouse movement delta and limits to
-   * min/max dimensions. Uses requestAnimationFrame for optimal performance.
-   * 
-   * @param e - Mouse event (global mousemove)
-   * 
-   * DEPENDENCIES: isResizing, resizeStart, navigationWindowMaximized,
-   *              navigationWindowMinimized, navigationWindowPosition
-   */
-  const handleResize = useCallback((e: MouseEvent) => {
-    if (!isResizing || navigationWindowMaximized || navigationWindowMinimized) return;
-    
-    requestAnimationFrame(() => {
-      const deltaX = e.clientX - resizeStart.x;
-      const deltaY = e.clientY - resizeStart.y;
-      
-      const minWidth = 300;
-      const minHeight = 200;
-      const maxWidth = window.innerWidth - navigationWindowPosition.x;
-      const maxHeight = window.innerHeight - navigationWindowPosition.y;
-      
-      setNavigationWindowSize({
-        width: Math.max(minWidth, Math.min(resizeStart.width + deltaX, maxWidth)),
-        height: Math.max(minHeight, Math.min(resizeStart.height + deltaY, maxHeight))
-      });
-    });
-  }, [isResizing, resizeStart, navigationWindowMaximized, navigationWindowMinimized, navigationWindowPosition]);
-
-  /**
-   * Ends resizing
-   * 
-   * Simply resets isResizing state.
-   */
-  const handleResizeEnd = useCallback(() => {
-    setIsResizing(false);
-  }, []);
-
-  // ==========================================================================
-  // EFFECTS: EVENT LISTENERS FOR DRAG & RESIZE
-  // ==========================================================================
-  
-  /**
-   * Adds global event listeners for drag
-   * 
-   * Listens to mousemove and mouseup on window during drag.
-   * Automatically cleans up listeners at end of drag or on unmount.
-   */
-  useEffect(() => {
-    if (isDragging) {
-      window.addEventListener('mousemove', handleDrag);
-      window.addEventListener('mouseup', handleDragEnd);
-      return () => {
-        window.removeEventListener('mousemove', handleDrag);
-        window.removeEventListener('mouseup', handleDragEnd);
-      };
-    }
-  }, [isDragging, handleDrag, handleDragEnd]);
-
-  /**
-   * Adds global event listeners for resize
-   * 
-   * Listens to mousemove and mouseup on window during resize.
-   * Automatically cleans up listeners at end of resize or on unmount.
-   */
-  useEffect(() => {
-    if (isResizing) {
-      window.addEventListener('mousemove', handleResize);
-      window.addEventListener('mouseup', handleResizeEnd);
-      return () => {
-        window.removeEventListener('mousemove', handleResize);
-        window.removeEventListener('mouseup', handleResizeEnd);
-      };
-    }
-  }, [isResizing, handleResize, handleResizeEnd]);
 
   // ==========================================================================
   // HANDLERS: FILE MANAGEMENT
@@ -1483,6 +1189,7 @@ function App() {
       await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
       setStatus(`Texte copié (${textToCopy.length} caractères)`);
+      showSnackbar(`Texte copié (${textToCopy.length} caractères)`);
       setTimeout(() => {
         setCopied(false);
         if (status.includes("copié")) {
@@ -1502,6 +1209,7 @@ function App() {
         document.execCommand("copy");
         setCopied(true);
         setStatus(`Texte copié (${textToCopy.length} caractères)`);
+        showSnackbar(`Texte copié (${textToCopy.length} caractères)`);
         setTimeout(() => {
           setCopied(false);
           if (status.includes("copié")) {
@@ -1622,7 +1330,8 @@ function App() {
     setSourceModified(false);
     setResultModified(false);
     setStatus(`Conversion restaurée depuis l'historique`);
-  }, []);
+    showSnackbar('Conversion restaurée');
+  }, [showSnackbar]);
 
   /**
    * Clears conversion history.
@@ -1640,7 +1349,8 @@ function App() {
       console.error('Error clearing conversion history:', e);
     }
     setStatus('Historique effacé');
-  }, []);
+    showSnackbar('Historique effacé');
+  }, [showSnackbar]);
 
   /** Removes one history entry by id (HistoryModalV2). */
   const removeHistoryEntry = useCallback((id: string) => {
@@ -1654,7 +1364,8 @@ function App() {
       return next;
     });
     setStatus('Entrée retirée de l’historique');
-  }, []);
+    showSnackbar('Entrée retirée');
+  }, [showSnackbar]);
 
   /**
    * Renders markdown/asciidoc as HTML preview
@@ -1750,23 +1461,14 @@ function App() {
       'pdf': 'PDF',
       'yaml': 'YAML',
       'json': 'JSON',
-      'txt': 'Texte'
+      'txt': 'TEXT'
     };
     return titles[format];
   }, []);
 
-  /**
-   * Calculates text statistics (characters, words, lines)
-   * 
-   * @param text - Text to analyze
-   * @returns Object with characterCount, wordCount, lineCount
-   */
-  const getTextStats = useCallback((text: string) => {
-    const trimmed = text.trim();
-    const characterCount = trimmed.length;
-    const wordCount = trimmed.length > 0 ? trimmed.split(/\s+/).filter(word => word.length > 0).length : 0;
-    const lineCount = trimmed.length > 0 ? trimmed.split('\n').length : 0;
-    return { characterCount, wordCount, lineCount };
+  const pulseSourceDeleting = useCallback(() => {
+    setIsDeleting(true);
+    window.setTimeout(() => setIsDeleting(false), 500);
   }, []);
 
   /**
@@ -2165,131 +1867,6 @@ function App() {
   }, [loading, justConverted, sourceFormat, targetFormat, adocInput, mdOutput, userSettings.conversion.saveConversionHistory]);
 
   // ==========================================================================
-  // EFFECTS: KEYBOARD SHORTCUTS
-  // ==========================================================================
-  
-  /**
-   * ==========================================================================
-   * EFFECT: HANDLE KEYBOARD SHORTCUTS
-   * ==========================================================================
-   * 
-   * This effect handles all keyboard shortcuts in the application.
-   * 
-   * LOGIC:
-   * ----------------------
-   * Shortcuts are not triggered if the user is typing in an input, textarea or editable element (to avoid conflicts).
-   *
-   * EXCEPTIONS IN TEXTAREA:
-   * -----------------------------
-   * Certain shortcuts work even in textarea:
-   * - Ctrl+S : save (if in edit mode)
-   * - Ctrl+/ : help (shortcuts)
-   *
-   * GLOBAL SHORTCUTS:
-   * -------------------
-   * Work everywhere except in inputs/textarea:
-   *
-   * 1. Ctrl+S (or Cmd+S on Mac):
-   *    - If isEditingResult === true → open save modal
-   *    - Otherwise → export result (handleExport)
-   *
-   * 2. Ctrl+Enter (or Cmd+Enter):
-   *    - Triggers conversion (handleConvert)
-   *    - Does nothing if loading === true
-   *
-   * 3. Ctrl+K (or Cmd+K):
-   *    - Clears source content (handleClearSource)
-   *    - Shows confirmation modal
-   *
-   * 4. Ctrl+/ (or Cmd+/):
-   *    - Opens help modal (keyboard shortcuts)
-   *
-   * COMPATIBILITY:
-   * --------------
-   * - Ctrl on Windows/Linux
-   * - Cmd on macOS (detected via e.metaKey)
-   *
-   * CLEANUP:
-   * ----------
-   * The event listener is automatically removed when the component unmounts
-   * or when dependencies change.
-   *
-   * DEPENDENCIES:
-   * ------------
-   * Re-runs when: isEditingResult, loading, targetFormat, adocInput,
-   *               mdOutput, requestConversionConfirmation change
-   * 
-   * ==========================================================================
-   */
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      /*
-        Ignore shortcuts if the user is typing in an input/textarea
-        (except for the exceptions below)
-      */
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        // Exception 1: Ctrl+S in textarea (save when in edit mode)
-        if (e.ctrlKey && e.key === 's' && target.tagName === 'TEXTAREA') {
-          e.preventDefault();
-          if (isEditingResult) {
-            setShowSaveModal(true);
-          }
-          return;
-        }
-        // Exception 2: Ctrl+/ for help (works everywhere)
-        if (e.ctrlKey && e.key === '/') {
-          e.preventDefault();
-          setShowShortcutsModal(true);
-          return;
-        }
-        return;
-      }
-
-      /* 
-        Global shortcuts (work everywhere except in inputs/textarea)
-        Compatible Windows/Linux (Ctrl) and macOS (Cmd via metaKey)
-      */
-      if (e.ctrlKey || e.metaKey) {
-        switch (e.key) {
-          case 's':
-            e.preventDefault();
-            if (isEditingResult) {
-              // Edit mode: save modifications
-              setShowSaveModal(true);
-            } else {
-              // Normal mode: export result
-              handleExport();
-            }
-            break;
-          case 'Enter':
-            e.preventDefault();
-            if (!loading) {
-              // Trigger conversion (if not already in progress)
-              handleConvert();
-            }
-            break;
-          case 'k':
-            e.preventDefault();
-            // Clear source content (with confirmation)
-            handleClearSource();
-            break;
-          case '/':
-            e.preventDefault();
-            // Show help (keyboard shortcuts)
-            setShowShortcutsModal(true);
-            break;
-        }
-      }
-    };
-
-    // Add global event listener
-    window.addEventListener('keydown', handleKeyDown);
-    // Clean up on unmount or dependency change
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEditingResult, loading, targetFormat, adocInput, mdOutput, requestConversionConfirmation]);
-
   // ==========================================================================
   // HANDLERS: CONVERSION
   // ==========================================================================
@@ -2442,6 +2019,26 @@ function App() {
     }
   }, [loading, requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, isEditingResult]);
 
+  const toggleHistoryPanel = useCallback(() => {
+    if (historyWindowMinimized) {
+      setHistoryWindowMinimized(false);
+      setShowHistoryPanel(true);
+      return;
+    }
+    setShowHistoryPanel((prev) => !prev);
+  }, [historyWindowMinimized]);
+
+  useAppKeyboardShortcuts({
+    onConvert: handleConvert,
+    onExport: handleExport,
+    onClearSource: handleClearSource,
+    onOpenShortcutsHelp: () => setShowShortcutsModal(true),
+    onToggleHistory: toggleHistoryPanel,
+    isEditingResult,
+    onOpenSaveModal: () => setShowSaveModal(true),
+    loading,
+  });
+
   // ==========================================================================
   // HELPERS: CONTENT MANAGEMENT BY FORMAT
   // ==========================================================================
@@ -2564,195 +2161,6 @@ function App() {
 
   /**
    * ============================================================================
-   * REUSABLE COMPONENT: SOURCE PANEL
-   * ============================================================================
-   * 
-   * This component renders the source panel (left) interface with all its features:
-   * - Editable text area (textarea)
-   * - Action buttons (file, folder, convert, clear)
-   * - Loading indicator during conversion
-   * - Text statistics (characters, words, lines)
-   * - File selector (when a folder has been imported)
-   * - Heading-based navigation (when enabled and available)
-   * 
-   * PARAMETERS:
-   * -----------
-   * @param title - Panel title (e.g. "AsciiDoc", "Markdown")
-   * @param value - Current textarea content
-   * @param setValue - Function to update content
-   * @param placeholder - Help text when textarea is empty
-   * @param textAreaRef - React ref to textarea (for focus/scroll)
-   * @param onConvert - Function called when "Convert" is clicked
-   * @param showHeadings - Show heading navigation (boolean)
-   * @param canConvert - Allow conversion (disabled when source and target formats are the same)
-   * @param onClear - Optional function to clear content
-   * 
-   * RENDER:
-   * -------
-   * Returns a <section> element with the full source panel interface.
-   * The panel is responsive and adapts to content.
-   * 
-   * ============================================================================
-   */
-  const renderSourcePanel = (
-    title: string,
-    value: string,
-    setValue: (value: string) => void,
-    placeholder: string,
-    textAreaRef: React.RefObject<HTMLTextAreaElement> | null,
-    onConvert: () => void,
-    showHeadings: boolean = false,
-    canConvert: boolean = true,
-    onClear?: () => void,
-    isDeleting: boolean = false,
-    sourceModified: boolean = false,
-    format: FormatType = 'asciidoc'
-  ) => {
-    const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const newValue = e.target.value;
-      // Detect if text length decreased (deletion)
-      if (newValue.length < value.length) {
-        setIsDeleting(true);
-        // Reset after 500ms
-        setTimeout(() => setIsDeleting(false), 500);
-      }
-      setValue(newValue);
-    };
-
-    const isEmpty = !value.trim();
-    const canInsertSample = format === 'asciidoc' || format === 'markdown';
-
-    return (
-    <section className={`panel${isDeleting ? ' panel-deleting' : ''}`}>
-      <div className="panel-header">
-        <h2>{title}{sourceModified && <span className="panel-modified-badge" data-tooltip="Document modifié depuis la dernière conversion">modifié</span>}</h2>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <label className="file-input-label">
-            <span>📄</span>
-            <input
-              type="file"
-              accept=".adoc,.asciidoc,.md,.txt"
-              onChange={handleFileChange}
-            />
-          </label>
-          <label className="file-input-label">
-            <span>📁</span>
-            <input
-              type="file"
-              {...({ webkitdirectory: "" } as any)}
-              multiple
-              onChange={handleFolderChange}
-            />
-          </label>
-          {onClear && (
-            <button
-              onClick={onClear}
-              disabled={!value.trim()}
-              className="panel-header-btn panel-header-btn--danger"
-              data-tooltip={`Effacer le contenu ${title}`}
-            >
-              🗑️
-            </button>
-          )}
-          <button
-            onClick={onConvert}
-            disabled={loading || !value.trim() || !canConvert}
-            className={`panel-header-btn panel-header-btn--convert panel-header-btn--convert-secondary${loading ? ' is-loading' : ''}`}
-            data-tooltip={!canConvert ? "Les formats source et destination doivent être différents" : "Convertir (également disponible dans l'en-tête)"}
-          >
-            {loading ? (
-              <span className="panel-header-btn-convert-label">
-                <span className="panel-header-btn-convert-spinner" aria-hidden="true" />
-                Conversion…
-              </span>
-            ) : (
-              "Convertir"
-            )}
-          </button>
-        </div>
-      </div>
-      {loading && <ConversionLoadingBanner compact />}
-      <div className="panel-toolbar">
-        {currentFileName && (
-          <span className="file-name">{currentFileName}</span>
-        )}
-        {value && (
-          <div className="text-stats">
-            {(() => {
-              const stats = getTextStats(value);
-              return (
-                <>
-                  <span data-tooltip="Nombre de caractères">{stats.characterCount.toLocaleString('fr-FR')} caractères</span>
-                  <span data-tooltip="Nombre de mots">{stats.wordCount.toLocaleString('fr-FR')} mots</span>
-                  <span data-tooltip="Nombre de lignes">{stats.lineCount.toLocaleString('fr-FR')} lignes</span>
-                </>
-              );
-            })()}
-          </div>
-        )}
-      </div>
-      {folderFiles.length > 0 && (
-        <div className="file-selector">
-          <label className="file-selector-label">
-            <span>📂</span>
-            <span>Sélectionner un fichier à convertir</span>
-          </label>
-          <select
-            className="file-selector-select"
-            value={selectedFileIndex}
-            onChange={(e) => handleFileSelect(parseInt(e.target.value))}
-          >
-            <option value={-1}>-- Choisir un fichier --</option>
-            {folderFiles.map((file, index) => (
-              <option key={index} value={index}>
-                {file.name} ({(file.size / 1024).toFixed(1)} KB)
-              </option>
-            ))}
-          </select>
-          {folderFiles.length > 0 && (
-            <div className="file-selector-info">
-              <span>📁</span>
-              <span>{folderFiles.length} fichier{folderFiles.length > 1 ? 's' : ''} disponible{folderFiles.length > 1 ? 's' : ''}</span>
-            </div>
-          )}
-        </div>
-      )}
-      <div className={`editor-shell${isEmpty ? ' is-empty' : ''}`}>
-        {isEmpty && (
-          <EmptyEditorState
-            variant="source"
-            title={`Collez votre ${title} ici`}
-            description={
-              canInsertSample
-                ? 'Chargez un fichier, ou essayez un exemple en un clic.'
-                : 'Chargez un fichier ou collez votre contenu pour commencer.'
-            }
-            actionLabel={canInsertSample ? 'Insérer un exemple' : undefined}
-            onAction={
-              canInsertSample
-                ? () => {
-                    setValue(getSampleDocument(format));
-                    setSourceModified(true);
-                    requestAnimationFrame(() => textAreaRef?.current?.focus());
-                  }
-                : undefined
-            }
-          />
-        )}
-        <textarea
-          ref={textAreaRef}
-          className="source-textarea"
-          value={value}
-          onChange={handleChange}
-          placeholder={isEmpty ? '' : placeholder}
-        />
-      </div>
-    </section>
-    );
-  };
-
-  /**
-   * ============================================================================
    * UTILITY: PLACEHOLDER BY FORMAT
    * ============================================================================
    * 
@@ -2784,271 +2192,116 @@ function App() {
     return placeholders[format];
   }, []);
 
-  /**
-   * ============================================================================
-   * MEMO: SOURCE PANEL (useMemo)
-   * ============================================================================
-   * 
-   * This useMemo dynamically builds the source panel component based on
-   * the selected format (sourceFormat).
-   * 
-   * CONTENT SELECTION LOGIC:
-   * ------------------------
-   * Displayed content depends on source format:
-   * - sourceFormat === 'asciidoc' → uses adocInput
-   * - sourceFormat === 'markdown' → uses mdOutput
-   * - sourceFormat === 'html'|'pdf'|'yaml'|'json'|'txt' → uses adocInput (temporary)
-   * 
-   * IMPORTANT:
-   * -----------
-   * The source panel can display any format, but content is stored in
-   * adocInput OR mdOutput depending on format. This allows multiple formats
-   * with only two content state variables.
-   * 
-   * CONVERSION VALIDATION:
-   * ----------------------
-   * Conversion is allowed only if:
-   * 1. Source and target formats differ
-   * 2. Conversion is supported (currently only AsciiDoc ↔ Markdown)
-   * 
-   * DEPENDENCIES:
-   * -------------
-   * Recomputes when: sourceFormat, adocInput, mdOutput, currentFileName, status,
-   *                  headings, loading, folderFiles, selectedFileIndex change
-   * 
-   * ============================================================================
-   */
   const sourceCard = useMemo(() => {
-    let sourceValue = "";
-    let setSourceValue = (v: string) => {};
+    let sourceValue = '';
+    let setSourceValue: (v: string) => void = () => {};
     let sourceRef: React.RefObject<HTMLTextAreaElement> | null = null;
 
-    if (sourceFormat === 'asciidoc') {
-      sourceValue = adocInput;
-      setSourceValue = setAdocInput;
-      sourceRef = adocTextAreaRef;
-    } else if (sourceFormat === 'markdown') {
+    if (sourceFormat === 'markdown') {
       sourceValue = mdOutput;
       setSourceValue = setMdOutput;
       sourceRef = mdTextAreaRef;
-    } else if (sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
-      sourceValue = adocInput; // Use adocInput temporarily for HTML, PDF, YAML, JSON, TXT
+    } else {
+      sourceValue = adocInput;
       setSourceValue = setAdocInput;
       sourceRef = adocTextAreaRef;
     }
 
-      // Check if conversion is allowed (only AsciiDoc ↔ Markdown)
-      const isAllowedConversion = 
-        (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
-        (sourceFormat === 'markdown' && targetFormat === 'asciidoc');
-      
-      return renderSourcePanel(
-      getFormatTitle(sourceFormat),
-      sourceValue,
-      (v) => { setSourceValue(v); setSourceModified(true); },
-      getFormatPlaceholder(sourceFormat),
-      sourceRef,
-      handleConvert,
-      (sourceFormat === 'asciidoc' || sourceFormat === 'markdown'), // Show headings for AsciiDoc and Markdown
-      sourceFormat !== targetFormat && isAllowedConversion, // Can convert if formats are different AND conversion is allowed
-      handleClearSource, // Function to clear source content
-      false, // isDeleting
-      sourceModified,
-      sourceFormat
+    const isAllowedConversion =
+      (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
+      (sourceFormat === 'markdown' && targetFormat === 'asciidoc');
+
+    return (
+      <SourcePanel
+        title={getFormatTitle(sourceFormat)}
+        value={sourceValue}
+        onChange={(v) => { setSourceValue(v); setSourceModified(true); }}
+        placeholder={getFormatPlaceholder(sourceFormat)}
+        textAreaRef={sourceRef}
+        onConvert={handleConvert}
+        canConvert={sourceFormat !== targetFormat && isAllowedConversion}
+        onClear={handleClearSource}
+        isDeleting={isDeleting}
+        sourceModified={sourceModified}
+        format={sourceFormat}
+        loading={loading}
+        currentFileName={currentFileName}
+        folderFiles={folderFiles}
+        selectedFileIndex={selectedFileIndex}
+        onFileChange={handleFileChange}
+        onFolderChange={handleFolderChange}
+        onFileSelect={handleFileSelect}
+        onDeletingPulse={pulseSourceDeleting}
+        onMarkModified={() => setSourceModified(true)}
+      />
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceFormat, adocInput, mdOutput, currentFileName, status, headings, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, adocTextAreaRef, navigationEnabled, getTextStats, sourceModified]);
+  }, [sourceFormat, targetFormat, adocInput, mdOutput, currentFileName, status, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, isDeleting, sourceModified, handleClearSource, pulseSourceDeleting]);
 
-  /**
-   * ============================================================================
-   * MEMO: RESULT PANEL (useMemo)
-   * ============================================================================
-   * 
-   * This useMemo dynamically builds the result panel component based on
-   * the selected destination format (targetFormat).
-   * 
-   * CONTENT SELECTION LOGIC:
-   * ------------------------
-   * Displayed content depends on target format:
-   * - targetFormat === 'asciidoc' → uses adocInput
-   * - targetFormat === 'markdown'|'html'|'pdf'|'yaml'|'json'|'txt' → uses mdOutput
-   * 
-   * RESULT PANEL FEATURES:
-   * ----------------------
-   * 1. Edit mode: allows editing the result after conversion
-   *    - "✏️" button to enable editing
-   *    - "✕ Cancel" button to discard changes
-   *    - "💾 Save" button to save changes
-   * 
-   * 2. Available actions:
-   *    - 📋 Copy: copy result to clipboard
-   *    - ⬇️ Download: export result to file
-   *    - 🗑️ Clear: remove result content
-   * 
-   * 3. Loading indicator:
-   *    - Animated progress bar during conversion
-   *    - Current conversion status
-   * 
-   * 4. Statistics:
-   *    - Character, word, line counts
-   *    - Shown in panel toolbar
-   * 
-   * EDIT MODE:
-   * ----------
-   * When isEditingResult === true:
-   * - Textarea becomes editable (readOnly = false)
-   * - Copy/export/clear buttons are disabled
-   * - Cursor indicates editing state
-   * - Original content backup is created before editing
-   * 
-   * DEPENDENCIES:
-   * -------------
-   * Recomputes when: targetFormat, adocInput, mdOutput, status, loading,
-   *                  copied, isEditingResult change
-   * 
-   * ============================================================================
-   */
   const resultCard = useMemo(() => {
-    let resultValue = "";
-    let setResultValue = (v: string) => {};
+    let resultValue = '';
+    let setResultValue: (v: string) => void = () => {};
 
-    if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
-      resultValue = mdOutput;
-      setResultValue = setMdOutput;
-    } else if (targetFormat === 'asciidoc') {
+    if (targetFormat === 'asciidoc') {
       resultValue = adocInput;
       setResultValue = setAdocInput;
+    } else {
+      resultValue = mdOutput;
+      setResultValue = setMdOutput;
     }
 
     const sourceValueForCurrentFormat = sourceFormat === 'markdown' ? mdOutput : adocInput;
-    const isLocked = !!resultValue && !isEditingResult;
-    const isEditing = !!resultValue && isEditingResult;
+
+    const resultActions: PanelActionItem[] = resultValue
+      ? [
+          {
+            id: 'edit',
+            label: isEditingResult ? "Annuler l'édition" : "Éditer",
+            onClick: () => {
+              if (isEditingResult) setShowCancelModal(true);
+              else setShowEditModal(true);
+            },
+            danger: isEditingResult,
+          },
+          ...(isEditingResult
+            ? [{
+                id: 'save',
+                label: 'Sauvegarder',
+                onClick: () => setShowSaveModal(true),
+              }]
+            : [
+                {
+                  id: 'copy',
+                  label: copied ? 'Copié' : 'Copier',
+                  onClick: () => { void handleCopy(); },
+                },
+                {
+                  id: 'export',
+                  label: 'Télécharger',
+                  onClick: handleExport,
+                  disabled: !resultValue.trim(),
+                },
+              ]),
+        ]
+      : [];
 
     return (
-    <section className={`panel${isLocked ? " result-locked" : isEditing ? " result-editing" : ""}`}>
-      <div className="panel-header">
-        <h2>{getFormatTitle(targetFormat)}{resultModified && <span className="panel-modified-badge" data-tooltip="Résultat modifié depuis la dernière conversion">modifié</span>}</h2>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-          {resultValue && (
-            <>
-              {isLocked && (
-                <span className="result-zone-state result-zone-locked" role="status" aria-live="polite" data-tooltip="Lecture seule — activez l'édition pour modifier">
-                  Verrouillé
-                </span>
-              )}
-              {isEditing && (
-                <span className="result-zone-state result-zone-editing" role="status" aria-live="polite" data-tooltip="Mode édition actif">
-                  Édition
-                </span>
-              )}
-              <button
-                onClick={() => {
-                  if (isEditingResult) {
-                    setShowCancelModal(true);
-                  } else {
-                    setShowEditModal(true);
-                  }
-                }}
-                className={`panel-header-btn ${isEditingResult ? 'panel-header-btn--danger' : 'panel-header-btn--muted'}`}
-                data-tooltip={isEditingResult ? "Annuler l'édition" : "Activer l'édition"}
-              >
-                {isEditingResult ? "✕" : "✏️"}
-              </button>
-              {isEditingResult && (
-              <button
-                  onClick={() => setShowSaveModal(true)}
-                className="panel-header-btn panel-header-btn--success"
-                  data-tooltip="Sauvegarder les modifications"
-              >
-                  💾
-              </button>
-          )}
-              {!isEditingResult && (
-                <>
-                  <button
-                    onClick={handleCopy}
-                    className="panel-header-btn panel-header-btn--muted"
-                    data-tooltip="Copier le résultat"
-                  >
-                    {copied ? "✓ Copié" : "📋"}
-                  </button>
-                  <button
-                    onClick={handleExport}
-                    disabled={!resultValue.trim()}
-                    className="panel-header-btn panel-header-btn--primary"
-                    data-tooltip="Télécharger le résultat"
-                  >
-                    ⬇️
-                  </button>
-                  <button
-                    onClick={handleClear}
-                    className="panel-header-btn panel-header-btn--danger"
-                    data-tooltip="Effacer le résultat"
-                  >
-                    🗑️
-                  </button>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-      {loading && <ConversionLoadingBanner status={status} />}
-      {/* Statistics toolbar for result panel */}
-      {resultValue && (
-        <div className="panel-toolbar" style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          padding: "0.5rem 0"
-        }}>
-          <div className="text-stats">
-            {(() => {
-              const stats = getTextStats(resultValue);
-              return (
-                <>
-                  <span data-tooltip="Nombre de caractères">{stats.characterCount.toLocaleString('fr-FR')} caractères</span>
-                  <span data-tooltip="Nombre de mots">{stats.wordCount.toLocaleString('fr-FR')} mots</span>
-                  <span data-tooltip="Nombre de lignes">{stats.lineCount.toLocaleString('fr-FR')} lignes</span>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-      <div className={`editor-shell${!resultValue.trim() && !loading ? ' is-empty' : ''}`}>
-        {!resultValue.trim() && !loading && (
-          <EmptyEditorState
-            variant="result"
-            title={`Résultat ${getFormatTitle(targetFormat)}`}
-            description={
-              !sourceValueForCurrentFormat.trim()
-                ? 'Ajoutez du contenu à gauche, puis cliquez sur Convertir.'
-                : 'Prêt — cliquez sur Convertir pour générer le résultat.'
-            }
-          />
-        )}
-      <textarea
-        className="result-textarea"
+      <ResultPanel
+        title={getFormatTitle(targetFormat)}
         value={resultValue}
-        onChange={(e) => { setResultValue(e.target.value); if (isEditingResult) setResultModified(true); }}
-        readOnly={!isEditingResult}
-        placeholder={
-          loading
-            ? "Conversion en cours..."
-            : !resultValue.trim()
-              ? ""
-              : `Résultat ${getFormatTitle(targetFormat)}...`
-        }
-        style={{
-          opacity: loading ? 0.6 : 1,
-          transition: "opacity 0.2s"
-        }}
+        onChange={setResultValue}
+        sourceHasContent={!!sourceValueForCurrentFormat.trim()}
+        loading={loading}
+        status={status}
+        isEditingResult={isEditingResult}
+        resultModified={resultModified}
+        actions={resultActions}
+        onClear={handleClear}
+        onMarkModified={() => setResultModified(true)}
       />
-      </div>
-    </section>
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetFormat, sourceFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, resultModified, getFormatTitle, setMdOutput, setAdocInput, handleExport, getTextStats, isDeleting]);
+  }, [targetFormat, sourceFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear]);
 
   return (
     <div className="page">
@@ -3107,110 +2360,41 @@ function App() {
           </div>
         </div>
       )}
-      <header className="header">
-        <div className="header-main">
-          <div className="header-brand">
-            <img
-              src={logoSrc}
-              alt="Logo Ascend"
-              className="header-logo"
-              onError={() => setLogoSrc(defaultLogo)}
-            />
-            <div className="header-brand-text">
-              <span className="header-app-title">Ascend</span>
-              <span className="header-app-tagline">Convertisseur AsciiDoc ↔ Markdown</span>
-              <HeaderStatusPill state={conversionUiState} status={status} />
-            </div>
-          </div>
-          <div className="header-actions">
-            <div className="header-convert-group">
-              <span className="header-format-chip" aria-hidden="true">
-                <span className="header-format-chip-from">{getFormatTitle(sourceFormat)}</span>
-                <span className="header-format-chip-arrow">→</span>
-                <span className="header-format-chip-to">{getFormatTitle(targetFormat)}</span>
-              </span>
-              <button
-                type="button"
-                className="header-convert-btn"
-                onClick={handleConvert}
-                disabled={
-                  loading ||
-                  isEditingResult ||
-                  sourceFormat === targetFormat ||
-                  !(sourceFormat === 'markdown' ? mdOutput : adocInput).trim()
-                }
-                aria-label="Convertir le document"
-                data-tooltip={
-                  sourceFormat === targetFormat
-                    ? 'Les formats source et destination doivent être différents'
-                    : isEditingResult
-                      ? "Sauvegardez ou annulez l'édition du résultat avant de convertir"
-                      : !(sourceFormat === 'markdown' ? mdOutput : adocInput).trim()
-                        ? 'Ajoutez du contenu source pour convertir'
-                        : `${getFormatTitle(sourceFormat)} → ${getFormatTitle(targetFormat)}`
-                }
-              >
-                {loading ? (
-                  <span className="panel-header-btn-convert-label">
-                    <span className="panel-header-btn-convert-spinner" aria-hidden="true" />
-                    Conversion…
-                  </span>
-                ) : (
-                  'Convertir'
-                )}
-              </button>
-            </div>
-            <button
-              type="button"
-              className={`settings-button header-icon-btn sidebar-toggle-btn${sidebarCollapsed ? ' is-collapsed' : ''}`}
-              onClick={toggleSidebarCollapsed}
-              aria-label={sidebarCollapsed ? 'Afficher les options' : 'Masquer les options'}
-              aria-pressed={!sidebarCollapsed}
-              aria-controls="ascend-sidebar"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M4 6H20M4 12H14M4 18H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-                {sidebarCollapsed ? null : <path d="M18 8L14 12L18 16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>}
-              </svg>
-            </button>
-            <button
-              type="button"
-              className="settings-button header-icon-btn"
-              onClick={() => setShowHistoryPanel(!showHistoryPanel)}
-              data-tooltip="Historique des conversions"
-              style={{ position: "relative" }}
-            >
-              📜
-              {conversionHistory.length > 0 && (
-                <span className="history-count-badge">
-                  {conversionHistory.length > 9 ? "9+" : conversionHistory.length}
-                </span>
-              )}
-            </button>
-          <button
-            type="button"
-            ref={settingsButtonRef}
-            className="settings-button settings-gear-btn"
-            onClick={() => {
-              if (settingsMinimized) {
-                setSettingsMinimized(false);
-                return;
-              }
-              if (settingsOpen) closeSettingsPanel();
-              else openSettingsPanel();
-            }}
-            data-tooltip="Paramètres"
-            aria-haspopup="dialog"
-            aria-expanded={settingsOpen}
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M19.4 15C19.2669 15.3016 19.2272 15.6362 19.286 15.9606C19.3448 16.285 19.4995 16.5843 19.73 16.82L19.79 16.88C19.976 17.0657 20.1235 17.2863 20.2241 17.5291C20.3248 17.7719 20.3766 18.0322 20.3766 18.295C20.3766 18.5578 20.3248 18.8181 20.2241 19.0609C20.1235 19.3037 19.976 19.5243 19.79 19.71C19.6043 19.896 19.3837 20.0435 19.1409 20.1441C18.8981 20.2448 18.6378 20.2966 18.375 20.2966C18.1122 20.2966 17.8519 20.2448 17.6091 20.1441C17.3663 20.0435 17.1457 19.896 16.96 19.71L16.9 19.65C16.6643 19.4195 16.365 19.2648 16.0406 19.206C15.7162 19.1472 15.3816 19.1869 15.08 19.32C14.7842 19.4468 14.532 19.6572 14.3543 19.9255C14.1766 20.1938 14.0813 20.5082 14.08 20.83V21C14.08 21.5304 13.8693 22.0391 13.4942 22.4142C13.1191 22.7893 12.6104 23 12.08 23C11.5496 23 11.0409 22.7893 10.6658 22.4142C10.2907 22.0391 10.08 21.5304 10.08 21V20.91C10.0723 20.579 9.96512 20.258 9.77251 19.9887C9.5799 19.7194 9.31074 19.5143 9 19.4C8.69838 19.2669 8.36381 19.2272 8.03941 19.286C7.71502 19.3448 7.41568 19.4995 7.18 19.73L7.12 19.79C6.93425 19.976 6.71368 20.1235 6.47088 20.2241C6.22808 20.3248 5.96783 20.3766 5.705 20.3766C5.44217 20.3766 5.18192 20.3248 4.93912 20.2241C4.69632 20.1235 4.47575 19.976 4.29 19.79C4.10405 19.6043 3.95653 19.3837 3.85588 19.1409C3.75523 18.8981 3.70343 18.6378 3.70343 18.375C3.70343 18.1122 3.75523 17.8519 3.85588 17.6091C3.95653 17.3663 4.10405 17.1457 4.29 16.96L4.35 16.9C4.58054 16.6643 4.73519 16.365 4.794 16.0406C4.85282 15.7162 4.81312 15.3816 4.68 15.08C4.55324 14.7842 4.34276 14.532 4.07447 14.3543C3.80618 14.1766 3.49179 14.0813 3.17 14.08H3C2.46957 14.08 1.96086 13.8693 1.58579 13.4942C1.21071 13.1191 1 12.6104 1 12.08C1 11.5496 1.21071 11.0409 1.58579 10.6658C1.96086 10.2907 2.46957 10.08 3 10.08H3.09C3.42099 10.0723 3.742 9.96512 4.01131 9.77251C4.28062 9.5799 4.48571 9.31074 4.6 9C4.73312 8.69838 4.77282 8.36381 4.714 8.03941C4.65519 7.71502 4.50054 7.41568 4.27 7.18L4.21 7.12C4.02405 6.93425 3.87653 6.71368 3.77588 6.47088C3.67523 6.22808 3.62343 5.96783 3.62343 5.705C3.62343 5.44217 3.67523 5.18192 3.77588 4.93912C3.87653 4.69632 4.02405 4.47575 4.21 4.29C4.39575 4.10405 4.61632 3.95653 4.85912 3.85588C5.10192 3.75523 5.36217 3.70343 5.625 3.70343C5.88783 3.70343 6.14808 3.75523 6.39088 3.85588C6.63368 3.95653 6.85425 4.10405 7.04 4.29L7.1 4.35C7.33568 4.58054 7.63502 4.73519 7.95941 4.794C8.28381 4.85282 8.61838 4.81312 8.92 4.68H9C9.29577 4.55324 9.54802 4.34276 9.72569 4.07447C9.90337 3.80618 9.99872 3.49179 10 3.17V3C10 2.46957 10.2107 1.96086 10.5858 1.58579C10.9609 1.21071 11.4696 1 12 1C12.5304 1 13.0391 1.21071 13.4142 1.58579C13.7893 1.96086 14 2.46957 14 3V3.09C14.0013 3.41179 14.0966 3.72618 14.2743 3.99447C14.452 4.26276 14.7042 4.47324 15 4.6C15.3016 4.73312 15.6362 4.77282 15.9606 4.714C16.285 4.65519 16.5843 4.50054 16.82 4.27L16.88 4.21C17.0657 4.02405 17.2863 3.87653 17.5291 3.77588C17.7719 3.67523 18.0322 3.62343 18.295 3.62343C18.5578 3.62343 18.8181 3.67523 19.0609 3.77588C19.3037 3.87653 19.5243 4.02405 19.71 4.21C19.896 4.39575 20.0435 4.61632 20.1441 4.85912C20.2448 5.10192 20.2966 5.36217 20.2966 5.625C20.2966 5.88783 20.2448 6.14808 20.1441 6.39088C20.0435 6.63368 19.896 6.85425 19.71 7.04L19.65 7.1C19.4195 7.33568 19.2648 7.63502 19.206 7.95941C19.1472 8.28381 19.1869 8.61838 19.32 8.92V9C19.4468 9.29577 19.6572 9.54802 19.9255 9.72569C20.1938 9.90337 20.5082 9.99872 20.83 10H21C21.5304 10 22.0391 10.2107 22.4142 10.5858C22.7893 10.9609 23 11.4696 23 12C23 12.5304 22.7893 13.0391 22.4142 13.4142C22.0391 13.7893 21.5304 14 21 14H20.91C20.5882 14.0013 20.2738 14.0966 20.0055 14.2743C19.7372 14.452 19.5268 14.7042 19.4 15Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        logoSrc={logoSrc}
+        onLogoError={() => setLogoSrc(defaultLogo)}
+        conversionUiState={conversionUiState}
+        status={status}
+        sourceFormat={sourceFormat}
+        targetFormat={targetFormat}
+        sourceFormatTitle={getFormatTitle(sourceFormat)}
+        targetFormatTitle={getFormatTitle(targetFormat)}
+        sourceHasContent={!!(sourceFormat === 'markdown' ? mdOutput : adocInput).trim()}
+        loading={loading}
+        isEditingResult={isEditingResult}
+        onConvert={handleConvert}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={toggleSidebarCollapsed}
+        historyCount={conversionHistory.length}
+        onToggleHistory={() => setShowHistoryPanel(!showHistoryPanel)}
+        settingsButtonRef={settingsButtonRef}
+        settingsOpen={settingsOpen}
+        onToggleSettings={() => {
+          if (settingsMinimized) {
+            setSettingsMinimized(false);
+            return;
+          }
+          if (settingsOpen) closeSettingsPanel();
+          else openSettingsPanel();
+        }}
+      />
+
+      {!warningsDismissed && conversionWarnings.length > 0 && (
+        <ConversionWarningsBanner
+          warnings={conversionWarnings}
+          onDismiss={() => setWarningsDismissed(true)}
+        />
+      )}
 
       {/* 
         ========================================================================
@@ -3258,17 +2442,10 @@ function App() {
               settingsMaximized
                 ? undefined
                 : {
-                    left: settingsPanelPosition.x,
-                    top: settingsPanelPosition.y,
-                    width: settingsPanelSize.width,
-                    height: settingsPanelSize.height,
+                    ...settingsPanelStyle,
                     minWidth: SETTINGS_MIN_W,
                     minHeight: SETTINGS_MIN_H,
-                    maxWidth: '90vw',
-                    maxHeight: '85vh',
-                    transform: isDraggingSettings
-                      ? `translate(${settingsDragOffset.x}px, ${settingsDragOffset.y}px)`
-                      : undefined,
+                    zIndex: 10001,
                   }
             }
           >
@@ -3337,12 +2514,12 @@ function App() {
                         </p>
                       </div>
                       <div className="option-group">
-                        <label className="option-label">Nouveautés v0.0.1.8.1</label>
+                        <label className="option-label">Nouveautés v0.0.1.8.2</label>
                         <ul className="settings-release-list">
-                          <li>Fond d’écran personnalisable (SVG, photo serveur ou image personnelle)</li>
-                          <li>Sidebar et navbar opaques selon le thème, même avec un fond photo</li>
-                          <li>Fenêtres flottantes unifiées et modales de confirmation Ascend</li>
-                          <li>États vides des éditeurs et historique enrichi</li>
+                          <li>Listboxes formats / paramètres, menu Actions et snackbar unifiée</li>
+                          <li>Raccourcis clavier (Convertir, Historique, Aide) et bannière d’avertissements</li>
+                          <li>Onglets Source / Résultat et sidebar tiroir sur mobile</li>
+                          <li>Découpe de l’interface (header, panneaux, navigation)</li>
                         </ul>
                       </div>
                     </div>
@@ -3366,13 +2543,24 @@ function App() {
                         {settingsErrors.organization && <span className="settings-field-error" role="alert">{settingsErrors.organization}</span>}
                       </div>
                       <div className="option-group">
-                        <label className="option-label">Langue des métadonnées</label>
-                        <select value={draftSettings.profile.defaultLanguage} onChange={(e) => setDraftSettings(s => ({ ...s, profile: { ...s.profile, defaultLanguage: e.target.value as 'fr'|'en'|'es'|'de' } }))} className="option-select">
-                          <option value="fr">Français</option>
-                          <option value="en">Anglais</option>
-                          <option value="es">Espagnol</option>
-                          <option value="de">Allemand</option>
-                        </select>
+                        <SidebarListbox
+                          className="settings-listbox"
+                          id="settings-default-language"
+                          label="Langue des métadonnées"
+                          value={draftSettings.profile.defaultLanguage}
+                          options={[
+                            { value: 'fr', label: 'Français' },
+                            { value: 'en', label: 'Anglais' },
+                            { value: 'es', label: 'Espagnol' },
+                            { value: 'de', label: 'Allemand' },
+                          ]}
+                          onChange={(next) =>
+                            setDraftSettings((s) => ({
+                              ...s,
+                              profile: { ...s.profile, defaultLanguage: next as 'fr' | 'en' | 'es' | 'de' },
+                            }))
+                          }
+                        />
                         <p className="settings-muted" style={{ marginTop: '0.25rem' }}>Utilisée pour les métadonnées de conversion, pas pour l'interface.</p>
                       </div>
                     </div>
@@ -3386,17 +2574,28 @@ function App() {
                   {expandedSections.has('settingsConversion') && (
                     <div className="settings-param-body">
                       <div className="option-group">
-                        <label className="option-label">Format de sortie par défaut</label>
-                        <select value={draftSettings.conversion.defaultOutputFormat} onChange={(e) => setDraftSettings(s => ({ ...s, conversion: { ...s.conversion, defaultOutputFormat: e.target.value } }))} className="option-select">
-                          <option value="">—</option>
-                          <option value="asciidoc">AsciiDoc</option>
-                          <option value="markdown">Markdown</option>
-                          <option value="html">HTML</option>
-                          <option value="pdf">PDF</option>
-                          <option value="yaml">YAML</option>
-                          <option value="json">JSON</option>
-                          <option value="txt">Texte</option>
-                        </select>
+                        <SidebarListbox
+                          className="settings-listbox"
+                          id="settings-default-output"
+                          label="Format de sortie par défaut"
+                          value={draftSettings.conversion.defaultOutputFormat || ''}
+                          options={[
+                            { value: '', label: '—' },
+                            { value: 'asciidoc', label: 'AsciiDoc' },
+                            { value: 'markdown', label: 'Markdown' },
+                            { value: 'html', label: 'HTML' },
+                            { value: 'pdf', label: 'PDF' },
+                            { value: 'yaml', label: 'YAML' },
+                            { value: 'json', label: 'JSON' },
+                            { value: 'txt', label: 'TEXT' },
+                          ]}
+                          onChange={(next) =>
+                            setDraftSettings((s) => ({
+                              ...s,
+                              conversion: { ...s.conversion, defaultOutputFormat: next },
+                            }))
+                          }
+                        />
                       </div>
                       <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
                         <input type="checkbox" checked={draftSettings.conversion.defaultTocEnabled} onChange={(e) => setDraftSettings(s => ({ ...s, conversion: { ...s.conversion, defaultTocEnabled: e.target.checked } }))} className="option-checkbox" />
@@ -3425,43 +2624,65 @@ function App() {
                   {expandedSections.has('settingsInterface') && (
                     <div className="settings-param-body">
                       <div className="option-group">
-                        <label className="option-label">Thème</label>
-                        <select
+                        <SidebarListbox
+                          className="settings-listbox"
+                          id="settings-theme"
+                          label="Thème"
                           value={draftSettings.ui.theme}
-                          onChange={(e) => {
-                            const nextTheme = e.target.value as 'default' | 'dark';
-                            setDraftSettings(s => ({ ...s, ui: { ...s.ui, theme: nextTheme } }));
-                          }}
-                          className="option-select"
-                        >
-                          <option value="default">Par défaut</option>
-                          <option value="dark">Sombre</option>
-                        </select>
+                          options={[
+                            { value: 'default', label: 'Par défaut' },
+                            { value: 'dark', label: 'Sombre' },
+                          ]}
+                          onChange={(next) =>
+                            setDraftSettings((s) => ({
+                              ...s,
+                              ui: { ...s.ui, theme: next as 'default' | 'dark' },
+                            }))
+                          }
+                        />
                       </div>
                       <div className="option-group">
-                        <label className="option-label" htmlFor="settings-background-mode">Fond d’écran</label>
-                        <select
+                        <SidebarListbox
+                          className="settings-listbox"
                           id="settings-background-mode"
+                          label="Fond d’écran"
                           value={draftSettings.ui.backgroundMode}
-                          onChange={(e) => {
-                            const next = e.target.value as BackgroundMode;
+                          options={[
+                            { value: 'default', label: 'Décoratif (SVG Ascend)' },
+                            { value: 'server', label: 'Photo serveur (rafale.jpg)' },
+                            { value: 'custom', label: 'Image personnelle' },
+                          ]}
+                          onChange={(next) => {
                             setPageBgError(null);
-                            setDraftSettings((s) => ({ ...s, ui: { ...s.ui, backgroundMode: next } }));
+                            setDraftSettings((s) => ({
+                              ...s,
+                              ui: { ...s.ui, backgroundMode: next as BackgroundMode },
+                            }));
                           }}
-                          className="option-select"
-                        >
-                          <option value="default">Décoratif (SVG Ascend)</option>
-                          <option value="server">Photo serveur (rafale.jpg)</option>
-                          <option value="custom">Image personnelle</option>
-                        </select>
+                        />
                         <p className="settings-muted" style={{ marginTop: '0.4rem' }}>
                           {draftSettings.ui.backgroundMode === 'default' &&
-                            'Fond aurora intégré, adapté au thème clair ou sombre.'}
+                            'Fond aurora intégré, adapté au thème clair ou sombre. Aperçu live derrière la fenêtre.'}
                           {draftSettings.ui.backgroundMode === 'server' &&
-                            `Utilise ${SERVER_BG_URL} si le fichier est présent côté backend.`}
+                            `Utilise ${SERVER_BG_URL} si le fichier est présent côté backend. Aperçu live immédiat.`}
                           {draftSettings.ui.backgroundMode === 'custom' &&
-                            'Image entière visible (sans crop), qualité adaptée à votre écran.'}
+                            'Image entière visible (sans crop). L’aperçu s’applique tout de suite.'}
                         </p>
+                        {draftSettings.ui.backgroundMode === 'default' && (
+                          <div
+                            className="settings-bg-live-preview settings-bg-live-preview--default"
+                            role="img"
+                            aria-label="Aperçu du fond décoratif"
+                          />
+                        )}
+                        {draftSettings.ui.backgroundMode === 'server' && (
+                          <div
+                            className="settings-bg-live-preview"
+                            style={{ backgroundImage: `url("${SERVER_BG_URL}")` }}
+                            role="img"
+                            aria-label="Aperçu du fond serveur"
+                          />
+                        )}
                         {draftSettings.ui.backgroundMode === 'custom' && (
                           <div className="settings-bg-picker">
                             {draftPageBgImage ? (
@@ -3544,11 +2765,22 @@ function App() {
                         </label>
                       </div>
                       <div className="option-group">
-                        <label className="option-label">Taille des tabulations</label>
-                        <select value={draftSettings.ui.tabSize} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, tabSize: e.target.value === '2' ? 2 : 4 } }))} className="option-select">
-                          <option value={2}>2 espaces</option>
-                          <option value={4}>4 espaces</option>
-                        </select>
+                        <SidebarListbox
+                          className="settings-listbox"
+                          id="settings-tab-size"
+                          label="Taille des tabulations"
+                          value={String(draftSettings.ui.tabSize)}
+                          options={[
+                            { value: '2', label: '2 espaces' },
+                            { value: '4', label: '4 espaces' },
+                          ]}
+                          onChange={(next) =>
+                            setDraftSettings((s) => ({
+                              ...s,
+                              ui: { ...s.ui, tabSize: next === '2' ? 2 : 4 },
+                            }))
+                          }
+                        />
                       </div>
                       <div className="option-group">
                         <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
@@ -3767,53 +2999,10 @@ function App() {
         />
       )}
 
-      {/* Keyboard shortcuts modal */}
-      {showShortcutsModal && (
-        <>
-          <div className="settings-overlay" onClick={() => setShowShortcutsModal(false)} />
-          <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
-            <div className="settings-panel-header">
-              <h3>Raccourcis clavier</h3>
-              <button
-                type="button"
-                className="settings-close-btn"
-                onClick={() => setShowShortcutsModal(false)}
-                data-tooltip="Fermer"
-              >
-                ×
-              </button>
-            </div>
-            <div className="settings-panel-content">
-              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem", background: "rgba(255, 255, 255, 0.05)", borderRadius: "0.5rem" }}>
-                  <span style={{ color: "#e5e7eb" }}>Convertir</span>
-                  <kbd style={{ padding: "0.25rem 0.5rem", background: "#1f2937", color: "#e5e7eb", borderRadius: "0.25rem", fontSize: "0.875rem" }}>
-                    Ctrl + Enter
-                  </kbd>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem", background: "rgba(255, 255, 255, 0.05)", borderRadius: "0.5rem" }}>
-                  <span style={{ color: "#e5e7eb" }}>Télécharger / Sauvegarder</span>
-                  <kbd style={{ padding: "0.25rem 0.5rem", background: "#1f2937", color: "#e5e7eb", borderRadius: "0.25rem", fontSize: "0.875rem" }}>
-                    Ctrl + S
-                  </kbd>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem", background: "rgba(255, 255, 255, 0.05)", borderRadius: "0.5rem" }}>
-                  <span style={{ color: "#e5e7eb" }}>Effacer la source</span>
-                  <kbd style={{ padding: "0.25rem 0.5rem", background: "#1f2937", color: "#e5e7eb", borderRadius: "0.25rem", fontSize: "0.875rem" }}>
-                    Ctrl + K
-                  </kbd>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem", background: "rgba(255, 255, 255, 0.05)", borderRadius: "0.5rem" }}>
-                  <span style={{ color: "#e5e7eb" }}>Aide (raccourcis)</span>
-                  <kbd style={{ padding: "0.25rem 0.5rem", background: "#1f2937", color: "#e5e7eb", borderRadius: "0.25rem", fontSize: "0.875rem" }}>
-                    Ctrl + /
-                  </kbd>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      <ShortcutsHelpModal
+        isOpen={showShortcutsModal}
+        onClose={() => setShowShortcutsModal(false)}
+      />
 
       {/* 
         ========================================================================
@@ -3864,569 +3053,74 @@ function App() {
                 - If source format changes and conflicts with target,
                   the target is adjusted automatically
               */}
-              <div className="format-selector-group">
-                <label className="format-label">Format source</label>
-                <select
-                  value={sourceFormat}
-                  onChange={(e) => {
-                    const newFormat = e.target.value as FormatType;
-                    setSourceFormat(newFormat);
-                    
-                    /* 
-                      AUTO-ADJUST TARGET FORMAT:
-                      --------------------------
-                      If the new source format equals the target, we adjust
-                      the target to avoid a conflict.
-                      
-                      RULES:
-                      1. If source === target → change target
-                      2. If source is not adoc/md → target = markdown
-                      3. If target is not adoc/md → target = opposite of source
-                      
-                      EXAMPLE:
-                      - Source: asciidoc, Target: asciidoc → Target becomes markdown
-                      - Source: html, Target: markdown → Target stays markdown
-                    */
-                    if (newFormat === targetFormat) {
-                      // Same formats: adjust target
-                      if (newFormat === 'asciidoc') {
-                        setTargetFormat('markdown');
-                      } else if (newFormat === 'markdown') {
-                        setTargetFormat('asciidoc');
-                      } else {
-                        // For other formats, default to markdown
-                        setTargetFormat('markdown');
-                      }
-                    } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
-                      // Source is not adoc/md → target = markdown
-                      setTargetFormat('markdown');
-                    } else if (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') {
-                      // Destination is not adoc/md → destination = opposite of source
-                      setTargetFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
-                    }
-                  }}
-                  className="format-select"
-                >
-                  <option value="asciidoc">adoc</option>
-                  <option value="markdown">md</option>
-                  <option value="html" disabled>html (coming soon)</option>
-                  <option value="pdf" disabled>pdf (coming soon)</option>
-                  <option value="yaml" disabled>yaml (coming soon)</option>
-                  <option value="json" disabled>json (coming soon)</option>
-                  <option value="txt" disabled>txt (coming soon)</option>
-                </select>
-              </div>
-              {/* 
-                ============================================================
-                TARGET FORMAT SELECTOR
-                ============================================================
-                Chooses the output format after conversion.
-                Same auto-adjust logic as the source selector,
-                but applied in reverse (adjust source).
-              */}
-              <div className="format-selector-group">
-                <label className="format-label">Format destination</label>
-                <select
-                  value={targetFormat}
-                  onChange={(e) => {
-                    const newFormat = e.target.value as FormatType;
-                    setTargetFormat(newFormat);
-                    
-                    /* 
-                      AUTO-ADJUST SOURCE FORMAT:
-                      --------------------------
-                      If the new target format equals the source, we adjust
-                      the source to avoid a conflict.
-                      
-                      RULES (inverse of source selector):
-                      1. If target === source → change source
-                      2. If target is not adoc/md → source = asciidoc
-                      3. If source is not adoc/md → source = opposite of target
-                    */
-                    if (newFormat === sourceFormat) {
-                      // Same formats: adjust source
-                      if (newFormat === 'asciidoc') {
-                        setSourceFormat('markdown');
-                      } else if (newFormat === 'markdown') {
-                        setSourceFormat('asciidoc');
-                      } else {
-                        // For other formats, default to asciidoc
-                        setSourceFormat('asciidoc');
-                      }
-                    } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
-                      // Target is not adoc/md → source = asciidoc
-                      setSourceFormat('asciidoc');
-                    } else if (sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') {
-                      // Source is not adoc/md → source = opposite of destination
-                      setSourceFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
-                    }
-                  }}
-                  className="format-select"
-                >
-                  <option value="markdown">md</option>
-                  <option value="asciidoc">adoc</option>
-                  <option value="html" disabled>html (coming soon)</option>
-                  <option value="pdf" disabled>pdf (coming soon)</option>
-                  <option value="yaml" disabled>yaml (coming soon)</option>
-                  <option value="json" disabled>json (coming soon)</option>
-                  <option value="txt" disabled>txt (coming soon)</option>
-                </select>
-              </div>
-              {(sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') || 
-               (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') ? (
-                <div className="conversion-warning" style={{ 
-                  marginTop: '10px', 
-                  padding: '10px', 
-                  backgroundColor: '#fff3cd', 
-                  border: '1px solid #ffc107', 
-                  borderRadius: '4px',
-                  color: '#856404',
-                  fontSize: '14px'
-                }}>
-                  ⚠️ Seules les conversions AsciiDoc ↔ Markdown sont disponibles pour le moment.
+              <FormatSelector
+                id="format-source"
+                label="Format source"
+                value={sourceFormat}
+                onChange={(newFormat) => {
+                  setSourceFormat(newFormat);
+                  if (newFormat === targetFormat) {
+                    if (newFormat === 'asciidoc') setTargetFormat('markdown');
+                    else if (newFormat === 'markdown') setTargetFormat('asciidoc');
+                    else setTargetFormat('markdown');
+                  } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
+                    setTargetFormat('markdown');
+                  } else if (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') {
+                    setTargetFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
+                  }
+                }}
+              />
+              <FormatSelector
+                id="format-target"
+                label="Format destination"
+                value={targetFormat}
+                onChange={(newFormat) => {
+                  setTargetFormat(newFormat);
+                  if (newFormat === sourceFormat) {
+                    if (newFormat === 'asciidoc') setSourceFormat('markdown');
+                    else if (newFormat === 'markdown') setSourceFormat('asciidoc');
+                    else setSourceFormat('asciidoc');
+                  } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
+                    setSourceFormat('asciidoc');
+                  } else if (sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') {
+                    setSourceFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
+                  }
+                }}
+              />
+              {(sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') ||
+              (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') ? (
+                <div className="conversion-warning" role="status">
+                  Seules les conversions AsciiDoc ↔ Markdown sont disponibles pour le moment.
                 </div>
               ) : null}
             </div>
           </div>
-          <div className="sidebar-section">
-            <h3 className="sidebar-title">Autres options</h3>
-            <div className="sidebar-content">
-              {/* 
-                ============================================================
-                SECTION: FILE NAVIGATION
-                ============================================================
-                This section is only visible when source format is
-                AsciiDoc or Markdown (formats that support headings).
-                
-                FEATURES:
-                - Enable/disable navigation
-                - Count of detected sections
-                - Help message when no sections are available
-                
-                ENABLE LOGIC:
-                - When navigation is on AND there is text AND headings
-                  → window opens automatically
-                - When navigation is off → window closes
-              */}
-              {(sourceFormat === 'asciidoc' || sourceFormat === 'markdown') && (
-                <div className="option-section">
-                  <button
-                    type="button"
-                    className="option-section-header"
-                    onClick={() => toggleSection('navigation')}
-                  >
-                    <span>Navigation</span>
-                    <span className="option-section-arrow">
-                      {expandedSections.has('navigation') ? '▼' : '▶'}
-                    </span>
-                  </button>
-                  {expandedSections.has('navigation') && (
-                    <div className="option-section-content">
-                      <div className="option-group">
-                        <label className="option-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={navigationEnabled}
-                            onChange={(e) => {
-                              const enabled = e.target.checked;
-                              setNavigationEnabled(enabled);
-                              
-                              /* 
-                                AUTO-OPEN WINDOW:
-                                If navigation is on AND conditions are met
-                                (text + headings), open the window. Otherwise close it.
-                              */
-                              if (enabled) {
-                                // Determine source text based on format
-                                const text = sourceFormat === 'asciidoc' 
-                                  ? adocInput 
-                                  : (sourceFormat === 'markdown' ? mdOutput : adocInput);
-                                const hasText = text.trim().length > 0;
-                                
-                                // Open window if conditions are met
-                                if (hasText && headings.length > 0) {
-                                  setNavigationWindowOpen(true);
-                                }
-                              } else {
-                                // When disabled: close the window
-                                setNavigationWindowOpen(false);
-                              }
-                            }}
-                            className="option-checkbox"
-                          />
-                          <span>Activer la navigation</span>
-                          {/* 
-                            Section count: number of detected headings
-                            with singular/plural handling
-                          */}
-                          {headings.length > 0 && (
-                            <span className="navigation-count">
-                              {headings.length} {headings.length > 1 ? 'sections' : 'section'}
-                            </span>
-                          )}
-                        </label>
-                      </div>
-                      {/* 
-                        Help message: shown when no headings are detected.
-                        Guides the user to add titles in the document.
-                      */}
-                      {headings.length === 0 && (
-                        <div style={{
-                          fontSize: "0.75rem",
-                          color: "#9ca3af",
-                          fontStyle: "italic",
-                          margin: 0,
-                          padding: "0.75rem",
-                          textAlign: "center",
-                          background: "rgba(255, 255, 255, 0.05)",
-                          borderRadius: "0.5rem"
-                        }}>
-                          Aucune section disponible. Ajoutez des titres dans votre document pour activer la navigation.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* Conversion options */}
-              <div className="conversion-options-container">
-                {/* Content analysis */}
-                <div className="option-section">
-                  <button
-                    type="button"
-                    className="option-section-header"
-                    onClick={() => toggleSection('contentAnalysis')}
-                  >
-                    <span>Analyse du contenu</span>
-                    <span className="option-section-arrow">
-                      {expandedSections.has('contentAnalysis') ? '▼' : '▶'}
-                    </span>
-                  </button>
-                  {expandedSections.has('contentAnalysis') && (
-                    <div className="option-section-content">
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      <div className="option-group">
-                        <label className="option-label">Mode d'analyse</label>
-                        <select
-                          value={conversionOptions.contentAnalysis?.analysisMode || 'heuristic'}
-                          onChange={(e) => updateOption(['contentAnalysis', 'analysisMode'], e.target.value)}
-                          className="option-select"
-                        >
-                          <option value="basic">Basique</option>
-                          <option value="heuristic">Heuristique</option>
-                          <option value="strict">Strict</option>
-                        </select>
-                      </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        <label className="option-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={conversionOptions.contentAnalysis?.headingDetection?.enabled !== false}
-                            onChange={(e) => updateOption(['contentAnalysis', 'headingDetection', 'enabled'], e.target.checked)}
-                            className="option-checkbox"
-                          />
-                          <span>Détection des titres</span>
-                        </label>
-                        <label className="option-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={conversionOptions.contentAnalysis?.listDetection?.enabled !== false}
-                            onChange={(e) => updateOption(['contentAnalysis', 'listDetection', 'enabled'], e.target.checked)}
-                            className="option-checkbox"
-                          />
-                          <span>Détection des listes</span>
-                        </label>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Normalization */}
-                <div className="option-section">
-                  <button
-                    type="button"
-                    className="option-section-header"
-                    onClick={() => toggleSection('normalization')}
-                  >
-                    <span>Normalisation</span>
-                    <span className="option-section-arrow">
-                      {expandedSections.has('normalization') ? '▼' : '▶'}
-                    </span>
-                  </button>
-                  {expandedSections.has('normalization') && (
-                    <div className="option-section-content">
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                        <div className="option-group">
-                          <label className="option-label">Encodage</label>
-                          <select
-                            value={conversionOptions.normalization?.encoding || 'utf-8'}
-                            onChange={(e) => updateOption(['normalization', 'encoding'], e.target.value)}
-                            className="option-select"
-                          >
-                            <option value="utf-8">UTF-8</option>
-                            <option value="latin1">Latin1</option>
-                            <option value="ascii">ASCII</option>
-                          </select>
-                        </div>
-                        <div className="option-group">
-                          <label className="option-label">Unicode</label>
-                          <select
-                            value={conversionOptions.normalization?.advanced?.unicode?.normalization || 'NFC'}
-                            onChange={(e) => updateOption(['normalization', 'advanced', 'unicode', 'normalization'], e.target.value)}
-                            className="option-select"
-                          >
-                            <option value="none">Désactivée</option>
-                            <option value="NFC">NFC</option>
-                            <option value="NFKC">NFKC</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        <label className="option-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={conversionOptions.normalization?.tabs?.convertToSpaces !== false}
-                            onChange={(e) => updateOption(['normalization', 'tabs', 'convertToSpaces'], e.target.checked)}
-                            className="option-checkbox"
-                          />
-                          <span>Convertir les tabulations en espaces</span>
-                        </label>
-                        <label className="option-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={conversionOptions.normalization?.advanced?.unicode?.detectConfusables !== false}
-                            onChange={(e) => updateOption(['normalization', 'advanced', 'unicode', 'detectConfusables'], e.target.checked)}
-                            className="option-checkbox"
-                          />
-                          <span>Détecter les caractères confusables</span>
-                        </label>
-                          <label className="option-checkbox-label">
-                            <input
-                              type="checkbox"
-                              checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeControlChars || false}
-                              onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeControlChars'], e.target.checked)}
-                              className="option-checkbox"
-                            />
-                          <span>Supprimer les caractères de contrôle</span>
-                          </label>
-                          <label className="option-checkbox-label">
-                            <input
-                              type="checkbox"
-                              checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeDirectionalChars || false}
-                              onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeDirectionalChars'], e.target.checked)}
-                              className="option-checkbox"
-                            />
-                          <span>Supprimer les caractères directionnels</span>
-                          </label>
-                          <label className="option-checkbox-label">
-                            <input
-                              type="checkbox"
-                              checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeNonPrintableChars || false}
-                              onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeNonPrintableChars'], e.target.checked)}
-                              className="option-checkbox"
-                            />
-                          <span>Supprimer les caractères non imprimables</span>
-                          </label>
-                          <label className="option-checkbox-label">
-                            <input
-                              type="checkbox"
-                              checked={conversionOptions.normalization?.advanced?.validation?.rejectInvalidSequences !== false}
-                              onChange={(e) => updateOption(['normalization', 'advanced', 'validation', 'rejectInvalidSequences'], e.target.checked)}
-                              className="option-checkbox"
-                            />
-                          <span>Rejeter les séquences invalides</span>
-                          </label>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Document rendering */}
-                <div className="option-section">
-                  <button
-                    type="button"
-                    className="option-section-header"
-                    onClick={() => toggleSection('rendering')}
-                  >
-                    <span>Rendu documentaire</span>
-                    <span className="option-section-arrow">
-                      {expandedSections.has('rendering') ? '▼' : '▶'}
-                    </span>
-                  </button>
-                  {expandedSections.has('rendering') && (
-                    <div className="option-section-content">
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        <label className="option-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={conversionOptions.rendering?.tableOfContents?.enabled || false}
-                            onChange={(e) => updateOption(['rendering', 'tableOfContents', 'enabled'], e.target.checked)}
-                            className="option-checkbox"
-                          />
-                          <span>Table des matières</span>
-                        </label>
-                        <label className="option-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={conversionOptions.rendering?.sectionNumbering?.enabled || false}
-                            onChange={(e) => updateOption(['rendering', 'sectionNumbering', 'enabled'], e.target.checked)}
-                            className="option-checkbox"
-                          />
-                          <span>Numérotation des sections</span>
-                        </label>
-                        <div>
-                        <label className="option-checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={conversionOptions.rendering?.lineWrap?.enabled || false}
-                            onChange={(e) => updateOption(['rendering', 'lineWrap', 'enabled'], e.target.checked)}
-                            className="option-checkbox"
-                          />
-                          <span>Retour à la ligne automatique</span>
-                        </label>
-                        {conversionOptions.rendering?.lineWrap?.enabled && (
-                          <input
-                            type="number"
-                            value={conversionOptions.rendering?.lineWrap?.maxWidth || 80}
-                            onChange={(e) => updateOption(['rendering', 'lineWrap', 'maxWidth'], parseInt(e.target.value) || 80)}
-                            className="option-input"
-                              style={{ marginTop: '0.5rem', width: '100%' }}
-                            min="40"
-                            max="200"
-                            placeholder="Largeur max (caractères)"
-                          />
-                        )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Format-specific options */}
-                <div className="option-section">
-                  <button
-                    type="button"
-                    className="option-section-header"
-                    onClick={() => toggleSection('formatSpecific')}
-                  >
-                    <span>Format options</span>
-                    <span className="option-section-arrow">
-                      {expandedSections.has('formatSpecific') ? '▼' : '▶'}
-                    </span>
-                  </button>
-                  {expandedSections.has('formatSpecific') && (
-                    <div className="option-section-content">
-                      {targetFormat === 'markdown' && (
-                        <div className="option-group">
-                          <label className="option-label">Markdown Flavor</label>
-                          <select
-                            value={
-                              conversionOptions.formatSpecific?.markdown?.parsedown 
-                                ? 'parsedown' 
-                                : (conversionOptions.formatSpecific?.markdown?.flavor || 'commonmark')
-                            }
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              if (value === 'parsedown') {
-                                updateOption(['formatSpecific', 'markdown', 'parsedown'], true);
-                                updateOption(['formatSpecific', 'markdown', 'flavor'], 'commonmark');
-                              } else {
-                                updateOption(['formatSpecific', 'markdown', 'parsedown'], false);
-                                updateOption(['formatSpecific', 'markdown', 'flavor'], value);
-                              }
-                            }}
-                            className="option-select"
-                          >
-                            <option value="commonmark">CommonMark</option>
-                            <option value="gfm">GitHub Flavored</option>
-                            <option value="markdown">Markdown</option>
-                            <option value="parsedown">Parsedown (BookStack)</option>
-                          </select>
-                        </div>
-                      )}
-                      {targetFormat === 'asciidoc' && (
-                        <div className="option-group">
-                          <label className="option-label">Compatibility mode</label>
-                          <select
-                            value={conversionOptions.formatSpecific?.asciidoc?.compatMode || 'asciidoctor'}
-                            onChange={(e) => updateOption(['formatSpecific', 'asciidoc', 'compatMode'], e.target.value)}
-                            className="option-select"
-                          >
-                            <option value="asciidoctor">Asciidoctor</option>
-                            <option value="asciidoc">AsciiDoc</option>
-                          </select>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Metadata */}
-                <div className="option-section">
-                  <button
-                    type="button"
-                    className="option-section-header"
-                    onClick={() => toggleSection('metadata')}
-                  >
-                    <span>Métadonnées</span>
-                    <span className="option-section-arrow">
-                      {expandedSections.has('metadata') ? '▼' : '▶'}
-                    </span>
-                  </button>
-                  {expandedSections.has('metadata') && (
-                    <div className="option-section-content">
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      <div className="option-group">
-                        <label className="option-label">Titre</label>
-                        <input
-                          type="text"
-                          value={conversionOptions.metadata?.title || ''}
-                          onChange={(e) => updateOption(['metadata', 'title'], e.target.value || null)}
-                          className="option-input"
-                          placeholder="Titre du document"
-                        />
-                      </div>
-                      <div className="option-group">
-                        <label className="option-label">Auteur</label>
-                        <input
-                          type="text"
-                          value={(conversionOptions.metadata?.author ?? userSettings.profile.displayName) || ''}
-                          onChange={(e) => updateOption(['metadata', 'author'], e.target.value || null)}
-                          className="option-input"
-                          placeholder="Auteur"
-                        />
-                      </div>
-                      <div className="option-group">
-                        <label className="option-label">Organisation</label>
-                        <input
-                          type="text"
-                          value={(conversionOptions.metadata?.organization ?? userSettings.profile.organization) || ''}
-                          onChange={(e) => updateOption(['metadata', 'organization'], e.target.value || null)}
-                          className="option-input"
-                          placeholder="Organisation"
-                        />
-                      </div>
-                      <div className="option-group">
-                        <label className="option-label">Langue</label>
-                        <select
-                          value={conversionOptions.metadata?.language || userSettings.profile.defaultLanguage || 'fr'}
-                          onChange={(e) => updateOption(['metadata', 'language'], e.target.value)}
-                          className="option-select"
-                        >
-                          <option value="fr">Français</option>
-                          <option value="en">Anglais</option>
-                          <option value="es">Espagnol</option>
-                          <option value="de">Allemand</option>
-                        </select>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+          <OtherOptionsPanel
+            category={otherOptionsCategory}
+            categories={otherOptionsCategories}
+            onCategoryChange={setOtherOptionsCategory}
+            conversionOptions={conversionOptions}
+            updateOption={updateOption}
+            targetFormat={targetFormat}
+            navigationEnabled={navigationEnabled}
+            onNavigationToggle={(enabled) => {
+              setNavigationEnabled(enabled);
+              if (enabled) {
+                const text = sourceFormat === 'asciidoc'
+                  ? adocInput
+                  : (sourceFormat === 'markdown' ? mdOutput : adocInput);
+                if (text.trim().length > 0 && headings.length > 0) {
+                  setNavigationWindowOpen(true);
+                }
+              } else {
+                setNavigationWindowOpen(false);
+              }
+            }}
+            headingsCount={headings.length}
+            defaultAuthor={userSettings.profile.displayName}
+            defaultOrganization={userSettings.profile.organization}
+            defaultLanguage={userSettings.profile.defaultLanguage}
+          />
         </aside>
         {/* 
           ====================================================================
@@ -4443,7 +3137,27 @@ function App() {
           - Center column for the swap button
         */}
         <div className="main-content">
-          <main className="grid">
+          <div className="mobile-pane-tabs" role="tablist" aria-label="Panneaux">
+            <button
+              type="button"
+              role="tab"
+              className={`mobile-pane-tab${mobilePane === 'source' ? ' is-active' : ''}`}
+              aria-selected={mobilePane === 'source'}
+              onClick={() => setMobilePane('source')}
+            >
+              Source
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={`mobile-pane-tab${mobilePane === 'result' ? ' is-active' : ''}`}
+              aria-selected={mobilePane === 'result'}
+              onClick={() => setMobilePane('result')}
+            >
+              Résultat
+            </button>
+          </div>
+          <main className="grid" data-mobile-pane={mobilePane}>
             {/* 
               Source panel: shows content according to sourceFormat
               Built dynamically by sourceCard (useMemo)
@@ -4484,30 +3198,7 @@ function App() {
         </div>
       </div>
 
-      <footer className="footer">
-        <div className="footer-content">
-          <div className="footer-meta">
-            <span>Limite source : {maxSourceSizeMb} Mo</span>
-            <span className="footer-separator">•</span>
-            <span className="footer-runbook-hint" data-tooltip="doc/guides/operations/runbook.md">
-              Runbook opérations (dépôt)
-            </span>
-          </div>
-          <div className="footer-author">
-            <span className="footer-author-text">Made by TBE</span>
-          </div>
-          <div className="footer-copyright">
-            <span className="footer-brand">© Ascend</span>
-            <span className="footer-separator">-</span>
-            <span className="footer-version">v{packageJson.version}</span>
-          </div>
-          <div className="footer-license-info">
-            <span className="footer-license">MIT License</span>
-            <span className="footer-separator">•</span>
-            <span className="footer-note">Future versions may use a different licensing model</span>
-          </div>
-        </div>
-      </footer>
+      <AppFooter version={packageJson.version} />
 
       {/* 
         ========================================================================
@@ -4560,326 +3251,28 @@ function App() {
         </div>
       )}
 
-      {/* Navigation window */}
-      {navigationWindowOpen && !navigationWindowMinimized && headings.length > 0 && (() => {
-        /**
-         * ========================================================================
-         * ALGORITHM: BUILD HEADING HIERARCHY
-         * ========================================================================
-         * 
-         * Transforms a flat list of headings into a tree structure for display
-         * in the navigation window.
-         * 
-         * ALGORITHM:
-         * ----------
-         * Uses a stack to build the hierarchy:
-         * 1. For each heading, pop from the stack all headings at the same or
-         *    deeper level (those that cannot be parents)
-         * 2. If stack is empty → root-level heading
-         * 3. Otherwise → heading is child of the last stack element
-         * 4. Push the heading onto the stack so it can be parent of following ones
-         * 
-         * EXAMPLE:
-         * --------
-         * Input: [
-         *   { level: 1, title: "Chapter 1" },
-         *   { level: 2, title: "Section 1.1" },
-         *   { level: 2, title: "Section 1.2" },
-         *   { level: 3, title: "Subsection 1.2.1" },
-         *   { level: 1, title: "Chapter 2" }
-         * ]
-         * 
-         * Output: [
-         *   {
-         *     heading: { level: 1, title: "Chapter 1" },
-         *     children: [
-         *       { heading: { level: 2, title: "Section 1.1" }, children: [] },
-         *       {
-         *         heading: { level: 2, title: "Section 1.2" },
-         *         children: [
-         *           { heading: { level: 3, title: "Subsection 1.2.1" }, children: [] }
-         *         ]
-         *       }
-         *     ]
-         *   },
-         *   { heading: { level: 1, title: "Chapter 2" }, children: [] }
-         * ]
-         * 
-         * COMPLEXITY:
-         * -----------
-         * - Time: O(n) where n = number of headings
-         * - Space: O(n) for the stack and result structure
-         * 
-         * @param headings - Flat list of headings with their level
-         * @returns Hierarchical structure with nested children
-         * 
-         * ========================================================================
-         */
-        const buildHierarchy = (headings: Array<{ lineIndex: number; level: number; title: string }>) => {
-          const result: Array<{
-            heading: { lineIndex: number; level: number; title: string };
-            children: Array<any>;
-          }> = [];
-          const stack: Array<any> = [];
-
-          headings.forEach((heading) => {
-            const item = { heading, children: [] };
-            
-            // Remove stack elements that are at same level or deeper
-            while (stack.length > 0 && stack[stack.length - 1].heading.level >= heading.level) {
-              stack.pop();
-            }
-
-            if (stack.length === 0) {
-              // Root level element
-              result.push(item);
-            } else {
-              // Add as child of last stack element
-              stack[stack.length - 1].children.push(item);
-            }
-
-            stack.push(item);
-          });
-
-          return result;
-        };
-
-        const hierarchy = buildHierarchy(headings);
-
-        /**
-         * ========================================================================
-         * RECURSIVE: RENDER A HEADING AND ITS CHILDREN
-         * ========================================================================
-         * 
-         * Recursively renders a heading and all its children in a hierarchical
-         * layout for the navigation.
-         * 
-         * LOGIC:
-         * ------
-         * 1. Renders the current heading with its title and line number
-         * 2. If the heading has children, renders them recursively in a <ul>
-         * 3. Depth is used for visual indentation
-         * 
-         * STYLES:
-         * -------
-         * CSS classes are generated dynamically by level:
-         * - file-nav-item: base navigation item
-         * - file-nav-level-{level}: level-specific style (1, 2, 3, etc.)
-         * - file-nav-link: clickable link to the heading
-         * - file-nav-children: container for nested children
-         * 
-         * INTERACTION:
-         * ------------
-         * On heading click, scrollToHeading() is called to:
-         * - Scroll the source textarea to the heading line
-         * - Highlight the line
-         * - Focus the textarea
-         * 
-         * @param item - Object containing the heading and its children
-         * @param depth - Current depth in the tree (0 = root)
-         * @returns <li> element with the heading and nested children
-         * 
-         * ========================================================================
-         */
-        const renderHeading = (item: {
-          heading: { lineIndex: number; level: number; title: string };
-          children: Array<any>;
-        }, depth: number = 0) => {
-          const { heading, children } = item;
-          const hasChildren = children.length > 0;
-
-          return (
-            <li
-              key={`${heading.lineIndex}-${heading.title}`}
-              className={`file-nav-item file-nav-level-${heading.level}`}
-              data-depth={depth}
-            >
-              <div
-                className="file-nav-link"
-                onClick={() => scrollToHeading(heading.lineIndex)}
-                data-tooltip={`Line ${heading.lineIndex + 1}: ${heading.title}`}
-              >
-                <span className="file-nav-indicator"></span>
-                <span className="file-nav-text">{heading.title}</span>
-                <span className="file-nav-line">{heading.lineIndex + 1}</span>
-    </div>
-              {hasChildren && (
-                <ul className="file-nav-children">
-                  {children.map((child) => renderHeading(child, depth + 1))}
-                </ul>
-              )}
-            </li>
-          );
-        };
-
-        /**
-         * ========================================================================
-         * RENDER: FLOATING NAVIGATION WINDOW
-         * ========================================================================
-         * 
-         * This floating window lets the user navigate the document structure
-         * (headings, sections). It is:
-         * - DRAGGABLE: moved by drag-and-drop on the header
-         * - RESIZABLE: resized via the handle at bottom-right
-         * - MINIMIZABLE: can be reduced and shown in the taskbar
-         * - MAXIMIZABLE: can take up 95% of the screen
-         * 
-         * POSITIONING:
-         * ------------
-         * - Maximized: centered (50% left/top with translate -50%)
-         * - Normal: custom position (navigationWindowPosition)
-         * - Minimized: automatic position (auto)
-         * 
-         * CSS TRANSFORMS:
-         * ---------------
-         * - Maximized: translate(-50%, -50%) to center
-         * - During drag: translate3d(offsetX, offsetY, 0) for smooth movement
-         * - Normal: translate3d(0, 0, 0) (no transform)
-         * 
-         * VISUAL STATES:
-         * --------------
-         * CSS classes applied by state:
-         * - .minimized: reduced window
-         * - .maximized: enlarged window
-         * - .dragging: during move (improves performance)
-         * - .resizing: during resize (optimizes rendering)
-         * 
-         * CONTENT:
-         * --------
-         * - Header: title, section count, control buttons
-         * - Body: hierarchical list of headings (rendered recursively)
-         * - Resize handle: visible only when not minimized/maximized
-         * 
-         * ========================================================================
-         */
-        return (
-          <div 
-            ref={navigationWindowRef}
-            // Dynamic CSS class application according to window state
-            // - minimized: reduced window (hidden but visible in taskbar)
-            // - maximized: full screen window (95vw x 95vh, centered)
-            // - dragging: state during movement (improves visual performance)
-            // - resizing: state during resizing (optimizes rendering)
-            className={`floating-window navigation-window ${navigationWindowMinimized ? 'minimized' : ''} ${navigationWindowMaximized ? 'maximized' : ''} ${isDragging ? 'dragging' : ''} ${isResizing ? 'resizing' : ''}`}
-            style={{
-              // Position: centered if maximized, otherwise custom position
-              left: navigationWindowMaximized ? '50%' : `${navigationWindowPosition.x}px`,
-              top: navigationWindowMaximized ? '50%' : `${navigationWindowPosition.y}px`,
-              // Dimensions: 95vw/95vh if maximized, otherwise custom size or auto if minimized
-              width: navigationWindowMaximized ? '95vw' : `${navigationWindowSize.width}px`,
-              height: navigationWindowMaximized ? '95vh' : (navigationWindowMinimized ? 'auto' : `${navigationWindowSize.height}px`),
-              // Transformation: centering if maximized, movement during drag, otherwise none
-              transform: navigationWindowMaximized 
-                ? 'translate(-50%, -50%)' 
-                : isDragging 
-                  ? `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`
-                  : 'translate3d(0, 0, 0)'
-            }}
-          >
-            {/* 
-              ====================================================================
-              WINDOW HEADER: DRAG AREA AND CONTROLS
-              ====================================================================
-              The header acts as the drag area: click and drag anywhere on the
-              header to move the window. Also holds control buttons (minimize, maximize, close).
-            */}
-            <div 
-              className="floating-window-header floating-window-header--draggable navigation-window-header"
-              onMouseDown={handleDragStart}
-            >
-              {/* 
-                Title and section count
-                The count shows total detected headings with singular/plural handling.
-              */}
-              <div className="floating-window-title-wrap navigation-window-title">
-                <span className="floating-window-title">Navigation</span>
-                <span className="floating-window-count navigation-window-count">
-                  {headings.length} {headings.length > 1 ? 'sections' : 'section'}
-                </span>
-              </div>
-              
-              {/* 
-                ================================================================
-                WINDOW CONTROL BUTTONS
-                ================================================================
-                Three buttons to control the window:
-                1. Minimize (−): reduce window and show in taskbar
-                2. Maximize/Restore (□/⧉): toggle full screen and normal size
-                3. Close (×): close window and disable navigation
-              */}
-              <div className="floating-window-controls navigation-window-controls">
-                <button
-                  type="button"
-                  className="floating-window-btn floating-window-btn--minimize navigation-window-btn minimize-btn"
-                  onClick={() => {
-                    setNavigationWindowMinimized(true);
-                    setNavigationWindowOpen(false);
-                  }}
-                  aria-label="Réduire"
-                >
-                  −
-                </button>
-                <button
-                  type="button"
-                  className="floating-window-btn floating-window-btn--maximize navigation-window-btn maximize-btn"
-                  onClick={() => setNavigationWindowMaximized(!navigationWindowMaximized)}
-                  aria-label={navigationWindowMaximized ? "Restaurer" : "Plein écran"}
-                >
-                  {navigationWindowMaximized ? '⧉' : '□'}
-                </button>
-                <button
-                  type="button"
-                  className="floating-window-btn floating-window-btn--close navigation-window-btn close-btn"
-                  onClick={() => {
-                    setNavigationWindowOpen(false);
-                    setNavigationEnabled(false);
-                  }}
-                  aria-label="Fermer"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-            
-            {/* 
-              ====================================================================
-              WINDOW CONTENT: HIERARCHICAL LIST OF HEADINGS
-              ====================================================================
-              Content is shown only when the window is not minimized.
-              Contains the document heading hierarchy, rendered recursively by renderHeading().
-            */}
-            {!navigationWindowMinimized && (
-              <div className="navigation-window-content">
-                <div className="file-navigation-container">
-                  {/* 
-                    Hierarchical list: each item can have children.
-                    Structure is built by buildHierarchy() and rendered
-                    recursively by renderHeading().
-                  */}
-                  <ul className="file-navigation-list">
-                    {hierarchy.map((item) => renderHeading(item))}
-                  </ul>
-                </div>
-              </div>
-            )}
-            
-            {/* 
-              ====================================================================
-              RESIZE HANDLE
-              ====================================================================
-              Visible only when the window is neither minimized nor maximized.
-              Resize the window by dragging from the bottom-right corner.
-              Triggers handleResizeStart() on mousedown.
-            */}
-            {!navigationWindowMinimized && !navigationWindowMaximized && (
-              <div 
-                className="floating-window-resize-handle navigation-window-resize-handle"
-                onMouseDown={handleResizeStart}
-              />
-            )}
-          </div>
-        );
-      })()}
+      <NavigationWindow
+        open={navigationWindowOpen}
+        minimized={navigationWindowMinimized}
+        maximized={navigationWindowMaximized}
+        headings={headings}
+        panelRef={navigationWindowRef}
+        panelStyle={navigationPanelStyle}
+        isDragging={isDragging}
+        isResizing={isResizing}
+        onDragStart={handleDragStart}
+        onResizeStart={handleResizeStart}
+        onMinimize={() => {
+          setNavigationWindowMinimized(true);
+          setNavigationWindowOpen(false);
+        }}
+        onToggleMaximize={() => setNavigationWindowMaximized(!navigationWindowMaximized)}
+        onClose={() => {
+          setNavigationWindowOpen(false);
+          setNavigationEnabled(false);
+        }}
+        onNavigate={scrollToHeading}
+      />
 
       <Modal
         isOpen={showEditModal}
@@ -5044,6 +3437,8 @@ function App() {
           </>
         }
       />
+
+      <Snackbar message={snackbarMessage} onDismiss={dismissSnackbar} />
     </div>
   );
 }

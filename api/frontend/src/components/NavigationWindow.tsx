@@ -1,100 +1,135 @@
 /**
- * ============================================================================
- * COMPONENT: NavigationWindow - Fenêtre de navigation flottante
- * ============================================================================
+ * Fenêtre flottante de navigation par titres.
  */
 
 import React from 'react';
-import { Heading, NavigationWindowPosition, NavigationWindowSize } from '../types';
+import {
+  buildHeadingHierarchy,
+  type FlatHeading,
+  type HeadingTreeNode,
+} from '../utils/headingHierarchy';
 
 interface NavigationWindowProps {
-  isOpen: boolean;
-  isMinimized: boolean;
-  isMaximized: boolean;
-  position: NavigationWindowPosition;
-  size: NavigationWindowSize;
-  headings: Heading[];
-  onMinimize: () => void;
-  onMaximize: () => void;
-  onClose: () => void;
-  onNavigate: (lineIndex: number) => void;
+  open: boolean;
+  minimized: boolean;
+  maximized: boolean;
+  headings: FlatHeading[];
+  panelRef: React.RefObject<HTMLDivElement | null>;
+  panelStyle: React.CSSProperties;
+  isDragging: boolean;
+  isResizing: boolean;
   onDragStart: (e: React.MouseEvent) => void;
   onResizeStart: (e: React.MouseEvent) => void;
-  windowRef: React.RefObject<HTMLDivElement>;
-  dragOffset?: { x: number; y: number };
+  onMinimize: () => void;
+  onToggleMaximize: () => void;
+  onClose: () => void;
+  onNavigate: (lineIndex: number) => void;
+}
+
+function renderHeading(
+  item: HeadingTreeNode,
+  onNavigate: (lineIndex: number) => void,
+  depth = 0
+): React.ReactNode {
+  const { heading, children } = item;
+  return (
+    <li
+      key={`${heading.lineIndex}-${heading.title}`}
+      className={`file-nav-item file-nav-level-${heading.level}`}
+      style={{ marginLeft: depth > 0 ? undefined : undefined }}
+    >
+      <button
+        type="button"
+        className="file-nav-link"
+        onClick={() => onNavigate(heading.lineIndex)}
+      >
+        <span className="file-nav-title">{heading.title}</span>
+        <span className="file-nav-line">L{heading.lineIndex + 1}</span>
+      </button>
+      {children.length > 0 && (
+        <ul className="file-nav-children">
+          {children.map((child) => renderHeading(child, onNavigate, depth + 1))}
+        </ul>
+      )}
+    </li>
+  );
 }
 
 export const NavigationWindow: React.FC<NavigationWindowProps> = ({
-  isOpen,
-  isMinimized,
-  isMaximized,
-  position,
-  size,
+  open,
+  minimized,
+  maximized,
   headings,
-  onMinimize,
-  onMaximize,
-  onClose,
-  onNavigate,
+  panelRef,
+  panelStyle,
+  isDragging,
+  isResizing,
   onDragStart,
   onResizeStart,
-  windowRef,
-  dragOffset = { x: 0, y: 0 }
+  onMinimize,
+  onToggleMaximize,
+  onClose,
+  onNavigate,
 }) => {
-  if (!isOpen) return null;
+  if (!open || minimized || headings.length === 0) return null;
 
-  const style: React.CSSProperties = {
-    position: 'fixed',
-    left: `${position.x + dragOffset.x}px`,
-    top: `${position.y + dragOffset.y}px`,
-    width: isMaximized ? '100%' : `${size.width}px`,
-    height: isMinimized ? '60px' : (isMaximized ? '100%' : `${size.height}px`),
-    zIndex: 1000
-  };
+  const hierarchy = buildHeadingHierarchy(headings);
 
   return (
     <div
-      ref={windowRef}
-      className="navigation-window"
-      style={style}
+      ref={panelRef as React.RefObject<HTMLDivElement>}
+      className={`floating-window navigation-window ${maximized ? 'maximized' : ''} ${isDragging ? 'dragging' : ''} ${isResizing ? 'resizing' : ''}`}
+      style={{ ...panelStyle, zIndex: 10000 }}
     >
-      <div className="navigation-window-header" onMouseDown={onDragStart}>
-        <span className="navigation-window-title">Navigation</span>
-        <div className="navigation-window-controls">
-          <button onClick={onMinimize} className="window-control-button">
-            {isMinimized ? '□' : '_'}
+      <div
+        className="floating-window-header floating-window-header--draggable navigation-window-header"
+        onMouseDown={onDragStart}
+      >
+        <div className="floating-window-title-wrap navigation-window-title">
+          <span className="floating-window-title">Navigation</span>
+          <span className="floating-window-count navigation-window-count">
+            {headings.length} {headings.length > 1 ? 'sections' : 'section'}
+          </span>
+        </div>
+        <div className="floating-window-controls navigation-window-controls">
+          <button
+            type="button"
+            className="floating-window-btn floating-window-btn--minimize navigation-window-btn minimize-btn"
+            onClick={onMinimize}
+            aria-label="Réduire"
+          >
+            −
           </button>
-          <button onClick={onMaximize} className="window-control-button">
-            {isMaximized ? '❐' : '□'}
+          <button
+            type="button"
+            className="floating-window-btn floating-window-btn--maximize navigation-window-btn maximize-btn"
+            onClick={onToggleMaximize}
+            aria-label={maximized ? 'Restaurer' : 'Plein écran'}
+          >
+            {maximized ? '⧉' : '□'}
           </button>
-          <button onClick={onClose} className="window-control-button close">
+          <button
+            type="button"
+            className="floating-window-btn floating-window-btn--close navigation-window-btn close-btn"
+            onClick={onClose}
+            aria-label="Fermer"
+          >
             ×
           </button>
         </div>
       </div>
-      {!isMinimized && (
-        <div className="navigation-window-content">
-          {headings.length === 0 ? (
-            <div className="navigation-empty">
-              Aucune section disponible
-            </div>
-          ) : (
-            <ul className="navigation-list">
-              {headings.map((heading, index) => (
-                <li
-                  key={index}
-                  className={`navigation-item level-${heading.level}`}
-                  onClick={() => onNavigate(heading.lineIndex)}
-                >
-                  {heading.title}
-                </li>
-              ))}
-            </ul>
-          )}
+
+      <div className="navigation-window-content">
+        <div className="file-navigation-container">
+          <ul className="file-navigation-list">
+            {hierarchy.map((item) => renderHeading(item, onNavigate))}
+          </ul>
         </div>
-      )}
-      {!isMinimized && !isMaximized && (
+      </div>
+
+      {!maximized && (
         <div
-          className="navigation-window-resize-handle"
+          className="floating-window-resize-handle navigation-window-resize-handle"
           onMouseDown={onResizeStart}
         />
       )}
