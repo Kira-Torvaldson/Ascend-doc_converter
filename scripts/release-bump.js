@@ -31,8 +31,7 @@ const FILES = {
   frontendLock: path.join(ROOT, 'api/frontend/package-lock.json'),
   backendLock: path.join(ROOT, 'api/backend/package-lock.json'),
   readme: path.join(ROOT, 'README.md'),
-  changelog: path.join(ROOT, 'changelog.md'),
-  appTsx: path.join(ROOT, 'api/frontend/src/App.tsx')
+  changelog: path.join(ROOT, 'changelog.md')
 }
 
 function fail(message) {
@@ -144,15 +143,7 @@ function buildPlan(oldVersion, newVersion) {
     return { content: out, count: 1 }
   }))
 
-  // 7: App.tsx — label "Nouveautes v..."
-  plan.push(planChange('api/frontend/src/App.tsx', FILES.appTsx, (content) => {
-    let count = 0
-    const out = content.replace(new RegExp(`Nouveautés v${escapeRegExp(oldVersion)}`, 'g'), () => {
-      count += 1
-      return `Nouveautés v${newVersion}`
-    })
-    return { content: out, count }
-  }))
+  // App.tsx / SettingsPanel affichent package.json.version — pas de label hardcode a bumper.
 
   return plan
 }

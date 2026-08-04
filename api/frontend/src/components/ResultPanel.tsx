@@ -7,6 +7,7 @@ import { ConversionLoadingBanner } from './ConversionLoadingBanner';
 import { EmptyEditorState } from './EmptyEditorState';
 import { PanelActionsMenu, type PanelActionItem } from './PanelActionsMenu';
 import { TextStats } from './TextStats';
+import { EditorWithLines } from './EditorWithLines';
 
 interface ResultPanelProps {
   title: string;
@@ -20,6 +21,9 @@ interface ResultPanelProps {
   actions: PanelActionItem[];
   onClear: () => void;
   onMarkModified: () => void;
+  viewMode?: 'text' | 'preview';
+  onViewModeChange?: (mode: 'text' | 'preview') => void;
+  previewHtml?: string;
 }
 
 export const ResultPanel: React.FC<ResultPanelProps> = ({
@@ -34,9 +38,13 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   actions,
   onClear,
   onMarkModified,
+  viewMode = 'text',
+  onViewModeChange,
+  previewHtml = '',
 }) => {
   const isLocked = !!value && !isEditingResult;
   const isEditing = !!value && isEditingResult;
+  const showPreview = viewMode === 'preview' && !isEditingResult;
 
   return (
     <section
@@ -57,6 +65,24 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
         <div className="panel-header-actions">
           {value ? (
             <>
+              {onViewModeChange && !isEditingResult && (
+                <div className="result-view-toggle" role="group" aria-label="Mode d'affichage">
+                  <button
+                    type="button"
+                    className={`result-view-btn${viewMode === 'text' ? ' is-active' : ''}`}
+                    onClick={() => onViewModeChange('text')}
+                  >
+                    Texte
+                  </button>
+                  <button
+                    type="button"
+                    className={`result-view-btn${viewMode === 'preview' ? ' is-active' : ''}`}
+                    onClick={() => onViewModeChange('preview')}
+                  >
+                    Aperçu
+                  </button>
+                </div>
+              )}
               {isLocked && (
                 <span
                   className="result-zone-state result-zone-locked"
@@ -119,26 +145,33 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
             }
           />
         )}
-        <textarea
-          className="result-textarea"
-          value={value}
-          onChange={(e) => {
-            onChange(e.target.value);
-            if (isEditingResult) onMarkModified();
-          }}
-          readOnly={!isEditingResult}
-          placeholder={
-            loading
-              ? 'Conversion en cours...'
-              : !value.trim()
-                ? ''
-                : `Résultat ${title}...`
-          }
-          style={{
-            opacity: loading ? 0.6 : 1,
-            transition: 'opacity 0.2s',
-          }}
-        />
+        {showPreview ? (
+          <div
+            className="result-preview"
+            dangerouslySetInnerHTML={{ __html: previewHtml || '<p><em>Aperçu vide</em></p>' }}
+          />
+        ) : (
+          <EditorWithLines
+            className="result-textarea"
+            value={value}
+            onChange={(e) => {
+              onChange(e.target.value);
+              if (isEditingResult) onMarkModified();
+            }}
+            readOnly={!isEditingResult}
+            placeholder={
+              loading
+                ? 'Conversion en cours...'
+                : !value.trim()
+                  ? ''
+                  : `Résultat ${title}...`
+            }
+            style={{
+              opacity: loading ? 0.6 : 1,
+              transition: 'opacity 0.2s',
+            }}
+          />
+        )}
       </div>
     </section>
   );

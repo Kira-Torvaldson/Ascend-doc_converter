@@ -30,6 +30,7 @@
     "check:docker:backend": "node scripts/check-docker-backend.js",
     "check:docker:frontend": "node scripts/check-docker-frontend.js",
     "check:docker": "npm run check:docker:backend && npm run check:docker:frontend",
+    "check:docker:compose-smoke": "node scripts/check-docker-compose-smoke.js",
     "generate:golden": "node scripts/generate-golden-corpus.js",
     "build": "npm test && npm run lint",
     "format": "node npm/format.js lib,test,npm",

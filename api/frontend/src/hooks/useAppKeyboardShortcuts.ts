@@ -9,7 +9,9 @@ export interface AppKeyboardShortcutsHandlers {
   onExport: () => void;
   onClearSource: () => void;
   onOpenShortcutsHelp: () => void;
+  onOpenSettings?: () => void;
   onToggleHistory: () => void;
+  onOpenFindReplace?: () => void;
   isEditingResult: boolean;
   onOpenSaveModal: () => void;
   loading: boolean;
@@ -27,7 +29,9 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
     onExport,
     onClearSource,
     onOpenShortcutsHelp,
+    onOpenSettings,
     onToggleHistory,
+    onOpenFindReplace,
     isEditingResult,
     onOpenSaveModal,
     loading,
@@ -50,6 +54,11 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
           if (!loading) onConvert();
           return;
         }
+        if (mod && (e.key === 'f' || e.key === 'F')) {
+          e.preventDefault();
+          onOpenFindReplace?.();
+          return;
+        }
         if (mod && e.key === '/') {
           e.preventDefault();
           onOpenShortcutsHelp();
@@ -58,6 +67,11 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
         if (mod && (e.key === 'h' || e.key === 'H')) {
           e.preventDefault();
           onToggleHistory();
+          return;
+        }
+        if (mod && e.key === ',') {
+          e.preventDefault();
+          onOpenSettings?.();
           return;
         }
         return;
@@ -86,9 +100,18 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
           e.preventDefault();
           onToggleHistory();
           break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          onOpenFindReplace?.();
+          break;
         case '/':
           e.preventDefault();
           onOpenShortcutsHelp();
+          break;
+        case ',':
+          e.preventDefault();
+          onOpenSettings?.();
           break;
         default:
           break;
@@ -102,7 +125,9 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
     onExport,
     onClearSource,
     onOpenShortcutsHelp,
+    onOpenSettings,
     onToggleHistory,
+    onOpenFindReplace,
     isEditingResult,
     onOpenSaveModal,
     loading,

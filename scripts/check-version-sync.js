@@ -17,7 +17,9 @@
  *   - api/backend/package-lock.json    (champ "version" racine)
  *   - README.md                        (badge version-X-orange)
  *   - changelog.md                     (premiere entree ### X)
- *   - api/frontend/src/App.tsx         (label "Nouveautes vX")
+ *
+ * Note: la UI affiche la version via api/frontend/package.json (import runtime),
+ * plus de label hardcode "Nouveautes vX" dans App.tsx.
  */
 
 const fs = require('fs')
@@ -53,8 +55,7 @@ function main() {
     { label: 'frontend package-lock.json', version: pkgVersion('api/frontend/package-lock.json') },
     { label: 'backend package-lock.json', version: pkgVersion('api/backend/package-lock.json') },
     { label: 'README.md (badge)', version: firstMatch('README.md', /version-([0-9.]+)-orange/) },
-    { label: 'changelog.md (1ere entree)', version: firstMatch('changelog.md', /###\s+([0-9.]+)\s+\(/) },
-    { label: 'App.tsx (label)', version: firstMatch('api/frontend/src/App.tsx', /Nouveautés v([0-9.]+)/) }
+    { label: 'changelog.md (1ere entree)', version: firstMatch('changelog.md', /###\s+([0-9.]+)\s+\(/) }
   ]
 
   console.log('[INFO] Versions detectees:')
