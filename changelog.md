@@ -13,6 +13,19 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.8.3 (2026-08-04)
+
+#### Added
+- Settings rail navigation (Compte / Interface / Données); interface presets (Clair / Sombre / Minimal); editor font family.
+- Settings export/import bundle with custom page background; default conversion profile applied only on empty session.
+- Conversion profiles section, session draft, find/replace, diff panel, line numbers, and related editor utilities.
+- `Ctrl+,` opens Settings; advanced UI options nested under Settings → Interface.
+
+#### Changed
+- Header/navbar sober chrome; Convert CTA removed from header and reinforced in Source panel.
+- Sidebar and footer visual alignment with header/settings (calmer accents, consistent tokens).
+- Settings multi-section accordion replaced by single active rail section; version sync check no longer requires hard-coded App.tsx label.
+
 ### 0.0.1.8.2 (2026-08-04)
 
 #### Added

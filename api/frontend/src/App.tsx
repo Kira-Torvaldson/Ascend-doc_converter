@@ -66,18 +66,34 @@ import {
   FormatSelector,
   SidebarListbox,
   Snackbar,
-  ShortcutsHelpModal,
   AppFooter,
   OtherOptionsPanel,
   SourcePanel,
   ResultPanel,
   AppHeader,
+  SettingsPanel,
   NavigationWindow,
   ConversionWarningsBanner,
+  FindReplaceBar,
+  DiffPanel,
 } from "./components";
 import type { PanelActionItem } from "./components";
 import { removeExperimentalTag } from "./utils/asciidocHelpers";
 import { extractConversionWarnings } from "./utils/conversionWarnings";
+import {
+  inferSourceFormatFromFile,
+  isAcceptedSourceFile,
+  readFileAsUtf8,
+} from "./utils/sourceFile";
+import { loadSessionDraft, persistSessionDraft, clearSessionDraft } from "./utils/sessionDraft";
+import {
+  CONVERSION_PROFILES,
+  MAX_ACTIVE_PROFILES,
+  rebuildOptionsFromProfiles,
+  sanitizeActiveProfileIds,
+} from "./utils/conversionProfiles";
+import { renderPreviewHtml } from "./utils/renderPreview";
+import { createZipBlob } from "./utils/simpleZip";
 import packageJson from "../package.json";
 import { fetchConversionLimits } from "./converters/api";
 import { formatConversionErrorForUi, getHintForCode } from "./converters/error-code-messages";
@@ -87,11 +103,14 @@ import {
   type SettingsValidationErrors,
   type BackgroundMode,
   DEFAULT_USER_SETTINGS,
+  USER_SETTINGS_KEY,
   validateUserPrefs,
   loadUserSettings,
   cloneUserSettings,
   areUserSettingsEqual,
   persistUserSettings,
+  buildUserSettingsExport,
+  parseImportedUserSettings,
 } from "./settings/userSettings";
 import {
   applyPageBackgroundToDocument,
@@ -104,6 +123,30 @@ import { useFloatingWindow, useAppKeyboardShortcuts } from "./hooks";
 
 const DEFAULT_MAX_SOURCE_SIZE_MB = 5;
 const SIDEBAR_COLLAPSED_KEY = 'ascend_sidebar_collapsed';
+const SETTINGS_OPEN_SECTIONS_KEY = 'ascend_settings_open_sections';
+const SETTINGS_ACTIVE_SECTION_KEY = 'ascend_settings_active_section';
+const SETTINGS_SECTION_IDS = [
+  'settingsAccount',
+  'settingsInterface',
+  'settingsData',
+] as const;
+const DEFAULT_SETTINGS_SECTION = 'settingsAccount';
+
+const VALID_FORMAT_TYPES: FormatType[] = [
+  'asciidoc', 'markdown', 'html', 'pdf', 'yaml', 'json', 'txt',
+];
+
+function pickFormatType(value: string | undefined, fallback: FormatType): FormatType {
+  if (value && (VALID_FORMAT_TYPES as string[]).includes(value)) return value as FormatType;
+  return fallback;
+}
+
+function normalizeSettingsSectionId(id: string): string | null {
+  if (id === 'settingsProfil' || id === 'settingsConversion') return 'settingsAccount';
+  if (id === 'settingsGeneral') return null; // section retirée (P0)
+  if ((SETTINGS_SECTION_IDS as readonly string[]).includes(id)) return id;
+  return null;
+}
 
 function loadSidebarCollapsed(): boolean {
   try {
@@ -159,11 +202,13 @@ function App() {
   // These states store the content displayed in source and destination panels
   // IMPORTANT: Source content can be in adocInput OR mdOutput depending on format
   
+  const [sessionBootstrap] = useState(() => loadSessionDraft());
+
   /** Source panel content (AsciiDoc or other format according to sourceFormat) */
-  const [adocInput, setAdocInput] = useState<string>("");
+  const [adocInput, setAdocInput] = useState<string>(() => sessionBootstrap?.adocInput ?? "");
   
   /** Destination panel content (conversion result) */
-  const [mdOutput, setMdOutput] = useState<string>("");
+  const [mdOutput, setMdOutput] = useState<string>(() => sessionBootstrap?.mdOutput ?? "");
 
   // ==========================================================================
   // STATES: CONVERSION AND STATUS
@@ -200,7 +245,9 @@ function App() {
   // ==========================================================================
   
   /** Currently loaded file name (for display) */
-  const [currentFileName, setCurrentFileName] = useState<string | null>(null);
+  const [currentFileName, setCurrentFileName] = useState<string | null>(
+    () => sessionBootstrap?.currentFileName ?? null
+  );
   
   /** List of individually imported files */
   const [importedFiles, setImportedFiles] = useState<File[]>([]);
@@ -242,11 +289,20 @@ function App() {
   /** Discard dirty settings without applying */
   const [showDiscardSettingsModal, setShowDiscardSettingsModal] = useState<boolean>(false);
 
+  /** Confirm reset of settings draft to defaults */
+  const [showResetSettingsModal, setShowResetSettingsModal] = useState<boolean>(false);
+
+  /** Confirm before starting a conversion (user preference) */
+  const [showConfirmConvertModal, setShowConfirmConvertModal] = useState<boolean>(false);
+
+  /** Confirm wipe of local browser data */
+  const [showClearLocalDataModal, setShowClearLocalDataModal] = useState<boolean>(false);
+
   /** Clear entire conversion history */
   const [showClearHistoryModal, setShowClearHistoryModal] = useState<boolean>(false);
 
   /** Shows help modal for keyboard shortcuts */
-  const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
   /** Shows history panel */
   const [showHistoryPanel, setShowHistoryPanel] = useState<boolean>(false);
@@ -323,10 +379,19 @@ function App() {
   const [visualMode, setVisualMode] = useState<'adoc-to-md' | 'md-to-adoc'>('adoc-to-md');
   
   /** Current source format (determines which content to display in source panel) */
-  const [sourceFormat, setSourceFormat] = useState<FormatType>('asciidoc');
+  const [sourceFormat, setSourceFormat] = useState<FormatType>(() => {
+    if (sessionBootstrap?.sourceFormat) return sessionBootstrap.sourceFormat;
+    return pickFormatType(loadUserSettings().conversion.defaultSourceFormat, 'asciidoc');
+  });
   
   /** Current destination format (determines which format to produce) */
-  const [targetFormat, setTargetFormat] = useState<FormatType>('markdown');
+  const [targetFormat, setTargetFormat] = useState<FormatType>(() => {
+    if (sessionBootstrap?.targetFormat) return sessionBootstrap.targetFormat;
+    const settings = loadUserSettings();
+    const src = pickFormatType(settings.conversion.defaultSourceFormat, 'asciidoc');
+    const out = pickFormatType(settings.conversion.defaultOutputFormat, 'markdown');
+    return out !== src ? out : 'markdown';
+  });
   
   // ==========================================================================
   // STATES: FLOATING NAVIGATION WINDOW
@@ -366,7 +431,15 @@ function App() {
 
   /** Indicates if settings panel is open */
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(loadSidebarCollapsed);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      if (raw === '1' || raw === '0') return raw === '1';
+    } catch {
+      /* ignore */
+    }
+    return loadUserSettings().ui.sidebarCollapsedByDefault || loadSidebarCollapsed();
+  });
 
   const toggleSidebarCollapsed = useCallback(() => {
     setSidebarCollapsed((prev) => {
@@ -380,16 +453,16 @@ function App() {
     });
   }, []);
 
-  const SETTINGS_MIN_W = 320;
-  const SETTINGS_MIN_H = 200;
-  const SETTINGS_DEFAULT_W = 480;
-  const SETTINGS_DEFAULT_H = 420;
+  const SETTINGS_MIN_W = 480;
+  const SETTINGS_MIN_H = 360;
+  const SETTINGS_DEFAULT_W = 720;
+  const SETTINGS_DEFAULT_H = 620;
   const settingsWin = useFloatingWindow({
     defaultSize: { width: SETTINGS_DEFAULT_W, height: SETTINGS_DEFAULT_H },
     minSize: { width: SETTINGS_MIN_W, height: SETTINGS_MIN_H },
     maxSize: {
-      width: 900,
-      height: typeof window !== 'undefined' ? Math.round((85 * window.innerHeight) / 100) : 800,
+      width: 960,
+      height: typeof window !== 'undefined' ? Math.round((90 * window.innerHeight) / 100) : 900,
     },
     initialPosition: 'center',
   });
@@ -418,11 +491,64 @@ function App() {
   // STATES: CONVERSION OPTIONS
   // ==========================================================================
   
+  /** Profils de conversion actifs (max 2), session puis profil par défaut */
+  const [activeProfileIds, setActiveProfileIds] = useState<string[]>(() => {
+    const fromSession = sanitizeActiveProfileIds(sessionBootstrap?.activeProfileIds);
+    if (fromSession.length > 0) return fromSession;
+    const defaultId = loadUserSettings().conversion.defaultProfileId;
+    return sanitizeActiveProfileIds(defaultId ? [defaultId] : []);
+  });
+
   /** Currently configured conversion options */
-  const [conversionOptions, setConversionOptions] = useState<ConversionOptions>({});
+  const [conversionOptions, setConversionOptions] = useState<ConversionOptions>(() => {
+    if (sessionBootstrap?.conversionOptions && Object.keys(sessionBootstrap.conversionOptions).length > 0) {
+      return sessionBootstrap.conversionOptions;
+    }
+    const fromSession = sanitizeActiveProfileIds(sessionBootstrap?.activeProfileIds);
+    const defaultId = loadUserSettings().conversion.defaultProfileId;
+    const ids = fromSession.length > 0
+      ? fromSession
+      : sanitizeActiveProfileIds(defaultId ? [defaultId] : []);
+    return ids.length > 0 ? rebuildOptionsFromProfiles(ids) : {};
+  });
   
-  /** Set of settings panel sections that are currently open */
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set([]));
+  const persistActiveSettingsSection = useCallback((id: string) => {
+    try {
+      localStorage.setItem(SETTINGS_ACTIVE_SECTION_KEY, id);
+      // Anciennes clés multi-sections / accordéon
+      localStorage.removeItem(SETTINGS_OPEN_SECTIONS_KEY);
+      localStorage.removeItem('ascend_settings_open_section');
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  /** Section active du rail Paramètres (une à la fois) */
+  const [activeSettingsSection, setActiveSettingsSection] = useState<string>(() => {
+    try {
+      const active = localStorage.getItem(SETTINGS_ACTIVE_SECTION_KEY);
+      const fromActive = active ? normalizeSettingsSectionId(active) : null;
+      if (fromActive) return fromActive;
+
+      const raw = localStorage.getItem(SETTINGS_OPEN_SECTIONS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const id of parsed) {
+            if (typeof id !== 'string') continue;
+            const migrated = normalizeSettingsSectionId(id);
+            if (migrated) return migrated;
+          }
+        }
+      }
+      const legacy = localStorage.getItem('ascend_settings_open_section');
+      const fromLegacy = legacy ? normalizeSettingsSectionId(legacy) : null;
+      if (fromLegacy) return fromLegacy;
+    } catch {
+      /* ignore */
+    }
+    return DEFAULT_SETTINGS_SECTION;
+  });
 
   /** Catégorie affichée dans « Autres options » (menu déroulant) */
   const [otherOptionsCategory, setOtherOptionsCategory] = useState('contentAnalysis');
@@ -434,23 +560,22 @@ function App() {
   }, []);
   const dismissSnackbar = useCallback(() => setSnackbarMessage(null), []);
   const [warningsDismissed, setWarningsDismissed] = useState(false);
+  const [showFindReplace, setShowFindReplace] = useState(false);
+  const [showDiffPanel, setShowDiffPanel] = useState(false);
+  const [findTarget, setFindTarget] = useState<'source' | 'result'>('source');
 
   /** Onglet mobile Source / Résultat */
   const [mobilePane, setMobilePane] = useState<'source' | 'result'>('source');
   
-  /**
-   * Toggles the open/closed state of a settings panel section
-   * @param section - Section identifier (e.g., "normalization", "encoding")
-   */
-  const toggleSection = (section: string) => {
-    const newExpanded = new Set(expandedSections);
-    if (newExpanded.has(section)) {
-      newExpanded.delete(section);
-    } else {
-      newExpanded.add(section);
-    }
-    setExpandedSections(newExpanded);
-  };
+  const selectSettingsSection = useCallback(
+    (section: string) => {
+      const id = normalizeSettingsSectionId(section);
+      if (!id) return;
+      setActiveSettingsSection(id);
+      persistActiveSettingsSection(id);
+    },
+    [persistActiveSettingsSection]
+  );
 
   const otherOptionsCategories = useMemo(() => {
     const items: Array<{ value: string; label: string }> = [];
@@ -462,7 +587,6 @@ function App() {
       { value: 'normalization', label: 'Normalisation' },
       { value: 'rendering', label: 'Rendu documentaire' },
       { value: 'formatSpecific', label: 'Options de format' },
-      { value: 'metadata', label: 'Métadonnées' },
     );
     return items;
   }, [sourceFormat]);
@@ -479,7 +603,7 @@ function App() {
     return { committed, draft: cloneUserSettings(committed) };
   });
   const [userSettings, setUserSettings] = useState<UserSettings>(settingsBootstrap.committed);
-  // Draft edited in the settings panel; committed only on "Appliquer et fermer"
+  // Draft edited in the settings panel; committed only on "Appliquer"
   const [draftSettings, setDraftSettings] = useState<UserSettings>(settingsBootstrap.draft);
   const [settingsErrors, setSettingsErrors] = useState<SettingsValidationErrors>({});
   const [pageBgImage, setPageBgImage] = useState<string | null>(() => loadCustomPageBackground());
@@ -523,6 +647,7 @@ function App() {
     root.setAttribute('data-compact-mode', ui.compactMode ? 'true' : 'false');
     root.setAttribute('data-tab-size', String(ui.tabSize));
     root.setAttribute('data-show-tooltips', ui.showTooltips ? 'true' : 'false');
+    root.setAttribute('data-editor-font', ui.editorFontFamily || 'jetbrains');
     root.style.setProperty('--editor-font-size', `${ui.editorFontSize}px`);
     applyPageBackgroundToDocument(ui.backgroundMode, customBg);
   }, [applyThemeToDocument, pageBgImage]);
@@ -530,14 +655,15 @@ function App() {
   // UI prefs apply from committed settings — fond en aperçu live si Paramètres ouverts
   useEffect(() => {
     if (settingsOpen) {
-      applyThemeToDocument(userSettings.ui.theme);
+      applyThemeToDocument(draftSettings.ui.theme);
       const root = document.documentElement;
-      root.setAttribute('data-editor-word-wrap', userSettings.ui.editorWordWrap ? 'true' : 'false');
-      root.setAttribute('data-reduce-motion', userSettings.ui.reduceMotion ? 'true' : 'false');
-      root.setAttribute('data-compact-mode', userSettings.ui.compactMode ? 'true' : 'false');
-      root.setAttribute('data-tab-size', String(userSettings.ui.tabSize));
-      root.setAttribute('data-show-tooltips', userSettings.ui.showTooltips ? 'true' : 'false');
-      root.style.setProperty('--editor-font-size', `${userSettings.ui.editorFontSize}px`);
+      root.setAttribute('data-editor-word-wrap', draftSettings.ui.editorWordWrap ? 'true' : 'false');
+      root.setAttribute('data-reduce-motion', draftSettings.ui.reduceMotion ? 'true' : 'false');
+      root.setAttribute('data-compact-mode', draftSettings.ui.compactMode ? 'true' : 'false');
+      root.setAttribute('data-tab-size', String(draftSettings.ui.tabSize));
+      root.setAttribute('data-show-tooltips', draftSettings.ui.showTooltips ? 'true' : 'false');
+      root.setAttribute('data-editor-font', draftSettings.ui.editorFontFamily || 'jetbrains');
+      root.style.setProperty('--editor-font-size', `${draftSettings.ui.editorFontSize}px`);
       applyPageBackgroundToDocument(draftSettings.ui.backgroundMode, draftPageBgImage);
       return;
     }
@@ -546,7 +672,7 @@ function App() {
     settingsOpen,
     userSettings.ui,
     pageBgImage,
-    draftSettings.ui.backgroundMode,
+    draftSettings.ui,
     draftPageBgImage,
     applyUiPreferencesToDocument,
     applyThemeToDocument,
@@ -586,7 +712,7 @@ function App() {
 
   // Escape closes the settings panel (with dirty confirm); skipped while confirm modal is open
   useEffect(() => {
-    if (!settingsOpen || settingsMinimized || showDiscardSettingsModal) return;
+    if (!settingsOpen || settingsMinimized || showDiscardSettingsModal || showResetSettingsModal) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -595,7 +721,7 @@ function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [settingsOpen, settingsMinimized, showDiscardSettingsModal, closeSettingsPanel]);
+  }, [settingsOpen, settingsMinimized, showDiscardSettingsModal, showResetSettingsModal, closeSettingsPanel]);
 
   // Focus dialog on open; restore focus to the gear button on close
   useEffect(() => {
@@ -609,7 +735,7 @@ function App() {
 
   // Focus trap inside settings panel
   useEffect(() => {
-    if (!settingsOpen || settingsMinimized || showDiscardSettingsModal) return;
+    if (!settingsOpen || settingsMinimized || showDiscardSettingsModal || showResetSettingsModal) return;
     const panel = settingsPanelRef.current;
     if (!panel) return;
 
@@ -638,14 +764,14 @@ function App() {
 
     panel.addEventListener('keydown', onKeyDown);
     return () => panel.removeEventListener('keydown', onKeyDown);
-  }, [settingsOpen, settingsMinimized, showDiscardSettingsModal]);
+  }, [settingsOpen, settingsMinimized, showDiscardSettingsModal, showResetSettingsModal]);
 
   // Escape closes navigation window
   useEffect(() => {
     if (!navigationWindowOpen || navigationWindowMinimized) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      if (settingsOpen || showHistoryPanel || showDiscardSettingsModal || showClearHistoryModal) return;
+      if (settingsOpen || showHistoryPanel || showDiscardSettingsModal || showResetSettingsModal || showClearHistoryModal) return;
       event.preventDefault();
       setNavigationWindowOpen(false);
       setNavigationEnabled(false);
@@ -658,18 +784,9 @@ function App() {
     settingsOpen,
     showHistoryPanel,
     showDiscardSettingsModal,
+    showResetSettingsModal,
     showClearHistoryModal,
   ]);
-
-  // Apply the preferred default output format once at startup
-  useEffect(() => {
-    const fmt = userSettings.conversion.defaultOutputFormat as FormatType;
-    const validFormats: FormatType[] = ['asciidoc', 'markdown', 'html', 'pdf', 'yaml', 'json', 'txt'];
-    if (fmt && validFormats.includes(fmt) && fmt !== sourceFormat) {
-      setTargetFormat(fmt);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   /**
    * Updates a conversion option at a specific path
@@ -681,6 +798,7 @@ function App() {
    * @param value - New value to assign
    */
   const updateOption = (path: string[], value: any) => {
+    setActiveProfileIds([]);
     setConversionOptions(prev => {
       const newOptions = { ...prev };
       let current: any = newOptions;
@@ -693,7 +811,7 @@ function App() {
     });
   };
 
-  const applyAndCloseSettings = useCallback(() => {
+  const commitSettings = useCallback((opts?: { close?: boolean; notify?: boolean }) => {
     const errors = validateUserPrefs({
       displayName: draftSettings.profile.displayName,
       organization: draftSettings.profile.organization,
@@ -701,37 +819,229 @@ function App() {
     });
     if (Object.keys(errors).length > 0) {
       setSettingsErrors(errors);
-      return;
+      return false;
     }
     if (draftSettings.ui.backgroundMode === 'custom' && !draftPageBgImage) {
       setPageBgError('Choisissez une image ou basculez vers un autre fond.');
-      return;
+      return false;
     }
     try {
       persistCustomPageBackground(draftPageBgImage);
     } catch (e) {
       setPageBgError(e instanceof Error ? e.message : 'Enregistrement du fond impossible');
-      return;
+      return false;
     }
     const committed = cloneUserSettings(draftSettings);
     setPageBgImage(draftPageBgImage);
     setUserSettings(committed);
     applyUiPreferencesToDocument(committed.ui, draftPageBgImage);
-    updateOption(['metadata', 'author'], committed.profile.displayName || null);
-    updateOption(['metadata', 'organization'], committed.profile.organization || null);
-    updateOption(['metadata', 'language'], committed.profile.defaultLanguage || null);
-    const fmt = committed.conversion.defaultOutputFormat as FormatType;
-    const validFormats: FormatType[] = ['asciidoc', 'markdown', 'html', 'pdf', 'yaml', 'json', 'txt'];
-    if (fmt && validFormats.includes(fmt) && fmt !== sourceFormat) {
-      setTargetFormat(fmt);
+    setConversionOptions((prev) => ({
+      ...prev,
+      metadata: {
+        ...prev.metadata,
+        author: committed.profile.displayName || null,
+        organization: committed.profile.organization || null,
+        language: committed.profile.defaultLanguage || null,
+      },
+    }));
+    if (
+      committed.conversion.defaultSourceFormat &&
+      committed.conversion.defaultSourceFormat !== userSettings.conversion.defaultSourceFormat
+    ) {
+      setSourceFormat(pickFormatType(committed.conversion.defaultSourceFormat, sourceFormat));
     }
+    if (
+      committed.conversion.defaultOutputFormat &&
+      committed.conversion.defaultOutputFormat !== userSettings.conversion.defaultOutputFormat
+    ) {
+      const srcFmt = pickFormatType(
+        committed.conversion.defaultSourceFormat || sourceFormat,
+        sourceFormat
+      );
+      const outFmt = pickFormatType(committed.conversion.defaultOutputFormat, targetFormat);
+      if (outFmt !== srcFmt) setTargetFormat(outFmt);
+    }
+
+    // Profil par défaut : n’applique la session courante que s’il n’y a aucun profil actif
+    // (1er démarrage / session vide). Changer le réglage ne remplace pas une sélection en cours.
+    const defaultProfileId = committed.conversion.defaultProfileId;
+    if (
+      activeProfileIds.length === 0 &&
+      defaultProfileId &&
+      CONVERSION_PROFILES.some((p) => p.id === defaultProfileId)
+    ) {
+      const nextIds = sanitizeActiveProfileIds([defaultProfileId]);
+      setActiveProfileIds(nextIds);
+      setConversionOptions((prev) => ({
+        ...rebuildOptionsFromProfiles(nextIds),
+        metadata: {
+          ...prev.metadata,
+          author: committed.profile.displayName || null,
+          organization: committed.profile.organization || null,
+          language: committed.profile.defaultLanguage || null,
+        },
+      }));
+    }
+
+    const limit = committed.conversion.historyLimit;
+    if (limit !== userSettings.conversion.historyLimit || conversionHistory.length > limit) {
+      setConversionHistory((prev) => {
+        if (prev.length <= limit) return prev;
+        const trimmed = prev.slice(0, limit);
+        try {
+          localStorage.setItem('ascend_conversion_history', JSON.stringify(trimmed));
+        } catch {
+          /* ignore */
+        }
+        return trimmed;
+      });
+    }
+
+    if (
+      committed.ui.sidebarCollapsedByDefault !== userSettings.ui.sidebarCollapsedByDefault
+    ) {
+      setSidebarCollapsed(committed.ui.sidebarCollapsedByDefault);
+      try {
+        localStorage.setItem(
+          SIDEBAR_COLLAPSED_KEY,
+          committed.ui.sidebarCollapsedByDefault ? '1' : '0'
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+
     setPageBgError(null);
-    setStatus('Paramètres appliqués');
-    showSnackbar('Paramètres appliqués');
-    setSettingsMinimized(false);
-    setSettingsMaximized(false);
-    setSettingsOpen(false);
-  }, [draftSettings, draftPageBgImage, applyUiPreferencesToDocument, sourceFormat, showSnackbar, setSettingsMinimized, setSettingsMaximized]);
+    setSettingsErrors({});
+    if (opts?.notify) {
+      setStatus('Paramètres appliqués');
+      showSnackbar('Paramètres appliqués');
+    }
+    if (opts?.close) {
+      setSettingsMinimized(false);
+      setSettingsMaximized(false);
+      setSettingsOpen(false);
+    }
+    return true;
+  }, [
+    draftSettings,
+    draftPageBgImage,
+    applyUiPreferencesToDocument,
+    sourceFormat,
+    targetFormat,
+    userSettings,
+    activeProfileIds.length,
+    conversionHistory.length,
+    showSnackbar,
+    setSettingsMinimized,
+    setSettingsMaximized,
+  ]);
+
+  /** Enregistre les paramètres sans fermer le panneau. */
+  const applySettings = useCallback(() => {
+    commitSettings({ close: false, notify: true });
+  }, [commitSettings]);
+
+  /** Remet le brouillon aux défauts (rien coché) — valider avec Appliquer. */
+  const resetSettingsToDefaults = useCallback(() => {
+    setDraftSettings(cloneUserSettings(DEFAULT_USER_SETTINGS));
+    setDraftPageBgImage(null);
+    setPageBgError(null);
+    setSettingsErrors({});
+    setShowResetSettingsModal(false);
+    setStatus('Brouillon réinitialisé — cliquez Appliquer pour enregistrer');
+  }, []);
+
+  const requestResetSettings = useCallback(() => {
+    setShowResetSettingsModal(true);
+  }, []);
+
+  const exportUserSettingsFile = useCallback(() => {
+    const bundle = buildUserSettingsExport(userSettings, pageBgImage);
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], {
+      type: 'application/json;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ascend-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showSnackbar(
+      bundle.customPageBackground
+        ? 'Préférences exportées (fond inclus)'
+        : 'Préférences exportées'
+    );
+  }, [userSettings, pageBgImage, showSnackbar]);
+
+  const importUserSettingsFile = useCallback(
+    async (file: File) => {
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const imported = parseImportedUserSettings(parsed);
+        if (!imported) {
+          showSnackbar('Fichier de préférences invalide');
+          return;
+        }
+        setDraftSettings(imported.settings);
+        if (imported.customPageBackground !== undefined) {
+          setDraftPageBgImage(imported.customPageBackground);
+        }
+        setPageBgError(null);
+        setSettingsErrors({});
+        showSnackbar(
+          imported.customPageBackground
+            ? 'Préférences + fond importés — cliquez Appliquer'
+            : 'Préférences importées dans le brouillon — cliquez Appliquer'
+        );
+      } catch {
+        showSnackbar('Import impossible (JSON invalide)');
+      }
+    },
+    [showSnackbar]
+  );
+
+  const clearLocalData = useCallback(() => {
+    clearSessionDraft();
+    try {
+      localStorage.removeItem('ascend_conversion_history');
+      localStorage.removeItem(USER_SETTINGS_KEY);
+      localStorage.removeItem(SIDEBAR_COLLAPSED_KEY);
+      localStorage.removeItem(SETTINGS_OPEN_SECTIONS_KEY);
+      localStorage.removeItem(SETTINGS_ACTIVE_SECTION_KEY);
+      localStorage.removeItem('ascend_settings_open_section');
+      localStorage.removeItem('ascend_history_window_geometry');
+      localStorage.removeItem('ascend_history_window_filters');
+      localStorage.removeItem('ascend_history_collapsed_groups');
+    } catch {
+      /* ignore */
+    }
+    try {
+      persistCustomPageBackground(null);
+    } catch {
+      /* ignore */
+    }
+    const defaults = cloneUserSettings(DEFAULT_USER_SETTINGS);
+    persistUserSettings(defaults);
+    setUserSettings(defaults);
+    setDraftSettings(defaults);
+    setDraftPageBgImage(null);
+    setPageBgImage(null);
+    setPageBgError(null);
+    setSettingsErrors({});
+    setConversionHistory([]);
+    setActiveProfileIds([]);
+    setConversionOptions({});
+    setSidebarCollapsed(false);
+    setActiveSettingsSection(DEFAULT_SETTINGS_SECTION);
+    applyUiPreferencesToDocument(defaults.ui, null);
+    setShowClearLocalDataModal(false);
+    setStatus('Données locales effacées');
+    showSnackbar('Données locales effacées');
+  }, [applyUiPreferencesToDocument, showSnackbar]);
   
   // ==========================================================================
   // STATES: NOTIFICATIONS
@@ -792,6 +1102,29 @@ function App() {
   useEffect(() => {
     setWarningsDismissed(false);
   }, [lastBackendConversionResult]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      persistSessionDraft({
+        adocInput,
+        mdOutput,
+        sourceFormat,
+        targetFormat,
+        conversionOptions,
+        activeProfileIds,
+        currentFileName,
+      });
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [
+    adocInput,
+    mdOutput,
+    sourceFormat,
+    targetFormat,
+    conversionOptions,
+    activeProfileIds,
+    currentFileName,
+  ]);
 
   const conversionWarnings = useMemo(
     () => extractConversionWarnings(lastBackendConversionResult),
@@ -1013,40 +1346,68 @@ function App() {
   // HANDLERS: FILE MANAGEMENT
   // ==========================================================================
   
-  /**
-   * Handles import of a single file
-   * 
-   * Reads selected file content and displays it in source panel according
-   * to current source format. Updates file name and imported files list.
-   * 
-   * @param event - File input change event
-   * 
-   * ACCEPTED FORMATS: .adoc, .asciidoc, .md, .txt
-   * ENCODING: UTF-8
-   */
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const loadSourceFile = useCallback(async (file: File, options?: { alignFormat?: boolean }) => {
+    if (!isAcceptedSourceFile(file)) {
+      setStatus('Formats acceptés : .adoc, .asciidoc, .md, .txt');
+      setNotification({
+        message: 'Formats acceptés : .adoc, .asciidoc, .md, .txt',
+        type: 'error',
+        visible: true,
+      });
+      return;
+    }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      let text = typeof reader.result === "string" ? reader.result : "";
-      // Process AsciiDoc content: add :toc: after :experimental: if present
-      if (sourceFormat === 'asciidoc') {
+    let nextFormat = sourceFormat;
+    if (options?.alignFormat) {
+      const inferred = inferSourceFormatFromFile(file);
+      if (inferred) {
+        nextFormat = inferred;
+        if (inferred !== sourceFormat) {
+          setSourceFormat(inferred);
+          if (inferred === targetFormat) {
+            setTargetFormat(inferred === 'asciidoc' ? 'markdown' : 'asciidoc');
+          } else if (inferred !== 'asciidoc' && inferred !== 'markdown') {
+            setTargetFormat('markdown');
+          }
+        }
+      }
+    }
+
+    try {
+      let text = await readFileAsUtf8(file);
+      if (nextFormat === 'asciidoc') {
         text = removeExperimentalTag(text);
       }
-      // Use sourceFormat to determine where to put text
-      if (sourceFormat === 'asciidoc' || sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
-        setAdocInput(text);
-      } else if (sourceFormat === 'markdown') {
+      if (nextFormat === 'markdown') {
         setMdOutput(text);
+      } else {
+        setAdocInput(text);
       }
       setCurrentFileName(file.name);
       setImportedFiles([file]);
+      setSourceModified(true);
       setStatus(`Fichier chargé : ${file.name}`);
-    };
-    reader.readAsText(file, "utf-8");
+      showSnackbar(`Fichier chargé : ${file.name}`);
+    } catch {
+      setStatus('Impossible de lire le fichier');
+      setNotification({
+        message: 'Impossible de lire le fichier',
+        type: 'error',
+        visible: true,
+      });
+    }
+  }, [sourceFormat, targetFormat, showSnackbar]);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    void loadSourceFile(file, { alignFormat: true });
+    event.target.value = '';
   };
+
+  const handleDropSourceFile = useCallback((file: File) => {
+    void loadSourceFile(file, { alignFormat: true });
+  }, [loadSourceFile]);
 
   /**
    * Handles import of a complete folder
@@ -1141,22 +1502,21 @@ function App() {
    * - Scrolls and selects the line
    */
   const scrollToHeading = (lineIndex: number) => {
-    // Use correct ref according to source format
-    const textarea = sourceFormat === 'asciidoc' ? adocTextAreaRef.current : 
-                     sourceFormat === 'markdown' ? mdTextAreaRef.current : 
+    const textarea = sourceFormat === 'asciidoc' ? adocTextAreaRef.current :
+                     sourceFormat === 'markdown' ? mdTextAreaRef.current :
                      adocTextAreaRef.current;
     if (!textarea) return;
 
-    // Use text according to source format
     const text = sourceFormat === 'asciidoc' ? adocInput : (sourceFormat === 'markdown' ? mdOutput : adocInput);
     const lines = text.split("\n");
-    const offsetBefore = lines.slice(0, lineIndex).join("\n").length;
+    const offsetBefore = lines.slice(0, lineIndex).join("\n").length + (lineIndex > 0 ? 1 : 0);
+    const lineLen = (lines[lineIndex] || '').length;
 
     textarea.focus();
-    textarea.setSelectionRange(offsetBefore, offsetBefore);
+    textarea.setSelectionRange(offsetBefore, offsetBefore + lineLen);
 
-    // Force scroll to selection
-    const lineHeight = 18; // approximation
+    const style = window.getComputedStyle(textarea);
+    const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.45 || 20;
     textarea.scrollTop = Math.max(0, (lineIndex - 2) * lineHeight);
   };
 
@@ -1287,11 +1647,14 @@ function App() {
       fromFormat: sourceFormat,
       toFormat: targetFormat,
       sourceContent,
-      resultContent
+      resultContent,
+      conversionOptions,
+      activeProfileIds: sanitizeActiveProfileIds(activeProfileIds),
     };
 
+    const limit = userSettings.conversion.historyLimit || 50;
     setConversionHistory(prev => {
-      const newHistory = [historyItem, ...prev].slice(0, 50); // Keep last 50
+      const newHistory = [historyItem, ...prev].slice(0, limit);
       try {
         localStorage.setItem('ascend_conversion_history', JSON.stringify(newHistory));
       } catch (e) {
@@ -1299,7 +1662,16 @@ function App() {
       }
       return newHistory;
     });
-  }, [userSettings.conversion.saveConversionHistory, sourceFormat, targetFormat, adocInput, mdOutput]);
+  }, [
+    userSettings.conversion.saveConversionHistory,
+    userSettings.conversion.historyLimit,
+    sourceFormat,
+    targetFormat,
+    adocInput,
+    mdOutput,
+    conversionOptions,
+    activeProfileIds,
+  ]);
 
   /**
    * Restores a conversion from history
@@ -1325,6 +1697,14 @@ function App() {
     
     setSourceFormat(item.fromFormat);
     setTargetFormat(item.toFormat);
+    if (item.conversionOptions && typeof item.conversionOptions === 'object') {
+      setConversionOptions(item.conversionOptions);
+    }
+    if (item.activeProfileIds) {
+      setActiveProfileIds(sanitizeActiveProfileIds(item.activeProfileIds));
+    } else {
+      setActiveProfileIds([]);
+    }
     setShowHistoryPanel(false);
     setIsEditingResult(false);
     setSourceModified(false);
@@ -1838,14 +2218,15 @@ function App() {
             fromFormat: sourceFormat,
             toFormat: targetFormat,
             sourceContent,
-            resultContent
+            resultContent,
+            conversionOptions,
+            activeProfileIds: sanitizeActiveProfileIds(activeProfileIds),
           };
 
+          const limit = userSettings.conversion.historyLimit || 50;
           setConversionHistory(prev => {
-            // Keep only the last 50 conversions
-            const newHistory = [historyItem, ...prev].slice(0, 50);
+            const newHistory = [historyItem, ...prev].slice(0, limit);
             try {
-              // Save in localStorage (persistent)
               localStorage.setItem('ascend_conversion_history', JSON.stringify(newHistory));
             } catch (e) {
               console.error('Error saving conversion history:', e);
@@ -1864,7 +2245,18 @@ function App() {
       // Clean up timer when component unmounts or when dependencies change
       return () => clearTimeout(timer);
     }
-  }, [loading, justConverted, sourceFormat, targetFormat, adocInput, mdOutput, userSettings.conversion.saveConversionHistory]);
+  }, [
+    loading,
+    justConverted,
+    sourceFormat,
+    targetFormat,
+    adocInput,
+    mdOutput,
+    conversionOptions,
+    activeProfileIds,
+    userSettings.conversion.saveConversionHistory,
+    userSettings.conversion.historyLimit,
+  ]);
 
   // ==========================================================================
   // ==========================================================================
@@ -1878,7 +2270,7 @@ function App() {
    * converts directly without token.
    * For complex conversions (via /convert), requests a confirmation token.
    */
-  const handleConvert = useCallback(() => {
+  const handleConvert = useCallback((opts?: { skipConfirm?: boolean }) => {
     if (loading) {
       return;
     }
@@ -1905,6 +2297,11 @@ function App() {
         type: 'error',
         visible: true
       });
+      return;
+    }
+
+    if (userSettings.conversion.confirmBeforeConversion && !opts?.skipConfirm) {
+      setShowConfirmConvertModal(true);
       return;
     }
 
@@ -2028,12 +2425,112 @@ function App() {
     setShowHistoryPanel((prev) => !prev);
   }, [historyWindowMinimized]);
 
+  const syncOptionsFromActiveProfiles = useCallback((ids: string[]) => {
+    setConversionOptions((prev) => ({
+      ...rebuildOptionsFromProfiles(ids),
+      metadata: prev.metadata,
+    }));
+  }, []);
+
+  const toggleConversionProfile = useCallback((profileId: string) => {
+    const profile = CONVERSION_PROFILES.find((p) => p.id === profileId);
+    if (!profile) return;
+
+    let nextIds: string[] | undefined;
+    let blockedMax = false;
+    setActiveProfileIds((prev) => {
+      if (prev.includes(profileId)) {
+        nextIds = prev.filter((id) => id !== profileId);
+        return nextIds;
+      }
+      if (prev.length >= MAX_ACTIVE_PROFILES) {
+        blockedMax = true;
+        return prev;
+      }
+      nextIds = [...prev, profileId];
+      return nextIds;
+    });
+
+    if (blockedMax) {
+      showSnackbar(`Maximum ${MAX_ACTIVE_PROFILES} profils actifs`);
+      return;
+    }
+    if (nextIds) {
+      syncOptionsFromActiveProfiles(nextIds);
+      const removed = !nextIds.includes(profileId);
+      showSnackbar(
+        removed
+          ? `Profil « ${profile.label} » retiré`
+          : nextIds.length === 1
+            ? `Profil « ${profile.label} » appliqué`
+            : `Profils combinés (${nextIds.length}/${MAX_ACTIVE_PROFILES})`
+      );
+    }
+  }, [showSnackbar, syncOptionsFromActiveProfiles]);
+
+  const clearConversionProfiles = useCallback(() => {
+    setActiveProfileIds([]);
+    syncOptionsFromActiveProfiles([]);
+    showSnackbar('Profils retirés');
+  }, [showSnackbar, syncOptionsFromActiveProfiles]);
+
+  const handleExportZip = useCallback(() => {
+    const sourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
+    const resultText = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+    const base = (currentFileName || 'document').replace(/\.[^/.]+$/, '');
+    const srcExt =
+      sourceFormat === 'markdown' ? 'md' : sourceFormat === 'asciidoc' ? 'adoc' : 'txt';
+    const outExt =
+      targetFormat === 'markdown' ? 'md' : targetFormat === 'asciidoc' ? 'adoc' : 'txt';
+    const blob = createZipBlob([
+      { name: `${base}-source.${srcExt}`, content: sourceText },
+      { name: `${base}-result.${outExt}`, content: resultText },
+      {
+        name: `${base}-meta.json`,
+        content: JSON.stringify(
+          {
+            sourceFormat,
+            targetFormat,
+            fileName: currentFileName,
+            exportedAt: new Date().toISOString(),
+            warnings: conversionWarnings,
+          },
+          null,
+          2
+        ),
+      },
+    ]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${base}-ascend.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showSnackbar('Export ZIP téléchargé');
+  }, [
+    sourceFormat,
+    targetFormat,
+    adocInput,
+    mdOutput,
+    currentFileName,
+    conversionWarnings,
+    showSnackbar,
+  ]);
+
   useAppKeyboardShortcuts({
     onConvert: handleConvert,
     onExport: handleExport,
     onClearSource: handleClearSource,
-    onOpenShortcutsHelp: () => setShowShortcutsModal(true),
+    onOpenShortcutsHelp: () => setShortcutsHelpOpen((v) => !v),
+    onOpenSettings: () => {
+      if (settingsOpen && !settingsMinimized) closeSettingsPanel();
+      else openSettingsPanel();
+    },
     onToggleHistory: toggleHistoryPanel,
+    onOpenFindReplace: () => {
+      setFindTarget(isEditingResult ? 'result' : 'source');
+      setShowFindReplace(true);
+    },
     isEditingResult,
     onOpenSaveModal: () => setShowSaveModal(true),
     loading,
@@ -2233,10 +2730,11 @@ function App() {
         onFileSelect={handleFileSelect}
         onDeletingPulse={pulseSourceDeleting}
         onMarkModified={() => setSourceModified(true)}
+        onDropFile={handleDropSourceFile}
       />
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceFormat, targetFormat, adocInput, mdOutput, currentFileName, status, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, isDeleting, sourceModified, handleClearSource, pulseSourceDeleting]);
+  }, [sourceFormat, targetFormat, adocInput, mdOutput, currentFileName, status, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, isDeleting, sourceModified, handleClearSource, pulseSourceDeleting, handleDropSourceFile, handleFolderChange]);
 
   const resultCard = useMemo(() => {
     let resultValue = '';
@@ -2281,6 +2779,18 @@ function App() {
                   onClick: handleExport,
                   disabled: !resultValue.trim(),
                 },
+                {
+                  id: 'zip',
+                  label: 'Export ZIP',
+                  onClick: handleExportZip,
+                  disabled: !resultValue.trim() && !sourceValueForCurrentFormat.trim(),
+                },
+                {
+                  id: 'diff',
+                  label: 'Diff source ↔ résultat',
+                  onClick: () => setShowDiffPanel(true),
+                  disabled: !resultValue.trim() || !sourceValueForCurrentFormat.trim(),
+                },
               ]),
         ]
       : [];
@@ -2298,10 +2808,13 @@ function App() {
         actions={resultActions}
         onClear={handleClear}
         onMarkModified={() => setResultModified(true)}
+        viewMode={resultViewMode}
+        onViewModeChange={setResultViewMode}
+        previewHtml={renderPreviewHtml(resultValue, targetFormat)}
       />
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetFormat, sourceFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear]);
+  }, [targetFormat, sourceFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear, handleExportZip, resultViewMode]);
 
   return (
     <div className="page">
@@ -2365,20 +2878,16 @@ function App() {
         onLogoError={() => setLogoSrc(defaultLogo)}
         conversionUiState={conversionUiState}
         status={status}
-        sourceFormat={sourceFormat}
-        targetFormat={targetFormat}
-        sourceFormatTitle={getFormatTitle(sourceFormat)}
-        targetFormatTitle={getFormatTitle(targetFormat)}
-        sourceHasContent={!!(sourceFormat === 'markdown' ? mdOutput : adocInput).trim()}
-        loading={loading}
-        isEditingResult={isEditingResult}
-        onConvert={handleConvert}
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={toggleSidebarCollapsed}
         historyCount={conversionHistory.length}
+        historyOpen={showHistoryPanel}
         onToggleHistory={() => setShowHistoryPanel(!showHistoryPanel)}
+        shortcutsHelpOpen={shortcutsHelpOpen}
+        onToggleShortcutsHelp={() => setShortcutsHelpOpen((v) => !v)}
+        onCloseShortcutsHelp={() => setShortcutsHelpOpen(false)}
         settingsButtonRef={settingsButtonRef}
-        settingsOpen={settingsOpen}
+        settingsOpen={settingsOpen && !settingsMinimized}
         onToggleSettings={() => {
           if (settingsMinimized) {
             setSettingsMinimized(false);
@@ -2414,418 +2923,39 @@ function App() {
         - stopPropagation() prevents closing when clicking inside the panel
       */}
       {settingsOpen && !settingsMinimized && (
-        <>
-          {/* 
-            Overlay: semi-transparent background
-            Closes the modal on click (but not when clicking inside the panel)
-          */}
-          <div className="settings-overlay floating-window-overlay" onClick={() => closeSettingsPanel()} />
-          {/* 
-            Main panel: contains all settings
-            stopPropagation() prevents closing when clicking inside
-          */}
-          <div
-            ref={settingsPanelRef}
-            className={[
-              'floating-window',
-              'floating-window--enter',
-              'settings-panel',
-              isResizingSettings ? 'settings-panel-resizing' : '',
-              isDraggingSettings ? 'settings-panel-dragging' : '',
-              settingsMaximized ? 'settings-panel--maximized' : '',
-            ].filter(Boolean).join(' ')}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="settings-panel-title"
-            onClick={(e) => e.stopPropagation()}
-            style={
-              settingsMaximized
-                ? undefined
-                : {
-                    ...settingsPanelStyle,
-                    minWidth: SETTINGS_MIN_W,
-                    minHeight: SETTINGS_MIN_H,
-                    zIndex: 10001,
-                  }
-            }
-          >
-            <div
-              className="floating-window-header floating-window-header--draggable settings-panel-header settings-panel-header-draggable"
-              onMouseDown={handleSettingsDragStart}
-            >
-              <div className="floating-window-title-wrap">
-                <h3 id="settings-panel-title" className="floating-window-title">
-                  Paramètres
-                  {settingsDirty && (
-                    <span className="settings-dirty-badge" aria-label="Modifications non enregistrées">
-                      non enregistré
-                    </span>
-                  )}
-                </h3>
-              </div>
-              <div className="floating-window-controls">
-                <button
-                  type="button"
-                  className="floating-window-btn floating-window-btn--minimize"
-                  onClick={() => setSettingsMinimized(true)}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  aria-label="Réduire"
-                >
-                  −
-                </button>
-                <button
-                  type="button"
-                  className="floating-window-btn floating-window-btn--maximize"
-                  onClick={() => setSettingsMaximized((v) => !v)}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  aria-label={settingsMaximized ? 'Restaurer' : 'Plein écran'}
-                >
-                  {settingsMaximized ? '⧉' : '□'}
-                </button>
-                <button
-                  type="button"
-                  className="floating-window-btn floating-window-btn--close settings-close-btn"
-                  onClick={() => closeSettingsPanel()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  aria-label="Fermer sans appliquer"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-            <div className="settings-panel-content">
-              <p className="settings-live-note">Les modifications ne sont prises en compte qu'après un clic sur « Appliquer et fermer ».</p>
-              <div className="settings-param-list">
-                <div className="settings-param-section">
-                  <button type="button" className="settings-param-header" onClick={() => toggleSection('settingsGeneral')}>
-                    <span>Général</span>
-                    <span className="settings-param-arrow">{expandedSections.has('settingsGeneral') ? '▼' : '▶'}</span>
-                  </button>
-                  {expandedSections.has('settingsGeneral') && (
-                    <div className="settings-param-body">
-                      <div className="option-group">
-                        <label className="option-label">Version</label>
-                        <div className="settings-muted">v{packageJson.version}</div>
-                      </div>
-                      <div className="option-group">
-                        <label className="option-label">À propos</label>
-                        <p className="settings-about-text">
-                          Ascend — Convertisseur de documents (AsciiDoc, Markdown, etc.). Thèmes clair et sombre, historique, validation Docker en CI et messages d'erreur structurés.
-                        </p>
-                      </div>
-                      <div className="option-group">
-                        <label className="option-label">Nouveautés v0.0.1.8.2</label>
-                        <ul className="settings-release-list">
-                          <li>Listboxes formats / paramètres, menu Actions et snackbar unifiée</li>
-                          <li>Raccourcis clavier (Convertir, Historique, Aide) et bannière d’avertissements</li>
-                          <li>Onglets Source / Résultat et sidebar tiroir sur mobile</li>
-                          <li>Découpe de l’interface (header, panneaux, navigation)</li>
-                        </ul>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="settings-param-section">
-                  <button type="button" className="settings-param-header" onClick={() => toggleSection('settingsProfil')}>
-                    <span>Profil</span>
-                    <span className="settings-param-arrow">{expandedSections.has('settingsProfil') ? '▼' : '▶'}</span>
-                  </button>
-                  {expandedSections.has('settingsProfil') && (
-                    <div className="settings-param-body">
-                      <div className="option-group">
-                        <label className="option-label">Nom / pseudo</label>
-                        <input type="text" value={draftSettings.profile.displayName} onChange={(e) => setDraftSettings(s => ({ ...s, profile: { ...s.profile, displayName: e.target.value } }))} className={`option-input${settingsErrors.displayName ? ' settings-input-invalid' : ''}`} placeholder="Nom ou pseudo" />
-                        {settingsErrors.displayName && <span className="settings-field-error" role="alert">{settingsErrors.displayName}</span>}
-                      </div>
-                      <div className="option-group">
-                        <label className="option-label">Organisation</label>
-                        <input type="text" value={draftSettings.profile.organization} onChange={(e) => setDraftSettings(s => ({ ...s, profile: { ...s.profile, organization: e.target.value } }))} className={`option-input${settingsErrors.organization ? ' settings-input-invalid' : ''}`} placeholder="Organisation" />
-                        {settingsErrors.organization && <span className="settings-field-error" role="alert">{settingsErrors.organization}</span>}
-                      </div>
-                      <div className="option-group">
-                        <SidebarListbox
-                          className="settings-listbox"
-                          id="settings-default-language"
-                          label="Langue des métadonnées"
-                          value={draftSettings.profile.defaultLanguage}
-                          options={[
-                            { value: 'fr', label: 'Français' },
-                            { value: 'en', label: 'Anglais' },
-                            { value: 'es', label: 'Espagnol' },
-                            { value: 'de', label: 'Allemand' },
-                          ]}
-                          onChange={(next) =>
-                            setDraftSettings((s) => ({
-                              ...s,
-                              profile: { ...s.profile, defaultLanguage: next as 'fr' | 'en' | 'es' | 'de' },
-                            }))
-                          }
-                        />
-                        <p className="settings-muted" style={{ marginTop: '0.25rem' }}>Utilisée pour les métadonnées de conversion, pas pour l'interface.</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="settings-param-section">
-                  <button type="button" className="settings-param-header" onClick={() => toggleSection('settingsConversion')}>
-                    <span>Conversion</span>
-                    <span className="settings-param-arrow">{expandedSections.has('settingsConversion') ? '▼' : '▶'}</span>
-                  </button>
-                  {expandedSections.has('settingsConversion') && (
-                    <div className="settings-param-body">
-                      <div className="option-group">
-                        <SidebarListbox
-                          className="settings-listbox"
-                          id="settings-default-output"
-                          label="Format de sortie par défaut"
-                          value={draftSettings.conversion.defaultOutputFormat || ''}
-                          options={[
-                            { value: '', label: '—' },
-                            { value: 'asciidoc', label: 'AsciiDoc' },
-                            { value: 'markdown', label: 'Markdown' },
-                            { value: 'html', label: 'HTML' },
-                            { value: 'pdf', label: 'PDF' },
-                            { value: 'yaml', label: 'YAML' },
-                            { value: 'json', label: 'JSON' },
-                            { value: 'txt', label: 'TEXT' },
-                          ]}
-                          onChange={(next) =>
-                            setDraftSettings((s) => ({
-                              ...s,
-                              conversion: { ...s.conversion, defaultOutputFormat: next },
-                            }))
-                          }
-                        />
-                      </div>
-                      <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                        <input type="checkbox" checked={draftSettings.conversion.defaultTocEnabled} onChange={(e) => setDraftSettings(s => ({ ...s, conversion: { ...s.conversion, defaultTocEnabled: e.target.checked } }))} className="option-checkbox" />
-                        <span>Table des matières par défaut</span>
-                      </label>
-                      <div className="option-group">
-                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={draftSettings.conversion.saveConversionHistory} onChange={(e) => setDraftSettings(s => ({ ...s, conversion: { ...s.conversion, saveConversionHistory: e.target.checked } }))} className="option-checkbox" />
-                          <span>Conserver l'historique des conversions</span>
-                        </label>
-                      </div>
-                      <div className="option-group">
-                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={draftSettings.conversion.autoApplyUserToMetadata} onChange={(e) => setDraftSettings(s => ({ ...s, conversion: { ...s.conversion, autoApplyUserToMetadata: e.target.checked } }))} className="option-checkbox" />
-                          <span>Appliquer le profil aux métadonnées (auteur, organisation, langue)</span>
-                        </label>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="settings-param-section">
-                  <button type="button" className="settings-param-header" onClick={() => toggleSection('settingsInterface')}>
-                    <span>Interface</span>
-                    <span className="settings-param-arrow">{expandedSections.has('settingsInterface') ? '▼' : '▶'}</span>
-                  </button>
-                  {expandedSections.has('settingsInterface') && (
-                    <div className="settings-param-body">
-                      <div className="option-group">
-                        <SidebarListbox
-                          className="settings-listbox"
-                          id="settings-theme"
-                          label="Thème"
-                          value={draftSettings.ui.theme}
-                          options={[
-                            { value: 'default', label: 'Par défaut' },
-                            { value: 'dark', label: 'Sombre' },
-                          ]}
-                          onChange={(next) =>
-                            setDraftSettings((s) => ({
-                              ...s,
-                              ui: { ...s.ui, theme: next as 'default' | 'dark' },
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="option-group">
-                        <SidebarListbox
-                          className="settings-listbox"
-                          id="settings-background-mode"
-                          label="Fond d’écran"
-                          value={draftSettings.ui.backgroundMode}
-                          options={[
-                            { value: 'default', label: 'Décoratif (SVG Ascend)' },
-                            { value: 'server', label: 'Photo serveur (rafale.jpg)' },
-                            { value: 'custom', label: 'Image personnelle' },
-                          ]}
-                          onChange={(next) => {
-                            setPageBgError(null);
-                            setDraftSettings((s) => ({
-                              ...s,
-                              ui: { ...s.ui, backgroundMode: next as BackgroundMode },
-                            }));
-                          }}
-                        />
-                        <p className="settings-muted" style={{ marginTop: '0.4rem' }}>
-                          {draftSettings.ui.backgroundMode === 'default' &&
-                            'Fond aurora intégré, adapté au thème clair ou sombre. Aperçu live derrière la fenêtre.'}
-                          {draftSettings.ui.backgroundMode === 'server' &&
-                            `Utilise ${SERVER_BG_URL} si le fichier est présent côté backend. Aperçu live immédiat.`}
-                          {draftSettings.ui.backgroundMode === 'custom' &&
-                            'Image entière visible (sans crop). L’aperçu s’applique tout de suite.'}
-                        </p>
-                        {draftSettings.ui.backgroundMode === 'default' && (
-                          <div
-                            className="settings-bg-live-preview settings-bg-live-preview--default"
-                            role="img"
-                            aria-label="Aperçu du fond décoratif"
-                          />
-                        )}
-                        {draftSettings.ui.backgroundMode === 'server' && (
-                          <div
-                            className="settings-bg-live-preview"
-                            style={{ backgroundImage: `url("${SERVER_BG_URL}")` }}
-                            role="img"
-                            aria-label="Aperçu du fond serveur"
-                          />
-                        )}
-                        {draftSettings.ui.backgroundMode === 'custom' && (
-                          <div className="settings-bg-picker">
-                            {draftPageBgImage ? (
-                              <div
-                                className="settings-bg-preview"
-                                style={{ backgroundImage: `url("${draftPageBgImage}")` }}
-                                role="img"
-                                aria-label="Aperçu du fond personnalisé"
-                              />
-                            ) : (
-                              <div className="settings-bg-preview settings-bg-preview--empty">
-                                Aucune image
-                              </div>
-                            )}
-                            <div className="settings-bg-actions">
-                              <input
-                                ref={pageBgFileInputRef}
-                                type="file"
-                                accept="image/jpeg,image/png,image/webp,image/gif"
-                                className="settings-bg-file-input"
-                                onChange={async (e) => {
-                                  const file = e.target.files?.[0];
-                                  e.target.value = '';
-                                  if (!file) return;
-                                  try {
-                                    setPageBgError(null);
-                                    const dataUrl = await fileToPageBackgroundDataUrl(file);
-                                    setDraftPageBgImage(dataUrl);
-                                  } catch (err) {
-                                    setPageBgError(err instanceof Error ? err.message : 'Import impossible');
-                                  }
-                                }}
-                              />
-                              <button
-                                type="button"
-                                className="settings-param-reset-btn"
-                                onClick={() => pageBgFileInputRef.current?.click()}
-                              >
-                                Choisir une image…
-                              </button>
-                              {draftPageBgImage && (
-                                <button
-                                  type="button"
-                                  className="settings-param-reset-btn"
-                                  onClick={() => {
-                                    setDraftPageBgImage(null);
-                                    setPageBgError(null);
-                                  }}
-                                >
-                                  Retirer
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                        {pageBgError && (
-                          <p className="settings-field-error" role="alert">{pageBgError}</p>
-                        )}
-                      </div>
-                      <div className="option-group">
-                        <label className="option-label">Taille police éditeur</label>
-                        <input type="number" min={8} max={32} value={draftSettings.ui.editorFontSize} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, editorFontSize: Math.min(32, Math.max(8, parseInt(e.target.value, 10) || 14)) } }))} className="option-input" />
-                      </div>
-                      <div className="option-group">
-                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={draftSettings.ui.compactMode} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, compactMode: e.target.checked } }))} className="option-checkbox" />
-                          <span>Mode compact</span>
-                        </label>
-                      </div>
-                      <div className="option-group">
-                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={draftSettings.ui.editorWordWrap} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, editorWordWrap: e.target.checked } }))} className="option-checkbox" />
-                          <span>Retour à la ligne dans les éditeurs</span>
-                        </label>
-                      </div>
-                      <div className="option-group">
-                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={draftSettings.ui.reduceMotion} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, reduceMotion: e.target.checked } }))} className="option-checkbox" />
-                          <span>Réduire les animations</span>
-                        </label>
-                      </div>
-                      <div className="option-group">
-                        <SidebarListbox
-                          className="settings-listbox"
-                          id="settings-tab-size"
-                          label="Taille des tabulations"
-                          value={String(draftSettings.ui.tabSize)}
-                          options={[
-                            { value: '2', label: '2 espaces' },
-                            { value: '4', label: '4 espaces' },
-                          ]}
-                          onChange={(next) =>
-                            setDraftSettings((s) => ({
-                              ...s,
-                              ui: { ...s.ui, tabSize: next === '2' ? 2 : 4 },
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="option-group">
-                        <label className="option-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                          <input type="checkbox" checked={draftSettings.ui.showTooltips} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, showTooltips: e.target.checked } }))} className="option-checkbox" />
-                          <span>Afficher les infobulles (au survol)</span>
-                        </label>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    className="settings-param-apply-btn"
-                    disabled={Object.keys(settingsErrors).length > 0}
-                    data-tooltip={Object.keys(settingsErrors).length > 0 ? 'Corrigez les erreurs du profil avant d\'appliquer' : undefined}
-                    onClick={applyAndCloseSettings}
-                  >
-                    Appliquer et fermer
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-param-reset-btn"
-                    onClick={() => {
-                      setDraftSettings(cloneUserSettings(DEFAULT_USER_SETTINGS));
-                      setDraftPageBgImage(null);
-                      setPageBgError(null);
-                      setSettingsErrors({});
-                    }}
-                    data-tooltip="Réinitialiser le brouillon (appliquer ensuite pour valider)"
-                  >
-                    Réinitialiser
-                  </button>
-                </div>
-              </div>
-            </div>
-            {!settingsMaximized && (
-              <div
-                className="floating-window-resize-handle settings-resize-handle"
-                onMouseDown={handleSettingsResizeStart}
-                aria-label="Redimensionner"
-              />
-            )}
-          </div>
-        </>
+        <SettingsPanel
+          settingsPanelRef={settingsPanelRef}
+          settingsPanelStyle={settingsPanelStyle}
+          settingsMaximized={settingsMaximized}
+          isResizingSettings={isResizingSettings}
+          isDraggingSettings={isDraggingSettings}
+          settingsDirty={settingsDirty}
+          draftSettings={draftSettings}
+          setDraftSettings={setDraftSettings}
+          settingsErrors={settingsErrors}
+          activeSection={activeSettingsSection}
+          onSelectSection={selectSettingsSection}
+          draftPageBgImage={draftPageBgImage}
+          setDraftPageBgImage={setDraftPageBgImage}
+          pageBgError={pageBgError}
+          setPageBgError={setPageBgError}
+          pageBgFileInputRef={pageBgFileInputRef}
+          closeSettingsPanel={closeSettingsPanel}
+          applySettings={applySettings}
+          onResetSettings={requestResetSettings}
+          onOpenShortcutsHelp={() => {
+            setShortcutsHelpOpen(true);
+          }}
+          onExportSettings={exportUserSettingsFile}
+          onImportSettingsFile={importUserSettingsFile}
+          onClearLocalData={() => setShowClearLocalDataModal(true)}
+          setSettingsMinimized={setSettingsMinimized}
+          setSettingsMaximized={setSettingsMaximized}
+          handleSettingsDragStart={handleSettingsDragStart}
+          handleSettingsResizeStart={handleSettingsResizeStart}
+          SETTINGS_MIN_W={SETTINGS_MIN_W}
+          SETTINGS_MIN_H={SETTINGS_MIN_H}
+        />
       )}
 
       <Modal
@@ -2837,6 +2967,43 @@ function App() {
         cancelText="Continuer l’édition"
         type="warning"
         onConfirm={forceCloseSettingsPanel}
+      />
+
+      <Modal
+        isOpen={showResetSettingsModal}
+        onClose={() => setShowResetSettingsModal(false)}
+        title="Réinitialiser les paramètres"
+        message="Remettre le brouillon aux valeurs par défaut ? Vous devrez ensuite cliquer Appliquer pour enregistrer."
+        confirmText="Réinitialiser"
+        cancelText="Annuler"
+        type="warning"
+        onConfirm={resetSettingsToDefaults}
+      />
+
+      <Modal
+        isOpen={showConfirmConvertModal}
+        onClose={() => setShowConfirmConvertModal(false)}
+        title="Confirmer la conversion"
+        message={`Convertir ${sourceFormat} → ${targetFormat} ?`}
+        confirmText="Convertir"
+        cancelText="Annuler"
+        type="info"
+        onConfirm={() => {
+          setShowConfirmConvertModal(false);
+          handleConvert({ skipConfirm: true });
+        }}
+      />
+
+      <Modal
+        isOpen={showClearLocalDataModal}
+        onClose={() => setShowClearLocalDataModal(false)}
+        title="Effacer les données locales"
+        message="Historique, brouillon de session, fond personnalisé et préférences Ascend seront effacés sur cet appareil. Continuer ?"
+        confirmText="Tout effacer"
+        cancelText="Annuler"
+        type="danger"
+        autoFocusConfirm
+        onConfirm={clearLocalData}
       />
 
       <Modal
@@ -2999,9 +3166,37 @@ function App() {
         />
       )}
 
-      <ShortcutsHelpModal
-        isOpen={showShortcutsModal}
-        onClose={() => setShowShortcutsModal(false)}
+      <FindReplaceBar
+        open={showFindReplace}
+        onClose={() => setShowFindReplace(false)}
+        haystack={
+          findTarget === 'result'
+            ? (targetFormat === 'asciidoc' ? adocInput : mdOutput)
+            : (sourceFormat === 'markdown' ? mdOutput : adocInput)
+        }
+        readOnly={findTarget === 'result' && !isEditingResult}
+        onReplaceInTarget={(next) => {
+          if (findTarget === 'result') {
+            if (targetFormat === 'asciidoc') setAdocInput(next);
+            else setMdOutput(next);
+            setResultModified(true);
+          } else if (sourceFormat === 'markdown') {
+            setMdOutput(next);
+            setSourceModified(true);
+          } else {
+            setAdocInput(next);
+            setSourceModified(true);
+          }
+        }}
+      />
+
+      <DiffPanel
+        open={showDiffPanel}
+        onClose={() => setShowDiffPanel(false)}
+        left={sourceFormat === 'markdown' ? mdOutput : adocInput}
+        right={targetFormat === 'asciidoc' ? adocInput : mdOutput}
+        leftLabel={getFormatTitle(sourceFormat)}
+        rightLabel={getFormatTitle(targetFormat)}
       />
 
       {/* 
@@ -3117,9 +3312,9 @@ function App() {
               }
             }}
             headingsCount={headings.length}
-            defaultAuthor={userSettings.profile.displayName}
-            defaultOrganization={userSettings.profile.organization}
-            defaultLanguage={userSettings.profile.defaultLanguage}
+            activeProfileIds={activeProfileIds}
+            onToggleProfile={toggleConversionProfile}
+            onClearProfiles={clearConversionProfiles}
           />
         </aside>
         {/* 

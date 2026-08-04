@@ -154,4 +154,8 @@ export interface ConversionHistoryItem {
   toFormat: FormatType;
   sourceContent: string;
   resultContent: string;
+  /** Options de conversion au moment de la sauvegarde (optionnel, rétrocompat). */
+  conversionOptions?: ConversionOptions;
+  /** Profils actifs au moment de la sauvegarde (optionnel, rétrocompat). */
+  activeProfileIds?: string[];
 }

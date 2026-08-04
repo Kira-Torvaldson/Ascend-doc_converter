@@ -1,9 +1,10 @@
 /**
- * Panneau latéral « Autres options » (catégorie + réglages).
+ * Panneau latéral « Autres options » — menu déroulant + réglages.
  */
 
 import React from 'react';
 import { SidebarListbox } from './SidebarListbox';
+import { ConversionProfilesSection } from './ConversionProfilesSection';
 import type { ConversionOptions, FormatType } from '../types';
 
 export interface OtherOptionsCategory {
@@ -21,9 +22,9 @@ interface OtherOptionsPanelProps {
   navigationEnabled: boolean;
   onNavigationToggle: (enabled: boolean) => void;
   headingsCount: number;
-  defaultAuthor?: string;
-  defaultOrganization?: string;
-  defaultLanguage?: string;
+  activeProfileIds?: string[];
+  onToggleProfile?: (profileId: string) => void;
+  onClearProfiles?: () => void;
 }
 
 export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
@@ -36,35 +37,37 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
   navigationEnabled,
   onNavigationToggle,
   headingsCount,
-  defaultAuthor = '',
-  defaultOrganization = '',
-  defaultLanguage = 'fr',
+  activeProfileIds = [],
+  onToggleProfile,
+  onClearProfiles,
 }) => {
-  const title = categories.find((c) => c.value === category)?.label ?? 'Options';
-
   return (
-    <div className="sidebar-section">
-      <h3 className="sidebar-title">Autres options</h3>
-      <div className="sidebar-content other-options-body">
-        <div className="other-options-picker">
-          <SidebarListbox
-            id="other-options-category"
-            label="Catégorie"
-            value={category}
-            options={categories}
-            onChange={onCategoryChange}
-          />
-        </div>
+    <>
+      {onToggleProfile && (
+        <ConversionProfilesSection
+          activeProfileIds={activeProfileIds}
+          onToggleProfile={onToggleProfile}
+          onClearProfiles={onClearProfiles}
+        />
+      )}
 
-        <div className="other-options-panel">
-          <div className="other-options-panel-head">
-            <h4 className="other-options-panel-title">{title}</h4>
+      <div className="sidebar-section">
+        <h3 className="sidebar-title">Autres options</h3>
+
+        <div className="sidebar-content other-options-body">
+          <div className="other-options-picker">
+            <SidebarListbox
+              id="other-options-category"
+              label="Catégorie"
+              value={category}
+              options={categories}
+              onChange={onCategoryChange}
+            />
           </div>
 
-          <div className="other-options-panel-body" key={category}>
-            {category === 'navigation' && (
-              <>
-                <p className="option-panel-caption">Document</p>
+          <div className="other-options-panel other-options-panel--compact">
+            <div className="other-options-panel-body" key={category}>
+              {category === 'navigation' && (
                 <div className="option-stack">
                   <label className="option-checkbox-label">
                     <input
@@ -81,155 +84,239 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                     )}
                   </label>
                 </div>
-                {headingsCount === 0 && (
-                  <p className="option-hint">
-                    Aucune section détectée. Ajoutez des titres dans le document pour activer la navigation.
-                  </p>
-                )}
-              </>
-            )}
+              )}
 
-            {category === 'contentAnalysis' && (
-              <>
-                <p className="option-panel-caption">Mode</p>
-                <div className="option-panel-block">
-                  <div className="option-group">
-                    <label className="option-label">Mode d&apos;analyse</label>
-                    <select
-                      value={conversionOptions.contentAnalysis?.analysisMode || 'heuristic'}
-                      onChange={(e) => updateOption(['contentAnalysis', 'analysisMode'], e.target.value)}
-                      className="option-select"
-                    >
-                      <option value="basic">Basique</option>
-                      <option value="heuristic">Heuristique</option>
-                      <option value="strict">Strict</option>
-                    </select>
-                  </div>
-                </div>
-                <p className="option-panel-caption">Détection</p>
-                <div className="option-stack">
-                  <label className="option-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={conversionOptions.contentAnalysis?.headingDetection?.enabled !== false}
-                      onChange={(e) => updateOption(['contentAnalysis', 'headingDetection', 'enabled'], e.target.checked)}
-                      className="option-checkbox"
-                    />
-                    <span>Détection des titres</span>
-                  </label>
-                  <label className="option-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={conversionOptions.contentAnalysis?.listDetection?.enabled !== false}
-                      onChange={(e) => updateOption(['contentAnalysis', 'listDetection', 'enabled'], e.target.checked)}
-                      className="option-checkbox"
-                    />
-                    <span>Détection des listes</span>
-                  </label>
-                </div>
-              </>
-            )}
-
-            {category === 'normalization' && (
-              <>
-                <p className="option-panel-caption">Base</p>
-                <div className="option-panel-block">
-                  <div className="option-grid-2">
+              {category === 'contentAnalysis' && (
+                <>
+                  <div className="option-panel-block">
                     <div className="option-group">
-                      <label className="option-label">Encodage</label>
+                      <label className="option-label">Mode d&apos;analyse</label>
                       <select
-                        value={conversionOptions.normalization?.encoding || 'utf-8'}
-                        onChange={(e) => updateOption(['normalization', 'encoding'], e.target.value)}
+                        value={conversionOptions.contentAnalysis?.analysisMode || 'heuristic'}
+                        onChange={(e) =>
+                          updateOption(['contentAnalysis', 'analysisMode'], e.target.value)
+                        }
                         className="option-select"
                       >
-                        <option value="utf-8">UTF-8</option>
-                        <option value="latin1">Latin1</option>
-                        <option value="ascii">ASCII</option>
-                      </select>
-                    </div>
-                    <div className="option-group">
-                      <label className="option-label">Unicode</label>
-                      <select
-                        value={conversionOptions.normalization?.advanced?.unicode?.normalization || 'NFC'}
-                        onChange={(e) => updateOption(['normalization', 'advanced', 'unicode', 'normalization'], e.target.value)}
-                        className="option-select"
-                      >
-                        <option value="none">Off</option>
-                        <option value="NFC">NFC</option>
-                        <option value="NFKC">NFKC</option>
+                        <option value="basic">Basique</option>
+                        <option value="heuristic">Heuristique</option>
+                        <option value="strict">Strict</option>
                       </select>
                     </div>
                   </div>
-                </div>
-                <p className="option-panel-caption">Nettoyage</p>
-                <div className="option-stack">
-                  <label className="option-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={conversionOptions.normalization?.tabs?.convertToSpaces !== false}
-                      onChange={(e) => updateOption(['normalization', 'tabs', 'convertToSpaces'], e.target.checked)}
-                      className="option-checkbox"
-                    />
-                    <span>Tabulations → espaces</span>
-                  </label>
-                  <label className="option-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={conversionOptions.normalization?.advanced?.unicode?.detectConfusables !== false}
-                      onChange={(e) => updateOption(['normalization', 'advanced', 'unicode', 'detectConfusables'], e.target.checked)}
-                      className="option-checkbox"
-                    />
-                    <span>Caractères confusables</span>
-                  </label>
-                  <label className="option-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeControlChars || false}
-                      onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeControlChars'], e.target.checked)}
-                      className="option-checkbox"
-                    />
-                    <span>Retirer contrôles</span>
-                  </label>
-                  <label className="option-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeDirectionalChars || false}
-                      onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeDirectionalChars'], e.target.checked)}
-                      className="option-checkbox"
-                    />
-                    <span>Retirer directionnels</span>
-                  </label>
-                  <label className="option-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={conversionOptions.normalization?.advanced?.characterCleaning?.removeNonPrintableChars || false}
-                      onChange={(e) => updateOption(['normalization', 'advanced', 'characterCleaning', 'removeNonPrintableChars'], e.target.checked)}
-                      className="option-checkbox"
-                    />
-                    <span>Retirer non imprimables</span>
-                  </label>
-                  <label className="option-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={conversionOptions.normalization?.advanced?.validation?.rejectInvalidSequences !== false}
-                      onChange={(e) => updateOption(['normalization', 'advanced', 'validation', 'rejectInvalidSequences'], e.target.checked)}
-                      className="option-checkbox"
-                    />
-                    <span>Rejeter séquences invalides</span>
-                  </label>
-                </div>
-              </>
-            )}
+                  <div className="option-stack">
+                    <label className="option-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={
+                          conversionOptions.contentAnalysis?.headingDetection?.enabled !== false
+                        }
+                        onChange={(e) =>
+                          updateOption(
+                            ['contentAnalysis', 'headingDetection', 'enabled'],
+                            e.target.checked
+                          )
+                        }
+                        className="option-checkbox"
+                      />
+                      <span>Détection des titres</span>
+                    </label>
+                    <label className="option-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={
+                          conversionOptions.contentAnalysis?.listDetection?.enabled !== false
+                        }
+                        onChange={(e) =>
+                          updateOption(
+                            ['contentAnalysis', 'listDetection', 'enabled'],
+                            e.target.checked
+                          )
+                        }
+                        className="option-checkbox"
+                      />
+                      <span>Détection des listes</span>
+                    </label>
+                  </div>
+                </>
+              )}
 
-            {category === 'rendering' && (
-              <>
-                <p className="option-panel-caption">Sortie</p>
+              {category === 'normalization' && (
+                <>
+                  <div className="option-panel-block">
+                    <div className="option-grid-2">
+                      <div className="option-group">
+                        <label className="option-label">Encodage</label>
+                        <select
+                          value={conversionOptions.normalization?.encoding || 'utf-8'}
+                          onChange={(e) =>
+                            updateOption(['normalization', 'encoding'], e.target.value)
+                          }
+                          className="option-select"
+                        >
+                          <option value="utf-8">UTF-8</option>
+                          <option value="latin1">Latin1</option>
+                          <option value="ascii">ASCII</option>
+                        </select>
+                      </div>
+                      <div className="option-group">
+                        <label className="option-label">Unicode</label>
+                        <select
+                          value={
+                            conversionOptions.normalization?.advanced?.unicode?.normalization ||
+                            'NFC'
+                          }
+                          onChange={(e) =>
+                            updateOption(
+                              ['normalization', 'advanced', 'unicode', 'normalization'],
+                              e.target.value
+                            )
+                          }
+                          className="option-select"
+                        >
+                          <option value="none">Off</option>
+                          <option value="NFC">NFC</option>
+                          <option value="NFKC">NFKC</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="option-stack">
+                    <label className="option-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={conversionOptions.normalization?.tabs?.convertToSpaces !== false}
+                        onChange={(e) =>
+                          updateOption(
+                            ['normalization', 'tabs', 'convertToSpaces'],
+                            e.target.checked
+                          )
+                        }
+                        className="option-checkbox"
+                      />
+                      <span>Tabulations → espaces</span>
+                    </label>
+                    <label className="option-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={
+                          conversionOptions.normalization?.advanced?.unicode
+                            ?.detectConfusables !== false
+                        }
+                        onChange={(e) =>
+                          updateOption(
+                            ['normalization', 'advanced', 'unicode', 'detectConfusables'],
+                            e.target.checked
+                          )
+                        }
+                        className="option-checkbox"
+                      />
+                      <span>Caractères confusables</span>
+                    </label>
+                    <label className="option-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={
+                          conversionOptions.normalization?.advanced?.characterCleaning
+                            ?.removeControlChars || false
+                        }
+                        onChange={(e) =>
+                          updateOption(
+                            [
+                              'normalization',
+                              'advanced',
+                              'characterCleaning',
+                              'removeControlChars',
+                            ],
+                            e.target.checked
+                          )
+                        }
+                        className="option-checkbox"
+                      />
+                      <span>Retirer contrôles</span>
+                    </label>
+                    <label className="option-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={
+                          conversionOptions.normalization?.advanced?.characterCleaning
+                            ?.removeDirectionalChars || false
+                        }
+                        onChange={(e) =>
+                          updateOption(
+                            [
+                              'normalization',
+                              'advanced',
+                              'characterCleaning',
+                              'removeDirectionalChars',
+                            ],
+                            e.target.checked
+                          )
+                        }
+                        className="option-checkbox"
+                      />
+                      <span>Retirer directionnels</span>
+                    </label>
+                    <label className="option-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={
+                          conversionOptions.normalization?.advanced?.characterCleaning
+                            ?.removeNonPrintableChars || false
+                        }
+                        onChange={(e) =>
+                          updateOption(
+                            [
+                              'normalization',
+                              'advanced',
+                              'characterCleaning',
+                              'removeNonPrintableChars',
+                            ],
+                            e.target.checked
+                          )
+                        }
+                        className="option-checkbox"
+                      />
+                      <span>Retirer non imprimables</span>
+                    </label>
+                    <label className="option-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={
+                          conversionOptions.normalization?.advanced?.validation
+                            ?.rejectInvalidSequences !== false
+                        }
+                        onChange={(e) =>
+                          updateOption(
+                            [
+                              'normalization',
+                              'advanced',
+                              'validation',
+                              'rejectInvalidSequences',
+                            ],
+                            e.target.checked
+                          )
+                        }
+                        className="option-checkbox"
+                      />
+                      <span>Rejeter séquences invalides</span>
+                    </label>
+                  </div>
+                </>
+              )}
+
+              {category === 'rendering' && (
                 <div className="option-stack">
                   <label className="option-checkbox-label">
                     <input
                       type="checkbox"
                       checked={conversionOptions.rendering?.tableOfContents?.enabled || false}
-                      onChange={(e) => updateOption(['rendering', 'tableOfContents', 'enabled'], e.target.checked)}
+                      onChange={(e) =>
+                        updateOption(
+                          ['rendering', 'tableOfContents', 'enabled'],
+                          e.target.checked
+                        )
+                      }
                       className="option-checkbox"
                     />
                     <span>Table des matières</span>
@@ -238,7 +325,12 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                     <input
                       type="checkbox"
                       checked={conversionOptions.rendering?.sectionNumbering?.enabled || false}
-                      onChange={(e) => updateOption(['rendering', 'sectionNumbering', 'enabled'], e.target.checked)}
+                      onChange={(e) =>
+                        updateOption(
+                          ['rendering', 'sectionNumbering', 'enabled'],
+                          e.target.checked
+                        )
+                      }
                       className="option-checkbox"
                     />
                     <span>Numérotation des sections</span>
@@ -248,7 +340,9 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                       <input
                         type="checkbox"
                         checked={conversionOptions.rendering?.lineWrap?.enabled || false}
-                        onChange={(e) => updateOption(['rendering', 'lineWrap', 'enabled'], e.target.checked)}
+                        onChange={(e) =>
+                          updateOption(['rendering', 'lineWrap', 'enabled'], e.target.checked)
+                        }
                         className="option-checkbox"
                       />
                       <span>Retour à la ligne automatique</span>
@@ -257,127 +351,91 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                       <input
                         type="number"
                         value={conversionOptions.rendering?.lineWrap?.maxWidth || 80}
-                        onChange={(e) => updateOption(['rendering', 'lineWrap', 'maxWidth'], parseInt(e.target.value) || 80)}
+                        onChange={(e) =>
+                          updateOption(
+                            ['rendering', 'lineWrap', 'maxWidth'],
+                            parseInt(e.target.value, 10) || 80
+                          )
+                        }
                         className="option-input option-field-follow"
                         min={40}
                         max={200}
-                        placeholder="Largeur max (caractères)"
+                        placeholder="Largeur max"
                       />
                     )}
                   </div>
                 </div>
-              </>
-            )}
+              )}
 
-            {category === 'formatSpecific' && (
-              <>
-                <p className="option-panel-caption">Format cible</p>
-                {targetFormat === 'markdown' && (
-                  <div className="option-panel-block">
-                    <div className="option-group">
-                      <label className="option-label">Variante Markdown</label>
-                      <select
-                        value={
-                          conversionOptions.formatSpecific?.markdown?.parsedown
-                            ? 'parsedown'
-                            : (conversionOptions.formatSpecific?.markdown?.flavor || 'commonmark')
-                        }
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (value === 'parsedown') {
-                            updateOption(['formatSpecific', 'markdown', 'parsedown'], true);
-                            updateOption(['formatSpecific', 'markdown', 'flavor'], 'commonmark');
-                          } else {
-                            updateOption(['formatSpecific', 'markdown', 'parsedown'], false);
-                            updateOption(['formatSpecific', 'markdown', 'flavor'], value);
+              {category === 'formatSpecific' && (
+                <>
+                  {targetFormat === 'markdown' && (
+                    <div className="option-panel-block">
+                      <div className="option-group">
+                        <label className="option-label">Variante Markdown</label>
+                        <select
+                          value={
+                            conversionOptions.formatSpecific?.markdown?.parsedown
+                              ? 'parsedown'
+                              : conversionOptions.formatSpecific?.markdown?.flavor ||
+                                'commonmark'
                           }
-                        }}
-                        className="option-select"
-                      >
-                        <option value="commonmark">CommonMark</option>
-                        <option value="gfm">GitHub Flavored</option>
-                        <option value="markdown">Markdown</option>
-                        <option value="parsedown">Parsedown (BookStack)</option>
-                      </select>
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === 'parsedown') {
+                              updateOption(['formatSpecific', 'markdown', 'parsedown'], true);
+                              updateOption(
+                                ['formatSpecific', 'markdown', 'flavor'],
+                                'commonmark'
+                              );
+                            } else {
+                              updateOption(['formatSpecific', 'markdown', 'parsedown'], false);
+                              updateOption(['formatSpecific', 'markdown', 'flavor'], value);
+                            }
+                          }}
+                          className="option-select"
+                        >
+                          <option value="commonmark">CommonMark</option>
+                          <option value="gfm">GitHub Flavored</option>
+                          <option value="markdown">Markdown</option>
+                          <option value="parsedown">Parsedown (BookStack)</option>
+                        </select>
+                      </div>
                     </div>
-                  </div>
-                )}
-                {targetFormat === 'asciidoc' && (
-                  <div className="option-panel-block">
-                    <div className="option-group">
-                      <label className="option-label">Mode de compatibilité</label>
-                      <select
-                        value={conversionOptions.formatSpecific?.asciidoc?.compatMode || 'asciidoctor'}
-                        onChange={(e) => updateOption(['formatSpecific', 'asciidoc', 'compatMode'], e.target.value)}
-                        className="option-select"
-                      >
-                        <option value="asciidoctor">Asciidoctor</option>
-                        <option value="asciidoc">AsciiDoc</option>
-                      </select>
+                  )}
+                  {targetFormat === 'asciidoc' && (
+                    <div className="option-panel-block">
+                      <div className="option-group">
+                        <label className="option-label">Mode de compatibilité</label>
+                        <select
+                          value={
+                            conversionOptions.formatSpecific?.asciidoc?.compatMode ||
+                            'asciidoctor'
+                          }
+                          onChange={(e) =>
+                            updateOption(
+                              ['formatSpecific', 'asciidoc', 'compatMode'],
+                              e.target.value
+                            )
+                          }
+                          className="option-select"
+                        >
+                          <option value="asciidoctor">Asciidoctor</option>
+                          <option value="asciidoc">AsciiDoc</option>
+                        </select>
+                      </div>
                     </div>
-                  </div>
-                )}
-                {targetFormat !== 'markdown' && targetFormat !== 'asciidoc' && (
-                  <p className="option-hint">
-                    Aucune option spécifique pour ce format pour le moment.
-                  </p>
-                )}
-              </>
-            )}
+                  )}
+                  {targetFormat !== 'markdown' && targetFormat !== 'asciidoc' && (
+                    <p className="conversion-profiles-active-empty">Aucune option</p>
+                  )}
+                </>
+              )}
 
-            {category === 'metadata' && (
-              <>
-                <p className="option-panel-caption">Document</p>
-                <div className="option-stack option-stack--fields">
-                  <div className="option-group">
-                    <label className="option-label">Titre</label>
-                    <input
-                      type="text"
-                      value={conversionOptions.metadata?.title || ''}
-                      onChange={(e) => updateOption(['metadata', 'title'], e.target.value || null)}
-                      className="option-input"
-                      placeholder="Titre du document"
-                    />
-                  </div>
-                  <div className="option-group">
-                    <label className="option-label">Auteur</label>
-                    <input
-                      type="text"
-                      value={(conversionOptions.metadata?.author ?? defaultAuthor) || ''}
-                      onChange={(e) => updateOption(['metadata', 'author'], e.target.value || null)}
-                      className="option-input"
-                      placeholder="Auteur"
-                    />
-                  </div>
-                  <div className="option-group">
-                    <label className="option-label">Organisation</label>
-                    <input
-                      type="text"
-                      value={(conversionOptions.metadata?.organization ?? defaultOrganization) || ''}
-                      onChange={(e) => updateOption(['metadata', 'organization'], e.target.value || null)}
-                      className="option-input"
-                      placeholder="Organisation"
-                    />
-                  </div>
-                  <div className="option-group">
-                    <label className="option-label">Langue</label>
-                    <select
-                      value={conversionOptions.metadata?.language || defaultLanguage || 'fr'}
-                      onChange={(e) => updateOption(['metadata', 'language'], e.target.value)}
-                      className="option-select"
-                    >
-                      <option value="fr">Français</option>
-                      <option value="en">Anglais</option>
-                      <option value="es">Espagnol</option>
-                      <option value="de">Allemand</option>
-                    </select>
-                  </div>
-                </div>
-              </>
-            )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };
