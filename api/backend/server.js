@@ -25,6 +25,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`   POST /api/to-markdown     - Convert AsciiDoc → Markdown (downdoc)`)
   console.log(`   POST /api/to-asciidoc     - Convert Markdown → AsciiDoc (Pandoc)`)
   console.log(`   POST /api/from-html       - Convert HTML → Other formats (Pandoc)`)
+  console.log(`   POST /api/from-markdown   - Convert Markdown → HTML / TXT / AsciiDoc (Pandoc)`)
+  console.log(`   POST /api/from-text       - Convert Text → HTML / Markdown`)
   console.log(`   POST /api/text-to-markdown - Convert Text → Markdown (text2markdown)`)
   console.log(`   POST /api/confirmation/request - Request confirmation token`)
   console.log(`   GET  /api/confirmation/stats    - Get token statistics`)

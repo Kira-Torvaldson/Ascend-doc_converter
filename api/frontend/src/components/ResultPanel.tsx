@@ -24,6 +24,10 @@ interface ResultPanelProps {
   viewMode?: 'text' | 'preview';
   onViewModeChange?: (mode: 'text' | 'preview') => void;
   previewHtml?: string;
+  /** When true, HTML preview is rendered in a sandboxed iframe. */
+  previewAsHtmlDocument?: boolean;
+  /** Hide Texte/Aperçu for formats without useful rich preview (e.g. txt). */
+  showPreviewToggle?: boolean;
   textAreaRef?: React.RefObject<HTMLTextAreaElement | null> | null;
 }
 
@@ -42,11 +46,13 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
   viewMode = 'text',
   onViewModeChange,
   previewHtml = '',
+  previewAsHtmlDocument = false,
+  showPreviewToggle = true,
   textAreaRef = null,
 }) {
   const isLocked = !!value && !isEditingResult;
   const isEditing = !!value && isEditingResult;
-  const showPreview = viewMode === 'preview' && !isEditingResult;
+  const showPreview = showPreviewToggle && viewMode === 'preview' && !isEditingResult;
 
   return (
     <section
@@ -67,7 +73,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
         <div className="panel-header-actions">
           {value ? (
             <>
-              {onViewModeChange && !isEditingResult && (
+              {showPreviewToggle && onViewModeChange && !isEditingResult && (
                 <div className="result-view-toggle" role="group" aria-label="Mode d'affichage">
                   <button
                     type="button"
@@ -148,10 +154,19 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
           />
         )}
         {showPreview ? (
-          <div
-            className="result-preview"
-            dangerouslySetInnerHTML={{ __html: previewHtml || '<p><em>Aperçu vide</em></p>' }}
-          />
+          previewAsHtmlDocument ? (
+            <iframe
+              className="result-preview result-preview-frame"
+              title="Aperçu HTML"
+              sandbox=""
+              srcDoc={previewHtml || '<p><em>Aperçu vide</em></p>'}
+            />
+          ) : (
+            <div
+              className="result-preview"
+              dangerouslySetInnerHTML={{ __html: previewHtml || '<p><em>Aperçu vide</em></p>' }}
+            />
+          )
         ) : (
           <EditorWithLines
             textAreaRef={textAreaRef}

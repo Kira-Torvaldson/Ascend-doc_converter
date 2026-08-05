@@ -1,6 +1,6 @@
 {
   "name": "ascend-backend",
-  "version": "0.0.1.9",
+  "version": "0.0.1.9.1",
   "description": "Backend Node.js pour Ascend - Conversion AsciiDoc ⇄ Markdown",
   "main": "server.js",
   "type": "commonjs",

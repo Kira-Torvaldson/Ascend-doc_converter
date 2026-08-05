@@ -1,5 +1,5 @@
 import { API_BASE, buildConversionFetchHeaders } from './api';
-import { formatConversionErrorForUi } from './error-code-messages';
+import { formatConversionErrorForUi, getErrorMessageForCode } from './error-code-messages';
 
 /**
  * ============================================================================
@@ -139,15 +139,27 @@ export async function convertText(
   setShowErrorModal?: (show: boolean) => void,
   setErrorMessage?: (message: string) => void,
   setBackendConversionResult?: (result: any | null) => void,
-  setConversionUiState?: (state: 'idle' | 'loading' | 'success' | 'error') => void
+  setConversionUiState?: (state: 'idle' | 'loading' | 'success' | 'error') => void,
+  /** Client timeout; should match or slightly exceed backend CONVERSION_TIMEOUT_MS. */
+  timeoutMs?: number,
+  /** Abort previous attempt when the user starts a new conversion. */
+  externalSignal?: AbortSignal | null
 ) {
   const isMigratedAdocToMarkdown = sourceFormat === 'asciidoc' && targetFormat === 'markdown'
   const isMigratedMarkdownToAsciidoc = sourceFormat === 'markdown' && targetFormat === 'asciidoc'
+  const isMigratedMarkdownToHtmlOrTxt =
+    sourceFormat === 'markdown' && (targetFormat === 'html' || targetFormat === 'txt')
   const isMigratedTextToMarkdown = sourceFormat === 'txt' && targetFormat === 'markdown'
+  const isMigratedTextToHtml = sourceFormat === 'txt' && targetFormat === 'html'
   // Step 8 flow: HTML -> * must preserve standardized backend semantics too.
   const isMigratedHtmlToAny = sourceFormat === 'html'
   const isMigratedContractPath =
-    isMigratedAdocToMarkdown || isMigratedMarkdownToAsciidoc || isMigratedTextToMarkdown || isMigratedHtmlToAny
+    isMigratedAdocToMarkdown ||
+    isMigratedMarkdownToAsciidoc ||
+    isMigratedMarkdownToHtmlOrTxt ||
+    isMigratedTextToMarkdown ||
+    isMigratedTextToHtml ||
+    isMigratedHtmlToAny
 
   if (!text.trim()) {
     setNotification(null);
@@ -178,7 +190,16 @@ export async function convertText(
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const effectiveTimeoutMs =
+      typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : 30_000;
+    const timeoutId = setTimeout(() => controller.abort(), effectiveTimeoutMs);
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        controller.abort();
+      } else {
+        externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+      }
+    }
 
     let endpoint = '';
     let body: any = { text };
@@ -194,9 +215,17 @@ export async function convertText(
     } else if (sourceFormat === 'markdown' && targetFormat === 'asciidoc') {
       // Markdown → AsciiDoc: use Pandoc
       endpoint = `${API_BASE}/api/to-asciidoc`;
+    } else if (sourceFormat === 'markdown' && (targetFormat === 'html' || targetFormat === 'txt')) {
+      // Markdown → HTML / TXT: dedicated in-memory Pandoc route (no confirmation token)
+      endpoint = `${API_BASE}/api/from-markdown`;
+      body = { text, to: targetFormat };
     } else if (sourceFormat === 'txt' && targetFormat === 'markdown') {
       // Plain text → Markdown: use text2markdown
       endpoint = `${API_BASE}/api/text-to-markdown`;
+    } else if (sourceFormat === 'txt' && targetFormat === 'html') {
+      // Plain text → HTML: dedicated local route (no confirmation token)
+      endpoint = `${API_BASE}/api/from-text`;
+      body = { text, to: 'html' };
     } else if (sourceFormat === 'html') {
       // HTML → other formats: use from-html endpoint
       endpoint = `${API_BASE}/api/from-html`;
@@ -385,7 +414,7 @@ export async function convertText(
         throw new Error('Invalid conversion response: missing asciidoc output')
       }
       result = data.asciidoc
-    } else if (isMigratedHtmlToAny) {
+    } else if (isMigratedMarkdownToHtmlOrTxt || isMigratedTextToHtml || isMigratedHtmlToAny) {
       const out = (data as any)[targetFormat]
       if (typeof out !== 'string') {
         throw new Error(`Invalid conversion response: missing ${targetFormat} output`)
@@ -394,6 +423,28 @@ export async function convertText(
     } else {
       // Handle legacy/non-migrated responses according to endpoint
       result = data.markdown || data.asciidoc || data.result || "";
+    }
+    if (!result.trim()) {
+      if (isMigratedContractPath) {
+        setOutput('');
+      }
+      const emptyMessage = 'Erreur de conversion (EMPTY_OUTPUT)';
+      const uiErrorMessage = formatConversionErrorForUi(
+        'EMPTY_OUTPUT',
+        emptyMessage
+      );
+      setStatus('Erreur de conversion');
+      setNotification({
+        message: uiErrorMessage,
+        type: 'error',
+        visible: true,
+      });
+      if (setShowErrorModal && setErrorMessage) {
+        setShowErrorModal(true);
+        setErrorMessage(getErrorMessageForCode('EMPTY_OUTPUT', emptyMessage));
+      }
+      if (setConversionUiState) setConversionUiState('error');
+      return;
     }
     setOutput(result);
     const warningCount = Array.isArray(conversionResult?.warnings)
@@ -417,6 +468,10 @@ export async function convertText(
       setOutput("");
     }
     if (e.name === "AbortError") {
+      // Superseded by a newer attempt — do not surface a timeout error.
+      if (externalSignal?.aborted) {
+        return;
+      }
       const timeoutMessage = "Erreur : Timeout - La conversion prend trop de temps. Le fichier est peut-être trop volumineux.";
       setStatus(timeoutMessage);
       setNotification({

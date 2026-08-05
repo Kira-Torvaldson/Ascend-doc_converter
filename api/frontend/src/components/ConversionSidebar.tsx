@@ -6,6 +6,7 @@ import React from 'react';
 import type { FormatType, ConversionOptions } from '../types';
 import { FormatSelector } from './FormatSelector';
 import { OtherOptionsPanel, type OtherOptionsCategory } from './OtherOptionsPanel';
+import { isSupportedUiConversion, SUPPORTED_CONVERSION_HINT } from '../utils/conversionPairs';
 
 export interface ConversionSidebarProps {
   sidebarCollapsed: boolean;
@@ -76,20 +77,11 @@ export const ConversionSidebar: React.FC<ConversionSidebarProps> = ({
           value={targetFormat}
           onChange={onTargetFormatChange}
         />
-        {(() => {
-          const ok =
-            (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
-            (sourceFormat === 'markdown' && targetFormat === 'asciidoc') ||
-            (sourceFormat === 'html' &&
-              (targetFormat === 'markdown' || targetFormat === 'txt' || targetFormat === 'asciidoc')) ||
-            (sourceFormat === 'markdown' && targetFormat === 'html') ||
-            (sourceFormat === 'txt' && (targetFormat === 'markdown' || targetFormat === 'html'))
-          return !ok ? (
-            <div className="conversion-warning" role="status">
-              Couples supportés : AsciiDoc↔Markdown, HTML→Markdown/TXT, Markdown→HTML, TXT→Markdown/HTML.
-            </div>
-          ) : null
-        })()}
+        {!isSupportedUiConversion(sourceFormat, targetFormat) ? (
+          <div className="conversion-warning" role="status">
+            {SUPPORTED_CONVERSION_HINT}
+          </div>
+        ) : null}
       </div>
     </div>
     <OtherOptionsPanel

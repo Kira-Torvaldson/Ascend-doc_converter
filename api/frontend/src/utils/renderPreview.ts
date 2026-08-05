@@ -3,6 +3,7 @@
  */
 
 import type { FormatType } from '../types';
+import { sanitizeHtmlForPreview } from './sanitizeHtmlPreview';
 
 function escapeHtml(text: string): string {
   return text
@@ -80,7 +81,7 @@ function renderMarkdownPreview(content: string): string {
 export function renderPreviewHtml(content: string, format: FormatType): string {
   if (!content.trim()) return '';
 
-  if (format === 'html') return content;
+  if (format === 'html') return sanitizeHtmlForPreview(content);
 
   if (format === 'markdown') {
     return renderMarkdownPreview(content);
