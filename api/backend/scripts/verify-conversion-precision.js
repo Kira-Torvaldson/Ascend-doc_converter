@@ -151,6 +151,66 @@ async function main() {
   assert.ok(!pAdoc.includes('++>++'), 'pandoc must not mangle blockquotes')
   assert.ok(!pAdoc.includes('**bold**') || pAdoc.includes('*bold*'), 'admon body uses AsciiDoc bold')
 
+  // Images with size
+  const img = await convertAsciiDoc(['= Doc', '', 'image::fig.png[Alt,200,100]', ''].join('\n'), 'default')
+  assert.ok(img.markdown.includes('![Alt](fig.png)'), 'image alt/src')
+  assert.ok(/width=200/.test(img.markdown) && /height=100/.test(img.markdown), 'image dimensions')
+
+  // Mark spans
+  const mark = await convertAsciiDoc(['= Doc', '', 'Use #highlighted# text.', ''].join('\n'), 'default')
+  assert.ok(mark.markdown.includes('<mark>highlighted</mark>'), 'mark kept in default')
+  const markBs = await convertAsciiDoc(['= Doc', '', 'Use #highlighted# text.', ''].join('\n'), 'bookstack')
+  assert.ok(markBs.markdown.includes('**highlighted**'), 'mark → bold for bookstack')
+  assert.ok(!markBs.markdown.includes('<mark>'), 'no mark html in bookstack')
+
+  // include:: warning
+  const inc = await convertAsciiDoc(
+    ['= Doc', '', 'include::chapters/intro.adoc[]', '', 'After.', ''].join('\n'),
+    'default'
+  )
+  assert.ok(inc.markdown.includes('After.'), 'content after include')
+  assert.ok(!inc.markdown.includes('include::'), 'include directive dropped from output')
+  assert.ok(Array.isArray(inc.warnings) && inc.warnings.some((w) => w.code === 'INCLUDE_NOT_RESOLVED'), 'include warning')
+
+  // Table spans → pandoc gfm with colspan
+  const span = await convertAsciiDoc(
+    ['= Doc', '', '|===', '| a | b', '', '2+|span both', '|===', ''].join('\n'),
+    'default'
+  )
+  assert.strictEqual(span.engineUsed, 'pandoc', 'span uses pandoc')
+  assert.ok(/colspan|span both/i.test(span.markdown), 'colspan or span content preserved')
+
+  // Callouts → portable (n)
+  const callout = await convertAsciiDoc(
+    [
+      '= Doc',
+      '',
+      ':experimental:',
+      '',
+      '[source,js]',
+      '----',
+      'const x = 1; // <1>',
+      '----',
+      '',
+      '<1> explanation',
+      '',
+    ].join('\n'),
+    'default'
+  )
+  assert.ok(/\(1\)/.test(callout.markdown) || /explanation/i.test(callout.markdown), 'callout portable or listed')
+  assert.ok(!/[①②③]/.test(callout.markdown), 'no unicode conums')
+
+  // Unresolved attribute warning
+  const attrDoc = await convertAsciiDoc(
+    ['= Doc', '', 'Hello {product-name}.', ''].join('\n'),
+    'default'
+  )
+  assert.ok(
+    Array.isArray(attrDoc.warnings) &&
+      attrDoc.warnings.some((w) => w.code === 'ATTRIBUTE_UNRESOLVED' && /product-name/.test(w.message)),
+    'unresolved attribute warning'
+  )
+
   console.log('OK conversion precision')
 }
 
@@ -161,6 +221,7 @@ main()
     } catch (_) {
       /* ignore */
     }
+    setTimeout(() => process.exit(0), 50)
   })
   .catch((err) => {
     console.error('[FAIL]', err && err.message ? err.message : err)
@@ -169,5 +230,5 @@ main()
     } catch (_) {
       /* ignore */
     }
-    process.exit(1)
+    setTimeout(() => process.exit(1), 50)
   })

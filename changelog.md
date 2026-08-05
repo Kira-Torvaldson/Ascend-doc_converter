@@ -13,6 +13,20 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.8.5 (2026-08-05)
+
+#### Added
+- Table cell-span path (Pandoc GFM + HTML colspan) with HTML→AsciiDoc roundtrip; golden `08-table-span`.
+- Image width/height preservation; portable callout markers `(n)`; unresolved `{attr}` warnings (`ATTRIBUTE_UNRESOLVED`).
+- `INCLUDE_NOT_RESOLVED` / attribute warnings surfaced with `code:` prefix in the UI banner.
+- Simple HTML tables without spans normalized to pipe tables.
+
+#### Changed
+- Verification scripts (`golden`, `roundtrip`, `precision`, `admonitions`) shut down the Pandoc server on exit.
+
+#### Fixed
+- Pandoc dropping document titles on span-only tables; literal `&#10;` in GFM HTML tables.
+
 ### 0.0.1.8.4 (2026-08-05)
 
 #### Added

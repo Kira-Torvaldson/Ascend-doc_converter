@@ -10,6 +10,8 @@ const XREF_START = '\uE010'
 const XREF_END = '\uE011'
 const ANCHOR_START = '\uE012'
 const ANCHOR_END = '\uE013'
+const IMG_START = '\uE014'
+const IMG_END = '\uE015'
 
 /**
  * Pandoc AsciiDoc→Markdown emits fenced divs (:::: note … ::::).
@@ -233,8 +235,14 @@ function processInlineFormattingSafe(text) {
     return `\uE000CODE${i}\uE001`
   })
 
-  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) => {
-    return `image::${url}[${alt || ''}]`
+  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)(?:\{([^}]*)\})?/g, (_, alt, url, attrs) => {
+    if (!attrs) return `image::${url}[${alt || ''}]`
+    const width = /(?:^|\s)width=(\d+)/i.exec(attrs)
+    const height = /(?:^|\s)height=(\d+)/i.exec(attrs)
+    const parts = [alt || '']
+    if (width) parts.push(width[1])
+    if (height) parts.push(height[1])
+    return `image::${url}[${parts.join(',')}]`
   })
   result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
     if (url.startsWith('#')) return `<<${url.substring(1)},${label}>>`
@@ -265,14 +273,153 @@ function processInlineFormattingSafe(text) {
 }
 
 /**
- * Prepare AsciiDoc for downdoc (anchors + xrefs). Call restore* on the Markdown result.
+ * Protect image::path[alt,w,h] so width/height survive downdoc.
+ */
+function protectAsciiDocImages(asciidoc) {
+  if (!asciidoc || typeof asciidoc !== 'string') return asciidoc || ''
+  return asciidoc.replace(/^image::([^\s[]+)\[([^\]]*)\]\s*$/gm, (_, target, attrs) => {
+    const parts = String(attrs).split(',').map((s) => s.trim())
+    const alt = parts[0] || ''
+    const width = parts[1] || ''
+    const height = parts[2] || ''
+    if (!width && !height) return `image::${target}[${alt}]`
+    return `${IMG_START}${target}|${alt}|${width}|${height}${IMG_END}`
+  })
+}
+
+function restoreMarkdownImages(markdown) {
+  if (!markdown || typeof markdown !== 'string') return markdown || ''
+  const re = new RegExp(
+    `${IMG_START}([^|\\n]+)\\|([^|]*)\\|([^|]*)\\|([^${IMG_END}]*)?${IMG_END}`,
+    'g'
+  )
+  return markdown.replace(re, (_, target, alt, width, height) => {
+    const attrs = []
+    if (width) attrs.push(`width=${width}`)
+    if (height) attrs.push(`height=${height}`)
+    const attrStr = attrs.length ? `{${attrs.join(' ')}}` : ''
+    return `![${alt || ''}](${target})${attrStr}`
+  })
+}
+
+/**
+ * AsciiDoc #mark# → <mark> via downdoc. BookStack: bold. Default: keep <mark>.
+ */
+function normalizeMarkSpans(markdown, mode = 'default') {
+  if (!markdown || typeof markdown !== 'string') return markdown || ''
+  if (mode === 'bookstack') {
+    return markdown.replace(/<mark>([\s\S]*?)<\/mark>/gi, '**$1**')
+  }
+  return markdown
+}
+
+/**
+ * Source-level warnings (includes not expanded, unresolved attributes).
+ * @returns {{ code: string, message: string, path?: string, name?: string }[]}
+ */
+function collectAsciiDocWarnings(asciidoc) {
+  if (!asciidoc || typeof asciidoc !== 'string') return []
+  const warnings = []
+  const includeRe = /^include::([^\s\[]+)\[/gm
+  let m
+  while ((m = includeRe.exec(asciidoc))) {
+    warnings.push({
+      code: 'INCLUDE_NOT_RESOLVED',
+      message: `include::${m[1]}[] was not expanded (filesystem includes are not resolved in-memory)`,
+      path: m[1],
+    })
+  }
+
+  // Attributes defined in the header (:name: value)
+  const defined = new Set()
+  for (const line of asciidoc.split('\n')) {
+    const am = line.match(/^:([A-Za-z][\w-]*):/)
+    if (am) defined.add(am[1].toLowerCase())
+    if (/^=+\s+/.test(line.trim())) break
+  }
+  // Built-ins / commonly auto-provided — do not warn
+  const builtins = new Set([
+    'author', 'email', 'revnumber', 'revdate', 'doctitle', 'docname', 'docfile',
+    'docdir', 'filetype', 'imagesdir', 'icons', 'iconsdir', 'toc', 'sectanchors',
+    'sectlinks', 'sectnums', 'experimental', 'nbsp', 'zwsp', 'sp', 'vbar', 'empty',
+    'idprefix', 'idseparator', 'backend', 'basebackend',
+  ])
+  const seenAttr = new Set()
+  const attrRe = /\{([A-Za-z][\w-]*)\}/g
+  let am
+  while ((am = attrRe.exec(asciidoc))) {
+    const name = am[1]
+    const key = name.toLowerCase()
+    if (defined.has(key) || builtins.has(key) || seenAttr.has(key)) continue
+    // Skip likely non-attributes (JSON-ish / CSS) — only warn header-style attrs in body
+    if (/^[A-Z0-9_]+$/.test(name) && name.length <= 2) continue
+    seenAttr.add(key)
+    warnings.push({
+      code: 'ATTRIBUTE_UNRESOLVED',
+      message: `{${name}} is not defined in the document header and may be left unresolved`,
+      name,
+    })
+  }
+  return warnings
+}
+
+/**
+ * Downdoc emits Unicode conums (①…). Normalize to portable (1) markers.
+ */
+function normalizeCallouts(markdown) {
+  if (!markdown || typeof markdown !== 'string') return markdown || ''
+  const conums = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'
+  let result = markdown
+  for (let i = 0; i < conums.length; i++) {
+    const ch = conums[i]
+    if (result.includes(ch)) {
+      result = result.split(ch).join(`(${i + 1})`)
+    }
+  }
+  return result
+}
+
+/**
+ * Prefer pipe tables when HTML table has no colspan/rowspan (portable MD).
+ * Leave complex span tables as HTML.
+ */
+function normalizeSimpleHtmlTables(markdown) {
+  if (!markdown || typeof markdown !== 'string') return markdown || ''
+  if (!/<table\b/i.test(markdown)) return markdown
+  return markdown.replace(/<table\b[\s\S]*?<\/table>/gi, (table) => {
+    if (/colspan|rowspan/i.test(table)) return table
+    const rows = [...table.matchAll(/<tr\b[\s\S]*?<\/tr>/gi)]
+    if (rows.length < 2) return table
+    const cellText = (row) =>
+      [...row.matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((c) =>
+        c[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+      )
+    const matrix = rows.map((r) => cellText(r[0])).filter((cells) => cells.length)
+    if (matrix.length < 2) return table
+    const width = Math.max(...matrix.map((r) => r.length))
+    if (width < 1) return table
+    const pad = (row) => {
+      const out = row.slice()
+      while (out.length < width) out.push('')
+      return out
+    }
+    const header = pad(matrix[0])
+    const sep = header.map(() => '---')
+    const body = matrix.slice(1).map(pad)
+    const line = (cells) => `| ${cells.join(' | ')} |`
+    return [line(header), line(sep), ...body.map(line)].join('\n')
+  })
+}
+
+/**
+ * Prepare AsciiDoc for downdoc (anchors + xrefs + images). Call restore* on the Markdown result.
  */
 function prepareAsciiDocForDowndoc(asciidoc) {
-  return protectAsciiDocAnchors(protectAsciiDocXrefs(asciidoc))
+  return protectAsciiDocImages(protectAsciiDocAnchors(protectAsciiDocXrefs(asciidoc)))
 }
 
 function finalizeDowndocMarkdown(markdown) {
-  let result = restoreMarkdownAnchors(restoreMarkdownXrefs(markdown))
+  let result = restoreMarkdownImages(restoreMarkdownAnchors(restoreMarkdownXrefs(markdown)))
   result = normalizeDefinitionLists(result)
   return result
 }
@@ -303,6 +450,12 @@ module.exports = {
   restoreMarkdownXrefs,
   protectAsciiDocAnchors,
   restoreMarkdownAnchors,
+  protectAsciiDocImages,
+  restoreMarkdownImages,
+  normalizeMarkSpans,
+  collectAsciiDocWarnings,
+  normalizeCallouts,
+  normalizeSimpleHtmlTables,
   normalizePandocInternalLinks,
   prepareAsciiDocForDowndoc,
   finalizeDowndocMarkdown,

@@ -344,7 +344,7 @@ router.post(
 
     // Conversion entièrement en mémoire : downdoc (fallback Pandoc via stdin/stdout),
     // normalisation, cleanup et adaptateur BookStack inclus — aucun fichier temporaire.
-    const { markdown, engineUsed, fallbackReason } = await convertAsciiDoc(text, mode)
+    const { markdown, engineUsed, fallbackReason, warnings } = await convertAsciiDoc(text, mode)
 
     // Sanity: le résultat doit être du Markdown, pas de l'AsciiDoc
     const trimmedMarkdown = markdown.trim()
@@ -392,7 +392,7 @@ router.post(
       startedAt,
       finishedAt,
       durationMs: Date.now() - startedAtMs,
-      warnings: [],
+      warnings: Array.isArray(warnings) ? warnings : [],
       logs: [],
       meta: {
         route: '/api/to-markdown',

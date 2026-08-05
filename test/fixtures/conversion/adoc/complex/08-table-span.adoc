@@ -1,0 +1,7 @@
+= Table Cell Span Test
+
+|===
+| a | b
+
+2+|span both
+|===

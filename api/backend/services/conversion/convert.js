@@ -17,6 +17,10 @@ const {
   finalizeDowndocMarkdown,
   finalizePandocAsciiDoc,
   normalizeDefinitionLists,
+  normalizeMarkSpans,
+  collectAsciiDocWarnings,
+  normalizeCallouts,
+  normalizeSimpleHtmlTables,
 } = require('./conversion-precision.js')
 const { safeSpawn } = require('../../../../lib/security/safe-spawn.js')
 const { isSecurityError, SECURITY_ERROR_CODES } = require('../../../../lib/errors/security-errors.js')
@@ -81,7 +85,10 @@ function basicCleanup(markdown) {
   }
 
   // Ensure file ends with a single newline
-  return lines.join('\n').trimEnd() + '\n'
+  let cleaned = lines.join('\n')
+  // Pandoc GFM sometimes emits literal &#10; inside tables
+  cleaned = cleaned.replace(/&#10;/g, '')
+  return cleaned.trimEnd() + '\n'
 }
 
 /**
@@ -123,13 +130,24 @@ function normalizeAsciiDocInput(asciidoc) {
   return trimmedLines.join('\n').trimEnd() + '\n'
 }
 
+/** If Pandoc drops the document title, re-attach it from the AsciiDoc source. */
+function ensureMarkdownDocumentTitle(asciidoc, markdown) {
+  if (!asciidoc || !markdown) return markdown
+  const titleMatch = asciidoc.match(/^=\s+(.+)$/m)
+  if (!titleMatch) return markdown
+  const title = titleMatch[1].trim()
+  if (!title) return markdown
+  if (/^#\s+/m.test(markdown)) return markdown
+  return `# ${title}\n\n${markdown.replace(/^\n+/, '')}`
+}
+
 /**
  * Converts AsciiDoc to Markdown. Tries downdoc first; on failure falls back to Pandoc.
  * Returns { markdown, engineUsed, fallbackReason? }.
  *
  * @param {string} asciidoc - AsciiDoc content
  * @param {"default" | "bookstack"} mode - Conversion mode
- * @returns {Promise<{ markdown: string, engineUsed: "downdoc"|"pandoc", fallbackReason?: string }>}
+ * @returns {Promise<{ markdown: string, engineUsed: "downdoc"|"pandoc", fallbackReason?: string, warnings?: object[] }>}
  */
 async function convertAsciiDoc(asciidoc, mode = 'default') {
   if (!asciidoc || typeof asciidoc !== 'string') {
@@ -139,11 +157,13 @@ async function convertAsciiDoc(asciidoc, mode = 'default') {
   asciidoc = removeExperimentalTag(asciidoc)
   asciidoc = normalizeAsciiDocInput(asciidoc)
 
+  const warnings = collectAsciiDocWarnings(asciidoc)
+
   let markdown
   let engineUsed = 'downdoc'
   let fallbackReason = null
 
-  // Cell spans (2+|) are unreliable in downdoc → prefer Pandoc
+  // Cell spans (2+|) are unreliable in downdoc → prefer Pandoc GFM (HTML colspan)
   const preferPandoc = /\d+\+\|/.test(asciidoc)
 
   try {
@@ -160,20 +180,30 @@ async function convertAsciiDoc(asciidoc, mode = 'default') {
     markdown = finalizeDowndocMarkdown(markdown)
   } catch (err) {
     fallbackReason = err && err.message ? err.message : 'downdoc failed'
-    markdown = await convertAsciiDocWithPandoc(asciidoc)
+    const pandocFormat = preferPandoc || fallbackReason === 'complex table cell spans' ? 'gfm' : 'markdown'
+    markdown = await convertAsciiDocWithPandoc(asciidoc, { format: pandocFormat })
     if (!markdown || typeof markdown !== 'string' || markdown.trim().length === 0 || markdown === asciidoc) {
       throw new Error(`Conversion failed (downdoc: ${fallbackReason}; pandoc: invalid or identical output)`)
     }
+    markdown = ensureMarkdownDocumentTitle(asciidoc, markdown)
     engineUsed = 'pandoc'
   }
 
   markdown = basicCleanup(markdown)
   markdown = normalizeDefinitionLists(markdown)
+  markdown = normalizeCallouts(markdown)
+  markdown = normalizeSimpleHtmlTables(markdown)
+  markdown = normalizeMarkSpans(markdown, mode)
   // Toujours normaliser les notes/admonitions (évite le HTML <dl> brut dans l'UI)
   if (mode === 'bookstack') markdown = adaptForBookStack(markdown)
   else markdown = normalizeAdmonitionsToBlockquotes(markdown)
 
-  return { markdown, engineUsed, fallbackReason: fallbackReason || undefined }
+  return {
+    markdown,
+    engineUsed,
+    fallbackReason: fallbackReason || undefined,
+    warnings: warnings.length ? warnings : undefined,
+  }
 }
 
 /**
@@ -605,18 +635,21 @@ function processInlineFormatting(text) {
 
 /**
  * Converts AsciiDoc content to Markdown using Pandoc
- * 
+ *
  * @param {string} asciidoc - The AsciiDoc content to convert
+ * @param {{ format?: string }} [opts]
  * @returns {Promise<string>} Promise that resolves to the converted Markdown
  * @throws {Error} If Pandoc execution fails
  */
-async function convertAsciiDocWithPandoc(asciidoc) {
+async function convertAsciiDocWithPandoc(asciidoc, opts = {}) {
   if (!asciidoc || typeof asciidoc !== 'string') {
     throw new Error('AsciiDoc content must be a non-empty string')
   }
 
+  const format = opts.format || 'markdown'
+
   try {
-    const stdout = await runPandocInMemory('asciidoc', 'markdown', asciidoc)
+    const stdout = await runPandocInMemory('asciidoc', format, asciidoc)
     let markdown = basicCleanup(stdout)
     markdown = normalizePandocMarkdownAdmonitions(markdown)
     markdown = normalizeDefinitionLists(markdown)
@@ -646,9 +679,25 @@ async function convertMarkdownWithPandoc(markdown) {
   }
 
   try {
-    const extracted = extractMarkdownAdmonitions(markdown.replace(/\r\n/g, '\n'))
-    const stdout = await runPandocInMemory('markdown', 'asciidoc', extracted.markdown)
-    return finalizePandocAsciiDoc(stdout, extracted.blocks)
+    const normalized = markdown.replace(/\r\n/g, '\n')
+    const tables = []
+    const withoutTables = normalized.replace(/<table\b[\s\S]*?<\/table>/gi, (match) => {
+      const id = tables.length
+      tables.push(match)
+      return `\n\nASCENDHTMLTABLE${id}\n\n`
+    })
+
+    const extracted = extractMarkdownAdmonitions(withoutTables)
+    let stdout = await runPandocInMemory('markdown', 'asciidoc', extracted.markdown)
+    stdout = finalizePandocAsciiDoc(stdout, extracted.blocks)
+
+    for (let id = 0; id < tables.length; id++) {
+      let asciiTable = await runPandocInMemory('html', 'asciidoc', tables[id])
+      asciiTable = String(asciiTable || '').replace(/\r\n/g, '\n').trim()
+      stdout = stdout.replace(new RegExp(`ASCENDHTMLTABLE${id}`, 'g'), asciiTable)
+    }
+
+    return stdout.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
   } catch (error) {
     if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
       throw new Error('Pandoc conversion timed out', { cause: error })
@@ -740,24 +789,19 @@ async function convertWithPandoc(text, fromFormat, toFormat) {
   const binaryOutputFormats = ['pdf', 'docx', 'epub']
   if (!binaryOutputFormats.includes(normalizedTo)) {
     try {
-      let input = text
-      let admonBlocks = null
-      // Protect Markdown admonitions before Pandoc MD→AsciiDoc
+      // Reuse the precision-aware MD→AsciiDoc path (HTML tables, admonitions, …)
       if (pandocFrom === 'markdown' && pandocTo === 'asciidoc') {
-        const extracted = extractMarkdownAdmonitions(input.replace(/\r\n/g, '\n'))
-        input = extracted.markdown
-        admonBlocks = extracted.blocks
+        return convertMarkdownWithPandoc(text)
       }
 
-      let stdout = await runPandocInMemory(pandocFrom, pandocTo, input)
+      let stdout = await runPandocInMemory(pandocFrom, pandocTo, text)
 
       if (pandocFrom === 'asciidoc' && pandocTo === 'markdown') {
         stdout = basicCleanup(stdout)
         stdout = normalizePandocMarkdownAdmonitions(stdout)
         stdout = normalizeDefinitionLists(stdout)
         stdout = normalizeAdmonitionsToBlockquotes(stdout)
-      } else if (pandocFrom === 'markdown' && pandocTo === 'asciidoc') {
-        return finalizePandocAsciiDoc(stdout, admonBlocks)
+        stdout = ensureMarkdownDocumentTitle(text, stdout)
       }
 
       if (['markdown', 'asciidoc', 'rst', 'txt'].includes(normalizedTo)) {
