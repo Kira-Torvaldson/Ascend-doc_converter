@@ -13,6 +13,7 @@ const DEFAULT_SHORTCUTS: ShortcutHelpItem[] = [
   { label: 'Convertir', keys: 'Ctrl + Entrée' },
   { label: 'Télécharger / Sauvegarder', keys: 'Ctrl + S' },
   { label: 'Rechercher / Remplacer', keys: 'Ctrl + F' },
+  { label: 'Diff source ↔ résultat', keys: 'Ctrl + Maj + D' },
   { label: 'Historique', keys: 'Ctrl + H' },
   { label: 'Paramètres', keys: 'Ctrl + ,' },
   { label: 'Effacer la source', keys: 'Ctrl + K' },

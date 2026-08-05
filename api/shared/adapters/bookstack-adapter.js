@@ -9,6 +9,9 @@
  * 
  * NOTE: This is a CommonJS version for backend use.
  */
+
+const { normalizeAdmonitionsToBlockquotes } = require('./normalize-admonitions.js')
+
 function adaptForBookStack(markdown) {
   if (!markdown || typeof markdown !== 'string') {
     return markdown || ''
@@ -166,260 +169,7 @@ function adaptForBookStack(markdown) {
   // ============================================================================
   // PHASE 3: Process admonitions - convert to Markdown blockquotes
   // ============================================================================
-  
-  const admonitionEmojis = {
-    '📝': 'note',
-    '📌': 'note',
-    '💡': 'tip', 
-    '⚠️': 'warning',
-    '⚠': 'warning',
-    '🔥': 'caution',
-    '❗': 'important'
-  }
-  
-  const lines = result.split('\n')
-  const processedLines = []
-  let inAdmonition = false
-  let admonitionType = ''
-  let admonitionContent = []
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    const nextLine = i < lines.length - 1 ? lines[i + 1] : ''
-    const prevLine = i > 0 ? lines[i - 1] : ''
-    
-    // Check for admonition start patterns
-    const emojiMatch = line.match(/^\*\*([📝💡⚠️🔥❗⚠📌])\s+(\w+)\*\*\s*$/)
-    const emojiMatchWithContent = line.match(/^\*\*([📝💡⚠️🔥❗⚠📌])\s+(\w+)\*\*\s+(.+)$/)
-    const emojiMatchLoose = line.match(/^\*\*([^\*]+?)\s+(NOTE|TIP|WARNING|CAUTION|IMPORTANT)\*\*\s*$/i)
-    const emojiMatchWithContentLoose = line.match(/^\*\*([^\*]+?)\s+(NOTE|TIP|WARNING|CAUTION|IMPORTANT)\*\*\s+(.+)$/i)
-    
-    // HTML format from downdoc: <dl><dt><strong>EMOJI TYPE</strong></dt><dd>
-    const htmlMatch = line.match(/^<dl><dt><strong>([📝💡⚠️🔥❗⚠📌])\s+(\w+)(?::\s*(.+))?<\/strong><\/dt><dd>$/)
-    const htmlMatchLoose = line.match(/^<dl><dt><strong>([^<]+?)\s+(NOTE|TIP|WARNING|CAUTION|IMPORTANT)(?::\s*(.+))?<\/strong><\/dt><dd>$/i)
-    
-    if (emojiMatch || emojiMatchWithContent || emojiMatchLoose || emojiMatchWithContentLoose || htmlMatch || htmlMatchLoose) {
-      // Close previous admonition if any
-      if (inAdmonition) {
-        if (admonitionContent.length > 0) {
-          const firstLine = admonitionContent[0]
-          const restLines = admonitionContent.slice(1)
-          processedLines.push(`> **${admonitionType}:** ${firstLine}`)
-          restLines.forEach(contentLine => {
-            if (contentLine.trim()) {
-              processedLines.push(`> ${contentLine}`)
-            } else {
-              processedLines.push('>')
-            }
-          })
-        } else {
-          processedLines.push(`> **${admonitionType}:**`)
-        }
-        processedLines.push('')
-      }
-      
-      // Start new admonition
-      inAdmonition = true
-      admonitionContent = []
-      
-      if (htmlMatch) {
-        const emoji = htmlMatch[1]
-        admonitionType = htmlMatch[2]
-        if (htmlMatch[3]) {
-          admonitionContent.push(htmlMatch[3].trim())
-        }
-        continue
-      } else if (htmlMatchLoose) {
-        admonitionType = htmlMatchLoose[2]
-        if (htmlMatchLoose[3]) {
-          admonitionContent.push(htmlMatchLoose[3].trim())
-        }
-        continue
-      } else if (emojiMatchWithContent) {
-        const emoji = emojiMatchWithContent[1]
-        admonitionType = emojiMatchWithContent[2]
-        admonitionContent.push(emojiMatchWithContent[3].trim())
-      } else if (emojiMatchWithContentLoose) {
-        admonitionType = emojiMatchWithContentLoose[2]
-        admonitionContent.push(emojiMatchWithContentLoose[3].trim())
-      } else if (emojiMatch) {
-        const emoji = emojiMatch[1]
-        admonitionType = emojiMatch[2]
-      } else if (emojiMatchLoose) {
-        admonitionType = emojiMatchLoose[2]
-      }
-      
-      // Check if next line has content
-      if (nextLine.trim() && !nextLine.match(/^[#>#=-]|^```|^\|/) && !nextLine.match(/^\*\*/) && !nextLine.match(/^<\/dd><\/dl>$/)) {
-        continue
-      } else {
-        // No content or single line, close it
-        if (admonitionContent.length > 0) {
-          const firstLine = admonitionContent[0]
-          const restLines = admonitionContent.slice(1)
-          processedLines.push(`> **${admonitionType}:** ${firstLine}`)
-          restLines.forEach(contentLine => {
-            if (contentLine.trim()) {
-              processedLines.push(`> ${contentLine}`)
-            } else {
-              processedLines.push('>')
-            }
-          })
-        } else {
-          processedLines.push(`> **${admonitionType}:**`)
-        }
-        processedLines.push('')
-        inAdmonition = false
-        admonitionType = ''
-        admonitionContent = []
-      }
-      continue
-    }
-    
-    // Check for closing HTML tag
-    if (line.match(/^<\/dd><\/dl>$/)) {
-      if (inAdmonition) {
-        if (admonitionContent.length > 0) {
-          const firstLine = admonitionContent[0]
-          const restLines = admonitionContent.slice(1)
-          processedLines.push(`> **${admonitionType}:** ${firstLine}`)
-          restLines.forEach(contentLine => {
-            if (contentLine.trim()) {
-              processedLines.push(`> ${contentLine}`)
-            } else {
-              processedLines.push('>')
-            }
-          })
-        } else {
-          processedLines.push(`> **${admonitionType}:**`)
-        }
-        processedLines.push('')
-        inAdmonition = false
-        admonitionType = ''
-        admonitionContent = []
-      }
-      continue
-    }
-    
-    // Check if line ends with closing HTML tag
-    if (line.match(/<\/dd><\/dl>$/)) {
-      const contentBeforeClose = line.replace(/<\/dd><\/dl>.*$/, '').trim()
-      if (contentBeforeClose && inAdmonition) {
-        admonitionContent.push(contentBeforeClose)
-      }
-      if (inAdmonition) {
-        if (admonitionContent.length > 0) {
-          const firstLine = admonitionContent[0]
-          const restLines = admonitionContent.slice(1)
-          processedLines.push(`> **${admonitionType}:** ${firstLine}`)
-          restLines.forEach(contentLine => {
-            if (contentLine.trim()) {
-              processedLines.push(`> ${contentLine}`)
-            } else {
-              processedLines.push('>')
-            }
-          })
-        } else {
-          processedLines.push(`> **${admonitionType}:**`)
-        }
-        processedLines.push('')
-        inAdmonition = false
-        admonitionType = ''
-        admonitionContent = []
-      }
-      continue
-    }
-    
-    // Continue admonition content if we're in one
-    if (inAdmonition) {
-      if (line.match(/<\/dd><\/dl>/)) {
-        const contentBeforeClose = line.replace(/<\/dd><\/dl>.*$/, '').trim()
-        if (contentBeforeClose) {
-          admonitionContent.push(contentBeforeClose)
-        }
-        if (admonitionContent.length > 0) {
-          const firstLine = admonitionContent[0]
-          const restLines = admonitionContent.slice(1)
-          processedLines.push(`> **${admonitionType}:** ${firstLine}`)
-          restLines.forEach(contentLine => {
-            if (contentLine.trim()) {
-              processedLines.push(`> ${contentLine}`)
-            } else {
-              processedLines.push('>')
-            }
-          })
-        } else {
-          processedLines.push(`> **${admonitionType}:**`)
-        }
-        processedLines.push('')
-        inAdmonition = false
-        admonitionType = ''
-        admonitionContent = []
-        continue
-      }
-      
-      if (!line.trim() && admonitionContent.length === 0) {
-        continue
-      }
-      
-      if (!line.match(/^[#>#=-]|^```|^\|/) && !line.match(/^\*\*/)) {
-        if (line.trim()) {
-          admonitionContent.push(line.trim())
-        } else if (admonitionContent.length > 0) {
-          admonitionContent.push('')
-        }
-        continue
-      }
-      
-      // If we hit a block element while in admonition, close it
-      if (line.trim() && (line.match(/^[#>#=-]|^```|^\|/) || line.match(/^\*\*/))) {
-        if (admonitionContent.length > 0) {
-          const firstLine = admonitionContent[0]
-          const restLines = admonitionContent.slice(1)
-          processedLines.push(`> **${admonitionType}:** ${firstLine}`)
-          restLines.forEach(contentLine => {
-            if (contentLine.trim()) {
-              processedLines.push(`> ${contentLine}`)
-            } else {
-              processedLines.push('>')
-            }
-          })
-        } else {
-          processedLines.push(`> **${admonitionType}:**`)
-        }
-        processedLines.push('')
-        inAdmonition = false
-        admonitionType = ''
-        admonitionContent = []
-      }
-    }
-    
-    // If we're not in an admonition, process the line normally
-    if (!inAdmonition) {
-      processedLines.push(line)
-    }
-  }
-  
-  // Close any remaining admonition
-  if (inAdmonition) {
-    if (admonitionContent.length > 0) {
-      const firstLine = admonitionContent[0]
-      const restLines = admonitionContent.slice(1)
-      processedLines.push(`> **${admonitionType}:** ${firstLine}`)
-      restLines.forEach(contentLine => {
-        if (contentLine.trim()) {
-          processedLines.push(`> ${contentLine}`)
-        } else {
-          processedLines.push('>')
-        }
-      })
-    } else {
-      processedLines.push(`> **${admonitionType}:**`)
-    }
-    processedLines.push('')
-  }
-  
-  result = processedLines.join('\n')
+  result = normalizeAdmonitionsToBlockquotes(result)
 
   // ============================================================================
   // PHASE 3.5: Fix horizontal rules AGAIN before line-by-line processing
@@ -792,7 +542,8 @@ function adaptForBookStack(markdown) {
     const prevLine = i > 0 ? listLines[i - 1] : ''
     const nextLine = i < listLines.length - 1 ? listLines[i + 1] : ''
     
-    const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s*(.+)$/)
+    // Require whitespace after marker so **bold** / *italic* are not treated as lists
+    const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/)
     
     if (listMatch) {
       const [, indent, marker, content] = listMatch
@@ -891,4 +642,4 @@ function adaptForBookStack(markdown) {
   return result
 }
 
-module.exports = { adaptForBookStack }
+module.exports = { adaptForBookStack, normalizeAdmonitionsToBlockquotes }

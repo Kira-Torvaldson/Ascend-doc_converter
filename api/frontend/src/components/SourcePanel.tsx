@@ -2,7 +2,7 @@
  * Panneau Source (contenu à convertir).
  */
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { memo, useCallback, useRef, useState } from 'react';
 import type { FormatType } from '../types';
 import { ConversionLoadingBanner } from './ConversionLoadingBanner';
 import { EmptyEditorState } from './EmptyEditorState';
@@ -15,11 +15,10 @@ interface SourcePanelProps {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
-  textAreaRef: React.RefObject<HTMLTextAreaElement> | null;
+  textAreaRef: React.RefObject<HTMLTextAreaElement | null> | null;
   onConvert: () => void;
   canConvert?: boolean;
   onClear?: () => void;
-  isDeleting?: boolean;
   sourceModified?: boolean;
   format: FormatType;
   loading: boolean;
@@ -29,12 +28,11 @@ interface SourcePanelProps {
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onFolderChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onFileSelect: (index: number) => void;
-  onDeletingPulse: () => void;
   onMarkModified: () => void;
   onDropFile?: (file: File) => void;
 }
 
-export const SourcePanel: React.FC<SourcePanelProps> = ({
+export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel({
   title,
   value,
   onChange,
@@ -43,7 +41,6 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
   onConvert,
   canConvert = true,
   onClear,
-  isDeleting = false,
   sourceModified = false,
   format,
   loading,
@@ -53,16 +50,28 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
   onFileChange,
   onFolderChange,
   onFileSelect,
-  onDeletingPulse,
   onMarkModified,
   onDropFile,
-}) => {
+}) {
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const dragDepthRef = useRef(0);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const deletingTimerRef = useRef<number | null>(null);
+
+  const pulseDeleting = useCallback(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    el.classList.add('panel-deleting');
+    if (deletingTimerRef.current != null) window.clearTimeout(deletingTimerRef.current);
+    deletingTimerRef.current = window.setTimeout(() => {
+      el.classList.remove('panel-deleting');
+      deletingTimerRef.current = null;
+    }, 500);
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
-    if (newValue.length < value.length) onDeletingPulse();
+    if (newValue.length < value.length) pulseDeleting();
     onChange(newValue);
   };
 
@@ -108,7 +117,8 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
 
   return (
     <section
-      className={`panel panel--source${isDeleting ? ' panel-deleting' : ''}${isDraggingFile ? ' is-file-dragover' : ''}`}
+      ref={panelRef}
+      className={`panel panel--source${isDraggingFile ? ' is-file-dragover' : ''}`}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -264,4 +274,4 @@ export const SourcePanel: React.FC<SourcePanelProps> = ({
       </div>
     </section>
   );
-};
+});

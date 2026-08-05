@@ -5,7 +5,19 @@ const { tmpdir } = require('os')
 const path = require('path')
 const { randomUUID } = require('crypto')
 const downdoc = require('../../../../lib/index.js')
-const { adaptForBookStack } = require('../../../shared/adapters/bookstack-adapter.js')
+const {
+  adaptForBookStack,
+  normalizeAdmonitionsToBlockquotes,
+} = require('../../../shared/adapters/bookstack-adapter.js')
+const {
+  normalizePandocMarkdownAdmonitions,
+  extractMarkdownAdmonitions,
+  processInlineFormattingSafe,
+  prepareAsciiDocForDowndoc,
+  finalizeDowndocMarkdown,
+  finalizePandocAsciiDoc,
+  normalizeDefinitionLists,
+} = require('./conversion-precision.js')
 const { safeSpawn } = require('../../../../lib/security/safe-spawn.js')
 const { isSecurityError, SECURITY_ERROR_CODES } = require('../../../../lib/errors/security-errors.js')
 const { getConversionTimeoutMs, getMaxInputSizeBytes } = require('../config/conversion-limits.js')
@@ -131,13 +143,21 @@ async function convertAsciiDoc(asciidoc, mode = 'default') {
   let engineUsed = 'downdoc'
   let fallbackReason = null
 
+  // Cell spans (2+|) are unreliable in downdoc → prefer Pandoc
+  const preferPandoc = /\d+\+\|/.test(asciidoc)
+
   try {
+    if (preferPandoc) {
+      throw new Error('complex table cell spans')
+    }
     const options = {}
     if (mode === 'bookstack') options.extensions = ['parsedown']
-    markdown = downdoc(asciidoc, options)
-    if (!markdown || typeof markdown !== 'string' || markdown === asciidoc) {
-      throw new Error(markdown === asciidoc ? 'output identical to input' : 'downdoc returned invalid result')
+    const prepared = prepareAsciiDocForDowndoc(asciidoc)
+    markdown = downdoc(prepared, options)
+    if (!markdown || typeof markdown !== 'string' || markdown === prepared || markdown === asciidoc) {
+      throw new Error(markdown === prepared || markdown === asciidoc ? 'output identical to input' : 'downdoc returned invalid result')
     }
+    markdown = finalizeDowndocMarkdown(markdown)
   } catch (err) {
     fallbackReason = err && err.message ? err.message : 'downdoc failed'
     markdown = await convertAsciiDocWithPandoc(asciidoc)
@@ -148,7 +168,10 @@ async function convertAsciiDoc(asciidoc, mode = 'default') {
   }
 
   markdown = basicCleanup(markdown)
+  markdown = normalizeDefinitionLists(markdown)
+  // Toujours normaliser les notes/admonitions (évite le HTML <dl> brut dans l'UI)
   if (mode === 'bookstack') markdown = adaptForBookStack(markdown)
+  else markdown = normalizeAdmonitionsToBlockquotes(markdown)
 
   return { markdown, engineUsed, fallbackReason: fallbackReason || undefined }
 }
@@ -253,8 +276,10 @@ function normalizeForBookStack(markdown) {
   
   // 2b. Convert admonitions to HTML (Parsedown compatible)
   // Handle format: **EMOJI TYPE** (standalone or with content)
+  // Strip downdoc hard-break "\" after admonition labels first.
+  result = result.replace(/^(\*\*[^\n*]+?\*\*)\s*\\$/gm, '$1')
   const admonitionEmojis = {
-    '📝': 'note', '💡': 'tip', '⚠️': 'warning', '⚠': 'warning',
+    '📝': 'note', '📌': 'note', '💡': 'tip', '⚠️': 'warning', '⚠': 'warning',
     '🔥': 'caution', '❗': 'important'
   }
   
@@ -269,10 +294,10 @@ function normalizeForBookStack(markdown) {
     const line = admonitionLines[i]
     const nextLine = i < admonitionLines.length - 1 ? admonitionLines[i + 1] : ''
     
-    // Check for admonition patterns
-    const emojiMatch = line.match(/^\*\*([📝💡⚠️🔥❗⚠])\s+(\w+)\*\*\s*$/)
-    const emojiMatchWithContent = line.match(/^\*\*([📝💡⚠️🔥❗⚠])\s+(\w+)\*\*\s+(.+)$/)
-    const looseMatch = line.match(/^\*\*([^\*]+?)\s+(NOTE|TIP|WARNING|CAUTION|IMPORTANT)\*\*\s*$/i)
+    // Check for admonition patterns (optional trailing \)
+    const emojiMatch = line.match(/^\*\*([📝💡⚠️🔥❗⚠📌])\s+(\w+)\*\*\s*\\?\s*$/)
+    const emojiMatchWithContent = line.match(/^\*\*([📝💡⚠️🔥❗⚠📌])\s+(\w+)\*\*\s+(.+)$/)
+    const looseMatch = line.match(/^\*\*([^\*]+?)\s+(NOTE|TIP|WARNING|CAUTION|IMPORTANT)\*\*\s*\\?\s*$/i)
     const looseMatchWithContent = line.match(/^\*\*([^\*]+?)\s+(NOTE|TIP|WARNING|CAUTION|IMPORTANT)\*\*\s+(.+)$/i)
     
     if (emojiMatch || emojiMatchWithContent || looseMatch || looseMatchWithContent) {
@@ -355,11 +380,9 @@ function normalizeForBookStack(markdown) {
   result = admonitionProcessed.join('\n')
 
   // 3. Ensure proper spacing for list elements (-, +, *)
-  // Parsedown breaks if lists are too tight - ensure at least one space after marker
-  // Also ensure empty line before lists if they follow paragraphs
-  result = result.replace(/^(\s*)([-*+]|\d+\.)\s*([^\s].*)$/gm, (match, indent, marker, content) => {
-    // Ensure at least one space after marker
-    return indent + marker + ' ' + content
+  // Require whitespace after marker so **bold** is never treated as a list item.
+  result = result.replace(/^(\s*)([-*+]|\d+\.)\s+(.+)$/gm, (match, indent, marker, content) => {
+    return indent + marker + ' ' + content.trim()
   })
 
   // Add empty line before lists that follow paragraphs (but not after headings)
@@ -450,25 +473,45 @@ function convertMarkdown(markdown) {
       const prevLine = i > 0 ? lines[i - 1] : ''
       const nextLine = i < lines.length - 1 ? lines[i + 1] : ''
 
-      // Handle code blocks
+      // Handle code blocks — AsciiDoc: [source,lang] then ---- … ----
       if (trimmed.startsWith('```')) {
         if (!inCodeBlock) {
-          // Opening code block
           inCodeBlock = true
           const langMatch = trimmed.match(/^```(\w+)?/)
           codeBlockLang = langMatch && langMatch[1] ? langMatch[1] : ''
-          output.push('----')
-          if (codeBlockLang) {
-            output.push(`[source,${codeBlockLang}]`)
-          }
+          if (codeBlockLang) output.push(`[source,${codeBlockLang}]`)
           output.push('----')
         } else {
-          // Closing code block
           inCodeBlock = false
           output.push('----')
           codeBlockLang = ''
         }
         continue
+      }
+
+      // Admonition blockquotes → AsciiDoc [NOTE]==== blocks
+      if (/^>\s?\*\*(NOTE|TIP|WARNING|CAUTION|IMPORTANT):\*\*/i.test(trimmed)) {
+        const quote = []
+        let j = i
+        while (j < lines.length && /^>\s?/.test(lines[j])) {
+          const stripped = lines[j].replace(/^>\s?/, '')
+          quote.push(stripped.trim() === '' ? '' : stripped)
+          j++
+        }
+        const head = quote[0] || ''
+        const hm = head.match(/^\*\*(NOTE|TIP|WARNING|CAUTION|IMPORTANT):\*\*\s*(.*)$/i)
+        if (hm) {
+          const type = hm[1].toUpperCase()
+          const body = [hm[2] || '', ...quote.slice(1)]
+          while (body.length && !String(body[body.length - 1]).trim()) body.pop()
+          const converted = body.map((l) =>
+            String(l).trim() === '' ? '' : processInlineFormattingSafe(String(l))
+          )
+          output.push(`[${type}]`, '====', ...converted, '====', '')
+          i = j - 1
+          inList = false
+          continue
+        }
       }
 
       if (inCodeBlock) {
@@ -477,12 +520,25 @@ function convertMarkdown(markdown) {
         continue
       }
 
-      // Handle headings (# Title -> = Title)
-      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/)
+      // GFM definition lists → Term:: def
+      if (trimmed && !trimmed.startsWith(':') && /^:\s+\S/.test(nextLine)) {
+        const defMatch = nextLine.match(/^:\s+(.*)$/)
+        if (defMatch) {
+          output.push(`${trimmed}:: ${defMatch[1]}`)
+          i++
+          inList = false
+          continue
+        }
+      }
+
+      // Handle headings (# Title -> = Title) — keep {#id} as [[id]] above title
+      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+?)(?:\s+\{#([A-Za-z0-9_.:-]+)\})?\s*$/)
       if (headingMatch) {
         const level = headingMatch[1].length
         const title = headingMatch[2]
+        const anchor = headingMatch[3]
         const asciidocLevel = '='.repeat(level)
+        if (anchor) output.push(`[[${anchor}]]`)
         output.push(`${asciidocLevel} ${title}`)
         inList = false
         continue
@@ -495,20 +551,17 @@ function convertMarkdown(markdown) {
         continue
       }
 
-      // Handle lists
-      const listMatch = trimmed.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/)
+      // Handle lists (match on raw line so indent depth is preserved)
+      const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/)
       if (listMatch) {
         const indent = listMatch[1].length
         const marker = listMatch[2]
         const content = listMatch[3]
         const isOrdered = /^\d+\./.test(marker)
-        
-        // Determine list type and indentation level
         const currentListType = isOrdered ? 'ol' : 'ul'
-        const currentIndent = Math.floor(indent / 2) // Approximate indent level
-        
+        const currentIndent = Math.floor(indent / 2)
+
         if (!inList || listType !== currentListType || listIndent !== currentIndent) {
-          // New list or list type change
           if (inList && output.length > 0 && output[output.length - 1] !== '') {
             output.push('')
           }
@@ -516,17 +569,11 @@ function convertMarkdown(markdown) {
           listType = currentListType
           listIndent = currentIndent
         }
-        
-        // Process inline formatting in list content
-        let processedContent = processInlineFormatting(content)
-        
-        // Add list item with proper indentation
-        const indentStr = ' '.repeat(currentIndent * 2)
-        if (isOrdered) {
-          output.push(`${indentStr}. ${processedContent}`)
-        } else {
-          output.push(`${indentStr}* ${processedContent}`)
-        }
+
+        const processedContent = processInlineFormattingSafe(content)
+        const depth = Math.max(1, currentIndent + 1)
+        const adocMarker = (isOrdered ? '.' : '*').repeat(depth)
+        output.push(`${adocMarker} ${processedContent}`)
         continue
       }
 
@@ -539,68 +586,21 @@ function convertMarkdown(markdown) {
         }
       }
 
-      // Process inline formatting for regular lines
-      let processedLine = processInlineFormatting(line)
-      output.push(processedLine)
+      output.push(processInlineFormattingSafe(line))
     }
 
     let result = output.join('\n')
-    
-    // Clean up excessive blank lines
     result = result.replace(/\n{3,}/g, '\n\n')
-    
-    // Ensure proper spacing around headings
     result = result.replace(/(^=+\s+[^\n]+)\n([^\n=])/gm, '$1\n\n$2')
-    
-    // Ensure file ends with a single newline
-    result = result.trimEnd() + '\n'
-
-    return result
+    return result.trimEnd() + '\n'
   } catch (error) {
     throw new Error(`Conversion failed: ${error.message}`)
   }
 }
 
-// Helper function to process inline formatting
+/** @deprecated use processInlineFormattingSafe — kept for any external require */
 function processInlineFormatting(text) {
-  if (!text || typeof text !== 'string') {
-    return text
-  }
-
-  let result = text
-
-  // Handle images first (before links)
-  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
-    return `image::${url}[${alt || ''}]`
-  })
-
-  // Handle links [text](url) -> link:url[text]
-  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
-    if (url.startsWith('#')) {
-      // Internal link
-      return `<<${url.substring(1)},${text}>>`
-    }
-    return `link:${url}[${text}]`
-  })
-
-  // Handle reference-style links [text][ref] -> link:ref[text]
-  result = result.replace(/\[([^\]]+)\]\[([^\]]+)\]/g, (match, text, ref) => {
-    return `link:${ref}[${text}]`
-  })
-
-  // Handle bold **text** -> *text* (must be before italic)
-  result = result.replace(/\*\*([^*\n]+?)\*\*/g, '*$1*')
-  result = result.replace(/__([^_\n]+?)__/g, '*$1*')
-
-  // Handle italic *text* or _text_ -> _text_
-  // Be careful not to break bold or code - use negative lookbehind/lookahead
-  result = result.replace(/(?<!\*)\*([^*\n\s][^*\n]*?[^*\n\s])\*(?!\*)/g, '_$1_')
-  result = result.replace(/(?<!_)_([^_\n\s][^_\n]*?[^_\n\s])_(?!_)/g, '_$1_')
-
-  // Handle strikethrough ~~text~~ -> [line-through]#text#
-  result = result.replace(/~~([^~]+?)~~/g, '[line-through]#$1#')
-
-  return result
+  return processInlineFormattingSafe(text)
 }
 
 /**
@@ -617,7 +617,11 @@ async function convertAsciiDocWithPandoc(asciidoc) {
 
   try {
     const stdout = await runPandocInMemory('asciidoc', 'markdown', asciidoc)
-    return basicCleanup(stdout)
+    let markdown = basicCleanup(stdout)
+    markdown = normalizePandocMarkdownAdmonitions(markdown)
+    markdown = normalizeDefinitionLists(markdown)
+    markdown = normalizeAdmonitionsToBlockquotes(markdown)
+    return markdown
   } catch (error) {
     if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
       throw new Error('Pandoc conversion timed out')
@@ -642,8 +646,9 @@ async function convertMarkdownWithPandoc(markdown) {
   }
 
   try {
-    const stdout = await runPandocInMemory('markdown', 'asciidoc', markdown)
-    return stdout.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
+    const extracted = extractMarkdownAdmonitions(markdown.replace(/\r\n/g, '\n'))
+    const stdout = await runPandocInMemory('markdown', 'asciidoc', extracted.markdown)
+    return finalizePandocAsciiDoc(stdout, extracted.blocks)
   } catch (error) {
     if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
       throw new Error('Pandoc conversion timed out', { cause: error })
@@ -735,7 +740,26 @@ async function convertWithPandoc(text, fromFormat, toFormat) {
   const binaryOutputFormats = ['pdf', 'docx', 'epub']
   if (!binaryOutputFormats.includes(normalizedTo)) {
     try {
-      const stdout = await runPandocInMemory(pandocFrom, pandocTo, text)
+      let input = text
+      let admonBlocks = null
+      // Protect Markdown admonitions before Pandoc MD→AsciiDoc
+      if (pandocFrom === 'markdown' && pandocTo === 'asciidoc') {
+        const extracted = extractMarkdownAdmonitions(input.replace(/\r\n/g, '\n'))
+        input = extracted.markdown
+        admonBlocks = extracted.blocks
+      }
+
+      let stdout = await runPandocInMemory(pandocFrom, pandocTo, input)
+
+      if (pandocFrom === 'asciidoc' && pandocTo === 'markdown') {
+        stdout = basicCleanup(stdout)
+        stdout = normalizePandocMarkdownAdmonitions(stdout)
+        stdout = normalizeDefinitionLists(stdout)
+        stdout = normalizeAdmonitionsToBlockquotes(stdout)
+      } else if (pandocFrom === 'markdown' && pandocTo === 'asciidoc') {
+        return finalizePandocAsciiDoc(stdout, admonBlocks)
+      }
+
       if (['markdown', 'asciidoc', 'rst', 'txt'].includes(normalizedTo)) {
         return stdout.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
       }

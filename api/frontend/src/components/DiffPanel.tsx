@@ -2,8 +2,8 @@
  * Panneau de diff source ↔ résultat.
  */
 
-import React, { useMemo } from 'react';
-import { diffLines } from '../utils/simpleDiff';
+import React, { useEffect, useMemo } from 'react';
+import { DIFF_RENDER_LIMIT, diffLines } from '../utils/simpleDiff';
 
 interface DiffPanelProps {
   open: boolean;
@@ -22,12 +22,28 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
   leftLabel = 'Source',
   rightLabel = 'Résultat',
 }) => {
-  const lines = useMemo(() => diffLines(left, right), [left, right]);
+  const result = useMemo(
+    () => (open ? diffLines(left, right) : null),
+    [open, left, right]
+  );
 
-  if (!open) return null;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
-  const added = lines.filter((l) => l.kind === 'add').length;
-  const removed = lines.filter((l) => l.kind === 'del').length;
+  if (!open || !result) return null;
+
+  const { lines, truncated, added, removed } = result;
+  const renderCapped = lines.length > DIFF_RENDER_LIMIT;
+  const visible = renderCapped ? lines.slice(0, DIFF_RENDER_LIMIT) : lines;
 
   return (
     <>
@@ -44,9 +60,11 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
         <div className="settings-panel-content">
           <p className="diff-summary">
             +{added} / −{removed} lignes
+            {truncated ? ' · aperçu simplifié (document volumineux)' : ''}
+            {renderCapped ? ` · affichage limité à ${DIFF_RENDER_LIMIT.toLocaleString('fr-FR')} lignes` : ''}
           </p>
           <pre className="diff-view">
-            {lines.map((line, i) => (
+            {visible.map((line, i) => (
               <div key={i} className={`diff-line diff-line--${line.kind}`}>
                 <span className="diff-gutter">
                   {line.leftNo ?? ''}

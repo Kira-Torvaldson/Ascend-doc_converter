@@ -2,7 +2,7 @@
  * Panneau Résultat (sortie de conversion).
  */
 
-import React from 'react';
+import React, { memo } from 'react';
 import { ConversionLoadingBanner } from './ConversionLoadingBanner';
 import { EmptyEditorState } from './EmptyEditorState';
 import { PanelActionsMenu, type PanelActionItem } from './PanelActionsMenu';
@@ -24,9 +24,10 @@ interface ResultPanelProps {
   viewMode?: 'text' | 'preview';
   onViewModeChange?: (mode: 'text' | 'preview') => void;
   previewHtml?: string;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement | null> | null;
 }
 
-export const ResultPanel: React.FC<ResultPanelProps> = ({
+export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel({
   title,
   value,
   onChange,
@@ -41,7 +42,8 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
   viewMode = 'text',
   onViewModeChange,
   previewHtml = '',
-}) => {
+  textAreaRef = null,
+}) {
   const isLocked = !!value && !isEditingResult;
   const isEditing = !!value && isEditingResult;
   const showPreview = viewMode === 'preview' && !isEditingResult;
@@ -152,6 +154,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
           />
         ) : (
           <EditorWithLines
+            textAreaRef={textAreaRef}
             className="result-textarea"
             value={value}
             onChange={(e) => {
@@ -175,4 +178,4 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({
       </div>
     </section>
   );
-};
+});

@@ -21,6 +21,15 @@ export type ConversionLimitsSnapshot = {
   maxInputSizeBytes: number;
   maxSourceUiMb: number;
   conversionTimeoutMs: number;
+  maxConcurrentConversions?: number;
+  capacity?: {
+    mode: string;
+    hostProfile: string;
+    totalRamMb: number;
+    cpuCount: number;
+    budgetRamMb: number;
+    recommendedHeapMb: number;
+  };
 };
 
 const DEFAULT_LIMITS: ConversionLimitsSnapshot = {
@@ -42,6 +51,8 @@ export async function fetchConversionLimits(): Promise<ConversionLimitsSnapshot>
       maxInputSizeBytes: Number(data.maxInputSizeBytes) || Math.floor(mb * 1024 * 1024),
       maxSourceUiMb: mb,
       conversionTimeoutMs: Number(data.conversionTimeoutMs) || DEFAULT_LIMITS.conversionTimeoutMs,
+      maxConcurrentConversions: Number(data.maxConcurrentConversions) || undefined,
+      capacity: data.capacity && typeof data.capacity === 'object' ? data.capacity : undefined,
     };
   } catch {
     return DEFAULT_LIMITS;

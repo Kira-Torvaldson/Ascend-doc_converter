@@ -8,6 +8,7 @@
 
 const app = require('./app.js')
 const { envMap } = require('./services/config/envmap.module.js')
+const { formatCapacityLogLine } = require('./services/config/capacity-profile.js')
 
 const PORT = envMap.get('PORT')
 
@@ -18,6 +19,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`${'='.repeat(60)}`)
   console.log(`   Server running on http://0.0.0.0:${PORT}`)
   console.log(`   Environment: ${envMap.get('NODE_ENV')}`)
+  console.log(`   ${formatCapacityLogLine()}`)
   console.log(`\n📋 Available endpoints:`)
   console.log(`   GET  /                    - API documentation page`)
   console.log(`   POST /api/to-markdown     - Convert AsciiDoc → Markdown (downdoc)`)

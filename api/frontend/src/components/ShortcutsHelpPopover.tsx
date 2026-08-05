@@ -8,6 +8,7 @@ const SHORTCUTS = [
   { label: 'Convertir', keys: 'Ctrl + Entrée' },
   { label: 'Télécharger', keys: 'Ctrl + S' },
   { label: 'Rechercher', keys: 'Ctrl + F' },
+  { label: 'Diff source ↔ résultat', keys: 'Ctrl + Maj + D' },
   { label: 'Historique', keys: 'Ctrl + H' },
   { label: 'Paramètres', keys: 'Ctrl + ,' },
   { label: 'Effacer source', keys: 'Ctrl + K' },

@@ -11,8 +11,23 @@ export interface TextStats {
 export function getTextStats(text: string): TextStats {
   const trimmed = text.trim();
   const characterCount = trimmed.length;
-  const wordCount =
-    trimmed.length > 0 ? trimmed.split(/\s+/).filter((word) => word.length > 0).length : 0;
-  const lineCount = trimmed.length > 0 ? trimmed.split('\n').length : 0;
+  if (characterCount === 0) {
+    return { characterCount: 0, wordCount: 0, lineCount: 0 };
+  }
+
+  let wordCount = 0;
+  let lineCount = 1;
+  let inWord = false;
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (ch === '\n') lineCount++;
+    if (/\s/.test(ch)) {
+      inWord = false;
+    } else if (!inWord) {
+      inWord = true;
+      wordCount++;
+    }
+  }
+
   return { characterCount, wordCount, lineCount };
 }

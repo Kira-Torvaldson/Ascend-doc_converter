@@ -6,15 +6,25 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.8.3 (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** Patch Paramètres + chrome UI  
-**Focus:** Rail settings, présets, export fond, header/sidebar/footer sobres
+**Version:** 0.0.1.8.4 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** Patch précision conversion + capacité  
+**Focus:** Pipeline ADOC↔MD plus fidèle, soft-auto capacity, gates CI
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.8.3 (Current — Ascend)
+### 0.0.1.8.4 (Current — Ascend)
+
+**Delivered:**
+- Précision conversion : admonitions multi-para, dlists, xrefs/ancres, spans tables → Pandoc
+- Soft-auto capacity (RAM/CPU) pour limites runtime
+- Corpus golden + scripts `test:precision` / `test:admonitions` / `test:capacity`
+- Stabilisation éditeur (perf find/diff/gouttière) + découpes UI mineures
+
+**Docs:** `doc/releases/v0.0.1.8.4-notes.md`
+
+### 0.0.1.8.3
 
 **Delivered:**
 - Paramètres : rail latéral, présets Interface, police éditeur, export/import + fond custom

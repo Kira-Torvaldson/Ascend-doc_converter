@@ -1,8 +1,8 @@
 /**
- * Textarea avec gouttière de numéros de ligne.
+ * Textarea avec gouttière de numéros de ligne (rendu léger).
  */
 
-import React, { useMemo, useRef } from 'react';
+import React, { memo, useDeferredValue, useMemo, useRef } from 'react';
 
 interface EditorWithLinesProps {
   value: string;
@@ -10,11 +10,26 @@ interface EditorWithLinesProps {
   className?: string;
   readOnly?: boolean;
   placeholder?: string;
-  textAreaRef?: React.RefObject<HTMLTextAreaElement> | null;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement | null> | null;
   style?: React.CSSProperties;
 }
 
-export const EditorWithLines: React.FC<EditorWithLinesProps> = ({
+function countLines(text: string): number {
+  if (!text) return 1;
+  let n = 1;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) n++;
+  }
+  return n;
+}
+
+function buildLineNumbers(count: number): string {
+  const parts = new Array<number>(count);
+  for (let i = 0; i < count; i++) parts[i] = i + 1;
+  return parts.join('\n');
+}
+
+export const EditorWithLines: React.FC<EditorWithLinesProps> = memo(function EditorWithLines({
   value,
   onChange,
   className = '',
@@ -22,10 +37,14 @@ export const EditorWithLines: React.FC<EditorWithLinesProps> = ({
   placeholder,
   textAreaRef,
   style,
-}) => {
+}) {
   const localRef = useRef<HTMLTextAreaElement | null>(null);
-  const gutterRef = useRef<HTMLDivElement | null>(null);
-  const lineCount = useMemo(() => Math.max(1, value.split('\n').length), [value]);
+  const gutterRef = useRef<HTMLPreElement | null>(null);
+  /** La gouttière peut suivre avec un léger retard pour ne pas bloquer la frappe. */
+  const deferredValue = useDeferredValue(value);
+  const lineCount = useMemo(() => countLines(deferredValue), [deferredValue]);
+  const gutterText = useMemo(() => buildLineNumbers(lineCount), [lineCount]);
+  const gutterCh = String(lineCount).length + 1;
 
   const setRefs = (node: HTMLTextAreaElement | null) => {
     localRef.current = node;
@@ -41,14 +60,13 @@ export const EditorWithLines: React.FC<EditorWithLinesProps> = ({
   };
 
   return (
-    <div className="editor-with-lines">
-      <div className="editor-line-gutter" ref={gutterRef} aria-hidden="true">
-        {Array.from({ length: lineCount }, (_, i) => (
-          <div key={i} className="editor-line-number">
-            {i + 1}
-          </div>
-        ))}
-      </div>
+    <div
+      className="editor-with-lines"
+      style={{ ['--editor-gutter-ch' as string]: gutterCh } as React.CSSProperties}
+    >
+      <pre className="editor-line-gutter" ref={gutterRef} aria-hidden="true">
+        {gutterText}
+      </pre>
       <textarea
         ref={setRefs}
         className={className}
@@ -62,4 +80,4 @@ export const EditorWithLines: React.FC<EditorWithLinesProps> = ({
       />
     </div>
   );
-};
+});

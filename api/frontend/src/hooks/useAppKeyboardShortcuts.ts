@@ -2,7 +2,7 @@
  * Raccourcis clavier Ascend (Ctrl/Cmd).
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 export interface AppKeyboardShortcutsHandlers {
   onConvert: () => void;
@@ -12,6 +12,7 @@ export interface AppKeyboardShortcutsHandlers {
   onOpenSettings?: () => void;
   onToggleHistory: () => void;
   onOpenFindReplace?: () => void;
+  onOpenDiff?: () => void;
   isEditingResult: boolean;
   onOpenSaveModal: () => void;
   loading: boolean;
@@ -24,54 +25,51 @@ function isEditableTarget(target: EventTarget | null): target is HTMLElement {
 }
 
 export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers): void {
-  const {
-    onConvert,
-    onExport,
-    onClearSource,
-    onOpenShortcutsHelp,
-    onOpenSettings,
-    onToggleHistory,
-    onOpenFindReplace,
-    isEditingResult,
-    onOpenSaveModal,
-    loading,
-  } = handlers;
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const h = handlersRef.current;
       const mod = e.ctrlKey || e.metaKey;
       const target = e.target;
       const inField = isEditableTarget(target);
 
+      if (mod && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        h.onOpenDiff?.();
+        return;
+      }
+
       if (inField) {
         if (mod && (e.key === 's' || e.key === 'S')) {
           e.preventDefault();
-          if (isEditingResult) onOpenSaveModal();
+          if (h.isEditingResult) h.onOpenSaveModal();
           return;
         }
         if (mod && e.key === 'Enter') {
           e.preventDefault();
-          if (!loading) onConvert();
+          if (!h.loading) h.onConvert();
           return;
         }
         if (mod && (e.key === 'f' || e.key === 'F')) {
           e.preventDefault();
-          onOpenFindReplace?.();
+          h.onOpenFindReplace?.();
           return;
         }
         if (mod && e.key === '/') {
           e.preventDefault();
-          onOpenShortcutsHelp();
+          h.onOpenShortcutsHelp();
           return;
         }
         if (mod && (e.key === 'h' || e.key === 'H')) {
           e.preventDefault();
-          onToggleHistory();
+          h.onToggleHistory();
           return;
         }
         if (mod && e.key === ',') {
           e.preventDefault();
-          onOpenSettings?.();
+          h.onOpenSettings?.();
           return;
         }
         return;
@@ -83,35 +81,35 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
         case 's':
         case 'S':
           e.preventDefault();
-          if (isEditingResult) onOpenSaveModal();
-          else onExport();
+          if (h.isEditingResult) h.onOpenSaveModal();
+          else h.onExport();
           break;
         case 'Enter':
           e.preventDefault();
-          if (!loading) onConvert();
+          if (!h.loading) h.onConvert();
           break;
         case 'k':
         case 'K':
           e.preventDefault();
-          onClearSource();
+          h.onClearSource();
           break;
         case 'h':
         case 'H':
           e.preventDefault();
-          onToggleHistory();
+          h.onToggleHistory();
           break;
         case 'f':
         case 'F':
           e.preventDefault();
-          onOpenFindReplace?.();
+          h.onOpenFindReplace?.();
           break;
         case '/':
           e.preventDefault();
-          onOpenShortcutsHelp();
+          h.onOpenShortcutsHelp();
           break;
         case ',':
           e.preventDefault();
-          onOpenSettings?.();
+          h.onOpenSettings?.();
           break;
         default:
           break;
@@ -120,16 +118,5 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    onConvert,
-    onExport,
-    onClearSource,
-    onOpenShortcutsHelp,
-    onOpenSettings,
-    onToggleHistory,
-    onOpenFindReplace,
-    isEditingResult,
-    onOpenSaveModal,
-    loading,
-  ]);
+  }, []);
 }

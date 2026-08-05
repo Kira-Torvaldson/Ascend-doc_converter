@@ -50,7 +50,7 @@
  * ============================================================================
  */
 
-import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect, startTransition, useDeferredValue } from "react";
 import {
   convertAsciiDocToMarkdown,
   convertMarkdownToAsciiDoc,
@@ -61,13 +61,8 @@ import { FormatType, ConversionHistoryItem, ConversionOptions } from "./types";
 import { HistoryModalV2, useNewHistoryModal, type DisplayHistoryEntryShape } from "./components/HistoryModalV2";
 import { buildDisplayHistory } from "./utils/displayHistory";
 import {
-  HeaderStatusPill,
-  Modal,
-  FormatSelector,
-  SidebarListbox,
   Snackbar,
   AppFooter,
-  OtherOptionsPanel,
   SourcePanel,
   ResultPanel,
   AppHeader,
@@ -76,6 +71,8 @@ import {
   ConversionWarningsBanner,
   FindReplaceBar,
   DiffPanel,
+  ConversionSidebar,
+  AppConfirmModals,
 } from "./components";
 import type { PanelActionItem } from "./components";
 import { removeExperimentalTag } from "./utils/asciidocHelpers";
@@ -266,7 +263,6 @@ function App() {
   const [copied, setCopied] = useState<boolean>(false);
   
   /** Indicates if text is being deleted from source (for visual feedback) */
-  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   
   /** Indicates if edit mode is active on result panel */
   const [isEditingResult, setIsEditingResult] = useState<boolean>(false);
@@ -498,6 +494,8 @@ function App() {
     const defaultId = loadUserSettings().conversion.defaultProfileId;
     return sanitizeActiveProfileIds(defaultId ? [defaultId] : []);
   });
+  const activeProfileIdsRef = useRef(activeProfileIds);
+  activeProfileIdsRef.current = activeProfileIds;
 
   /** Currently configured conversion options */
   const [conversionOptions, setConversionOptions] = useState<ConversionOptions>(() => {
@@ -562,6 +560,12 @@ function App() {
   const [warningsDismissed, setWarningsDismissed] = useState(false);
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [showDiffPanel, setShowDiffPanel] = useState(false);
+  const [diffSnapshot, setDiffSnapshot] = useState<{
+    left: string;
+    right: string;
+    leftLabel: string;
+    rightLabel: string;
+  } | null>(null);
   const [findTarget, setFindTarget] = useState<'source' | 'result'>('source');
 
   /** Onglet mobile Source / Résultat */
@@ -798,7 +802,14 @@ function App() {
    * @param value - New value to assign
    */
   const updateOption = (path: string[], value: any) => {
-    setActiveProfileIds([]);
+    setActiveProfileIds((prev) => {
+      if (prev.length > 0) {
+        Promise.resolve().then(() =>
+          showSnackbar('Options personnalisées — profils désactivés')
+        );
+      }
+      return [];
+    });
     setConversionOptions(prev => {
       const newOptions = { ...prev };
       let current: any = newOptions;
@@ -1091,6 +1102,7 @@ function App() {
   
   /** Reference to source panel textarea */
   const adocTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const resultTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
   
   /** Reference to destination panel textarea */
   const mdTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1168,59 +1180,47 @@ function App() {
    * DEPENDENCIES: adocInput, mdOutput, sourceFormat, targetFormat
    * (recalculates if any of these states change)
    */
+  const sourceTextForUi = sourceFormat === 'markdown' ? mdOutput : adocInput;
+  const resultTextForUi = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+  const deferredSourceForHeadings = useDeferredValue(sourceTextForUi);
+  const deferredSourceForResultMeta = useDeferredValue(sourceTextForUi);
+
   const headings = useMemo(() => {
-    // Don't extract headings if source format is not AsciiDoc or Markdown
     if (sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') {
       return [];
     }
-    
-    // Use text according to source format - only from source panel
-    let text = "";
+
+    let text = '';
     if (sourceFormat === 'asciidoc') {
-      // For AsciiDoc, use adocInput only if targetFormat is not asciidoc
-      // (otherwise adocInput might be a conversion result)
       if (targetFormat === 'asciidoc' && mdOutput.trim().length > 0) {
-        // If targetFormat is asciidoc and there's text in mdOutput,
-        // then adocInput is probably the result, so don't use it
         return [];
       }
-      text = adocInput;
-    } else if (sourceFormat === 'markdown') {
-      // For Markdown, use mdOutput only if targetFormat is not markdown
-      // (otherwise mdOutput is a conversion result)
+      text = deferredSourceForHeadings;
+    } else {
       if (targetFormat === 'markdown' && adocInput.trim().length > 0) {
-        // If targetFormat is markdown and there's text in adocInput,
-        // then mdOutput is probably the result, so don't use it
         return [];
       }
-      text = mdOutput;
+      text = deferredSourceForHeadings;
     }
-    
+
     if (!text || text.trim().length === 0) return [];
-    
-    const lines = text.split("\n");
-    return lines
-      .map((line, index) => {
-        // Detect AsciiDoc headings (= Title)
-        const adocMatch = line.match(/^(=+)\s+(.*)$/);
-        if (adocMatch) {
-          const level = adocMatch[1].length;
-          const title = adocMatch[2].trim();
-          return { lineIndex: index, level, title };
-        }
-        
-        // Detect Markdown headings (# Title)
-        const mdMatch = line.match(/^(#{1,6})\s+(.*)$/);
-        if (mdMatch) {
-          const level = mdMatch[1].length;
-          const title = mdMatch[2].trim();
-          return { lineIndex: index, level, title };
-        }
-        
-        return null;
-      })
-      .filter(Boolean) as { lineIndex: number; level: number; title: string }[];
-  }, [adocInput, mdOutput, sourceFormat, targetFormat]);
+
+    const out: { lineIndex: number; level: number; title: string }[] = [];
+    const lines = text.split('\n');
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+      const adocMatch = line.match(/^(=+)\s+(.*)$/);
+      if (adocMatch) {
+        out.push({ lineIndex: index, level: adocMatch[1].length, title: adocMatch[2].trim() });
+        continue;
+      }
+      const mdMatch = line.match(/^(#{1,6})\s+(.*)$/);
+      if (mdMatch) {
+        out.push({ lineIndex: index, level: mdMatch[1].length, title: mdMatch[2].trim() });
+      }
+    }
+    return out;
+  }, [deferredSourceForHeadings, adocInput, mdOutput, sourceFormat, targetFormat]);
 
   /**
    * ==========================================================================
@@ -1697,13 +1697,18 @@ function App() {
     
     setSourceFormat(item.fromFormat);
     setTargetFormat(item.toFormat);
-    if (item.conversionOptions && typeof item.conversionOptions === 'object') {
-      setConversionOptions(item.conversionOptions);
-    }
-    if (item.activeProfileIds) {
-      setActiveProfileIds(sanitizeActiveProfileIds(item.activeProfileIds));
+    const restoredIds = sanitizeActiveProfileIds(item.activeProfileIds);
+    if (restoredIds.length > 0) {
+      setActiveProfileIds(restoredIds);
+      setConversionOptions((prev) => ({
+        ...rebuildOptionsFromProfiles(restoredIds),
+        metadata: prev.metadata,
+      }));
     } else {
       setActiveProfileIds([]);
+      if (item.conversionOptions && typeof item.conversionOptions === 'object') {
+        setConversionOptions(item.conversionOptions);
+      }
     }
     setShowHistoryPanel(false);
     setIsEditingResult(false);
@@ -1844,11 +1849,6 @@ function App() {
       'txt': 'TEXT'
     };
     return titles[format];
-  }, []);
-
-  const pulseSourceDeleting = useCallback(() => {
-    setIsDeleting(true);
-    window.setTimeout(() => setIsDeleting(false), 500);
   }, []);
 
   /**
@@ -2001,9 +2001,9 @@ function App() {
 
     const sourceSizeBytes = new Blob([sourceText]).size;
     if (sourceSizeBytes > maxSourceSizeMb * 1024 * 1024) {
-      setStatus(`Document trop volumineux (max ${maxSourceSizeMb} Mo)`);
+      setStatus(`Document trop volumineux (max ${maxSourceSizeMb} Mo sur cette machine)`);
       setNotification({
-        message: `Le document dépasse la taille maximale (${maxSourceSizeMb} Mo). Réduisez le contenu ou divisez le fichier.`,
+        message: `Le document dépasse la capacité de cette machine (${maxSourceSizeMb} Mo). Réduisez le contenu ou divisez le fichier.`,
         type: 'error',
         visible: true
       });
@@ -2341,9 +2341,9 @@ function App() {
 
       const sourceSizeBytes = new Blob([sourceText]).size;
       if (sourceSizeBytes > maxSourceSizeMb * 1024 * 1024) {
-        setStatus(`Document trop volumineux (max ${maxSourceSizeMb} Mo)`);
-        setNotification({
-          message: `Le document dépasse la taille maximale (${maxSourceSizeMb} Mo). Réduisez le contenu ou divisez le fichier.`,
+        setStatus(`Document trop volumineux (max ${maxSourceSizeMb} Mo sur cette machine)`);
+      setNotification({
+          message: `Le document dépasse la capacité de cette machine (${maxSourceSizeMb} Mo). Réduisez le contenu ou divisez le fichier.`,
           type: 'error',
           visible: true
         });
@@ -2436,36 +2436,28 @@ function App() {
     const profile = CONVERSION_PROFILES.find((p) => p.id === profileId);
     if (!profile) return;
 
-    let nextIds: string[] | undefined;
-    let blockedMax = false;
-    setActiveProfileIds((prev) => {
-      if (prev.includes(profileId)) {
-        nextIds = prev.filter((id) => id !== profileId);
-        return nextIds;
-      }
-      if (prev.length >= MAX_ACTIVE_PROFILES) {
-        blockedMax = true;
-        return prev;
-      }
-      nextIds = [...prev, profileId];
-      return nextIds;
-    });
-
-    if (blockedMax) {
+    const prev = activeProfileIdsRef.current;
+    if (prev.includes(profileId)) {
+      const nextIds = prev.filter((id) => id !== profileId);
+      activeProfileIdsRef.current = nextIds;
+      setActiveProfileIds(nextIds);
+      syncOptionsFromActiveProfiles(nextIds);
+      showSnackbar(`Profil « ${profile.label} » retiré`);
+      return;
+    }
+    if (prev.length >= MAX_ACTIVE_PROFILES) {
       showSnackbar(`Maximum ${MAX_ACTIVE_PROFILES} profils actifs`);
       return;
     }
-    if (nextIds) {
-      syncOptionsFromActiveProfiles(nextIds);
-      const removed = !nextIds.includes(profileId);
-      showSnackbar(
-        removed
-          ? `Profil « ${profile.label} » retiré`
-          : nextIds.length === 1
-            ? `Profil « ${profile.label} » appliqué`
-            : `Profils combinés (${nextIds.length}/${MAX_ACTIVE_PROFILES})`
-      );
-    }
+    const nextIds = [...prev, profileId];
+    activeProfileIdsRef.current = nextIds;
+    setActiveProfileIds(nextIds);
+    syncOptionsFromActiveProfiles(nextIds);
+    showSnackbar(
+      nextIds.length === 1
+        ? `Profil « ${profile.label} » appliqué`
+        : `Profils combinés (${nextIds.length}/${MAX_ACTIVE_PROFILES})`
+    );
   }, [showSnackbar, syncOptionsFromActiveProfiles]);
 
   const clearConversionProfiles = useCallback(() => {
@@ -2517,6 +2509,25 @@ function App() {
     showSnackbar,
   ]);
 
+  const openDiffPanel = useCallback(() => {
+    const left = sourceFormat === 'markdown' ? mdOutput : adocInput;
+    const right = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+    startTransition(() => {
+      setDiffSnapshot({
+        left,
+        right,
+        leftLabel: getFormatTitle(sourceFormat),
+        rightLabel: getFormatTitle(targetFormat),
+      });
+      setShowDiffPanel(true);
+    });
+  }, [sourceFormat, targetFormat, adocInput, mdOutput, getFormatTitle]);
+
+  useEffect(() => {
+    document.documentElement.toggleAttribute('data-find-replace-open', showFindReplace);
+    return () => document.documentElement.removeAttribute('data-find-replace-open');
+  }, [showFindReplace]);
+
   useAppKeyboardShortcuts({
     onConvert: handleConvert,
     onExport: handleExport,
@@ -2528,9 +2539,18 @@ function App() {
     },
     onToggleHistory: toggleHistoryPanel,
     onOpenFindReplace: () => {
-      setFindTarget(isEditingResult ? 'result' : 'source');
+      const active = document.activeElement;
+      const inResult = !!(resultTextAreaRef.current && active === resultTextAreaRef.current);
+      const inSource = !!(
+        (adocTextAreaRef.current && active === adocTextAreaRef.current) ||
+        (mdTextAreaRef.current && active === mdTextAreaRef.current)
+      );
+      if (inResult) setFindTarget('result');
+      else if (inSource) setFindTarget('source');
+      else setFindTarget(isEditingResult ? 'result' : 'source');
       setShowFindReplace(true);
     },
+    onOpenDiff: openDiffPanel,
     isEditingResult,
     onOpenSaveModal: () => setShowSaveModal(true),
     loading,
@@ -2690,19 +2710,8 @@ function App() {
   }, []);
 
   const sourceCard = useMemo(() => {
-    let sourceValue = '';
-    let setSourceValue: (v: string) => void = () => {};
-    let sourceRef: React.RefObject<HTMLTextAreaElement> | null = null;
-
-    if (sourceFormat === 'markdown') {
-      sourceValue = mdOutput;
-      setSourceValue = setMdOutput;
-      sourceRef = mdTextAreaRef;
-    } else {
-      sourceValue = adocInput;
-      setSourceValue = setAdocInput;
-      sourceRef = adocTextAreaRef;
-    }
+    const setSourceValue = sourceFormat === 'markdown' ? setMdOutput : setAdocInput;
+    const sourceRef = sourceFormat === 'markdown' ? mdTextAreaRef : adocTextAreaRef;
 
     const isAllowedConversion =
       (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
@@ -2711,14 +2720,13 @@ function App() {
     return (
       <SourcePanel
         title={getFormatTitle(sourceFormat)}
-        value={sourceValue}
+        value={sourceTextForUi}
         onChange={(v) => { setSourceValue(v); setSourceModified(true); }}
         placeholder={getFormatPlaceholder(sourceFormat)}
         textAreaRef={sourceRef}
         onConvert={handleConvert}
         canConvert={sourceFormat !== targetFormat && isAllowedConversion}
         onClear={handleClearSource}
-        isDeleting={isDeleting}
         sourceModified={sourceModified}
         format={sourceFormat}
         loading={loading}
@@ -2728,29 +2736,18 @@ function App() {
         onFileChange={handleFileChange}
         onFolderChange={handleFolderChange}
         onFileSelect={handleFileSelect}
-        onDeletingPulse={pulseSourceDeleting}
         onMarkModified={() => setSourceModified(true)}
         onDropFile={handleDropSourceFile}
       />
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceFormat, targetFormat, adocInput, mdOutput, currentFileName, status, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, isDeleting, sourceModified, handleClearSource, pulseSourceDeleting, handleDropSourceFile, handleFolderChange]);
+  }, [sourceFormat, targetFormat, sourceTextForUi, currentFileName, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, sourceModified, handleClearSource, handleDropSourceFile, handleFolderChange]);
 
   const resultCard = useMemo(() => {
-    let resultValue = '';
-    let setResultValue: (v: string) => void = () => {};
+    const setResultValue = targetFormat === 'asciidoc' ? setAdocInput : setMdOutput;
+    const sourceHasContent = !!deferredSourceForResultMeta.trim();
 
-    if (targetFormat === 'asciidoc') {
-      resultValue = adocInput;
-      setResultValue = setAdocInput;
-    } else {
-      resultValue = mdOutput;
-      setResultValue = setMdOutput;
-    }
-
-    const sourceValueForCurrentFormat = sourceFormat === 'markdown' ? mdOutput : adocInput;
-
-    const resultActions: PanelActionItem[] = resultValue
+    const resultActions: PanelActionItem[] = resultTextForUi
       ? [
           {
             id: 'edit',
@@ -2777,19 +2774,19 @@ function App() {
                   id: 'export',
                   label: 'Télécharger',
                   onClick: handleExport,
-                  disabled: !resultValue.trim(),
+                  disabled: !resultTextForUi.trim(),
                 },
                 {
                   id: 'zip',
                   label: 'Export ZIP',
                   onClick: handleExportZip,
-                  disabled: !resultValue.trim() && !sourceValueForCurrentFormat.trim(),
+                  disabled: !resultTextForUi.trim() && !sourceHasContent,
                 },
                 {
                   id: 'diff',
                   label: 'Diff source ↔ résultat',
-                  onClick: () => setShowDiffPanel(true),
-                  disabled: !resultValue.trim() || !sourceValueForCurrentFormat.trim(),
+                  onClick: openDiffPanel,
+                  disabled: !resultTextForUi.trim() || !sourceHasContent,
                 },
               ]),
         ]
@@ -2798,9 +2795,9 @@ function App() {
     return (
       <ResultPanel
         title={getFormatTitle(targetFormat)}
-        value={resultValue}
+        value={resultTextForUi}
         onChange={setResultValue}
-        sourceHasContent={!!sourceValueForCurrentFormat.trim()}
+        sourceHasContent={sourceHasContent}
         loading={loading}
         status={status}
         isEditingResult={isEditingResult}
@@ -2810,11 +2807,16 @@ function App() {
         onMarkModified={() => setResultModified(true)}
         viewMode={resultViewMode}
         onViewModeChange={setResultViewMode}
-        previewHtml={renderPreviewHtml(resultValue, targetFormat)}
+        previewHtml={
+          resultViewMode === 'preview'
+            ? renderPreviewHtml(resultTextForUi, targetFormat)
+            : ''
+        }
+        textAreaRef={resultTextAreaRef}
       />
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetFormat, sourceFormat, adocInput, mdOutput, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear, handleExportZip, resultViewMode]);
+  }, [targetFormat, resultTextForUi, deferredSourceForResultMeta, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear, handleExportZip, resultViewMode, openDiffPanel]);
 
   return (
     <div className="page">
@@ -2958,90 +2960,7 @@ function App() {
         />
       )}
 
-      <Modal
-        isOpen={showDiscardSettingsModal}
-        onClose={() => setShowDiscardSettingsModal(false)}
-        title="Modifications non enregistrées"
-        message="Des modifications n’ont pas été appliquées. Quitter sans enregistrer ?"
-        confirmText="Quitter sans enregistrer"
-        cancelText="Continuer l’édition"
-        type="warning"
-        onConfirm={forceCloseSettingsPanel}
-      />
-
-      <Modal
-        isOpen={showResetSettingsModal}
-        onClose={() => setShowResetSettingsModal(false)}
-        title="Réinitialiser les paramètres"
-        message="Remettre le brouillon aux valeurs par défaut ? Vous devrez ensuite cliquer Appliquer pour enregistrer."
-        confirmText="Réinitialiser"
-        cancelText="Annuler"
-        type="warning"
-        onConfirm={resetSettingsToDefaults}
-      />
-
-      <Modal
-        isOpen={showConfirmConvertModal}
-        onClose={() => setShowConfirmConvertModal(false)}
-        title="Confirmer la conversion"
-        message={`Convertir ${sourceFormat} → ${targetFormat} ?`}
-        confirmText="Convertir"
-        cancelText="Annuler"
-        type="info"
-        onConfirm={() => {
-          setShowConfirmConvertModal(false);
-          handleConvert({ skipConfirm: true });
-        }}
-      />
-
-      <Modal
-        isOpen={showClearLocalDataModal}
-        onClose={() => setShowClearLocalDataModal(false)}
-        title="Effacer les données locales"
-        message="Historique, brouillon de session, fond personnalisé et préférences Ascend seront effacés sur cet appareil. Continuer ?"
-        confirmText="Tout effacer"
-        cancelText="Annuler"
-        type="danger"
-        autoFocusConfirm
-        onConfirm={clearLocalData}
-      />
-
-      <Modal
-        isOpen={showClearHistoryModal}
-        onClose={() => setShowClearHistoryModal(false)}
-        title="Effacer l’historique"
-        message="Êtes-vous sûr de vouloir effacer tout l’historique ? Cette action est irréversible."
-        confirmText="Effacer tout"
-        cancelText="Annuler"
-        type="danger"
-        autoFocusConfirm
-        onConfirm={() => clearHistory(true)}
-      />
-
-      {/* 
-        ========================================================================
-        MODAL: CONVERSION HISTORY PANEL
-        ========================================================================
-        Panel that displays previous conversion history.
-        
-        FEATURES:
-        - Shows the last 50 conversions (limit)
-        - Stored in localStorage (persistent)
-        - Restore a previous conversion on click
-        - Clear entire history
-        
-        ENTRY STRUCTURE:
-        - Unique ID (timestamp)
-        - Conversion timestamp
-        - Source and target formats
-        - Source content preview (first 100 characters)
-        - Full content (source + result) for restoration
-        
-        INTERACTION:
-        - Click on an entry → restores the conversion (formats + content)
-        - "Clear history" button → confirmation then deletion
-        - Hover on entry → color change for visual feedback
-      */}
+      {/* Historique des conversions */}
       {showHistoryPanel && !useNewHistoryModal && (
         <>
           <div className="settings-overlay" onClick={() => setShowHistoryPanel(false)} />
@@ -3169,6 +3088,15 @@ function App() {
       <FindReplaceBar
         open={showFindReplace}
         onClose={() => setShowFindReplace(false)}
+        target={findTarget}
+        onTargetChange={setFindTarget}
+        targetRef={
+          findTarget === 'result'
+            ? resultTextAreaRef
+            : sourceFormat === 'markdown'
+              ? mdTextAreaRef
+              : adocTextAreaRef
+        }
         haystack={
           findTarget === 'result'
             ? (targetFormat === 'asciidoc' ? adocInput : mdOutput)
@@ -3193,10 +3121,10 @@ function App() {
       <DiffPanel
         open={showDiffPanel}
         onClose={() => setShowDiffPanel(false)}
-        left={sourceFormat === 'markdown' ? mdOutput : adocInput}
-        right={targetFormat === 'asciidoc' ? adocInput : mdOutput}
-        leftLabel={getFormatTitle(sourceFormat)}
-        rightLabel={getFormatTitle(targetFormat)}
+        left={diffSnapshot?.left ?? ''}
+        right={diffSnapshot?.right ?? ''}
+        leftLabel={diffSnapshot?.leftLabel}
+        rightLabel={diffSnapshot?.rightLabel}
       />
 
       {/* 
@@ -3219,104 +3147,60 @@ function App() {
           - Document metadata
           Collapsible via the header toggle (P1).
         */}
-        <aside
-          id="ascend-sidebar"
-          className="sidebar"
-          aria-hidden={sidebarCollapsed}
-        >
-          <div className="sidebar-section">
-            <div className="sidebar-section-top">
-              <h3 className="sidebar-title">Options de conversion</h3>
-              <button
-                type="button"
-                className="sidebar-collapse-inline"
-                onClick={toggleSidebarCollapsed}
-                aria-label="Masquer les options"
-              >
-                «
-              </button>
-            </div>
-            <div className="sidebar-content">
-              {/* 
-                ============================================================
-                SOURCE FORMAT SELECTOR
-                ============================================================
-                Chooses the source document format.
-                Validation ensures:
-                - Source and target cannot be the same
-                - Only AsciiDoc ↔ Markdown conversions are supported
-                - If source format changes and conflicts with target,
-                  the target is adjusted automatically
-              */}
-              <FormatSelector
-                id="format-source"
-                label="Format source"
-                value={sourceFormat}
-                onChange={(newFormat) => {
-                  setSourceFormat(newFormat);
-                  if (newFormat === targetFormat) {
-                    if (newFormat === 'asciidoc') setTargetFormat('markdown');
-                    else if (newFormat === 'markdown') setTargetFormat('asciidoc');
-                    else setTargetFormat('markdown');
-                  } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
-                    setTargetFormat('markdown');
-                  } else if (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') {
-                    setTargetFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
-                  }
-                }}
-              />
-              <FormatSelector
-                id="format-target"
-                label="Format destination"
-                value={targetFormat}
-                onChange={(newFormat) => {
-                  setTargetFormat(newFormat);
-                  if (newFormat === sourceFormat) {
-                    if (newFormat === 'asciidoc') setSourceFormat('markdown');
-                    else if (newFormat === 'markdown') setSourceFormat('asciidoc');
-                    else setSourceFormat('asciidoc');
-                  } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
-                    setSourceFormat('asciidoc');
-                  } else if (sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') {
-                    setSourceFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
-                  }
-                }}
-              />
-              {(sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') ||
-              (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') ? (
-                <div className="conversion-warning" role="status">
-                  Seules les conversions AsciiDoc ↔ Markdown sont disponibles pour le moment.
-                </div>
-              ) : null}
-            </div>
-          </div>
-          <OtherOptionsPanel
-            category={otherOptionsCategory}
-            categories={otherOptionsCategories}
-            onCategoryChange={setOtherOptionsCategory}
-            conversionOptions={conversionOptions}
-            updateOption={updateOption}
-            targetFormat={targetFormat}
-            navigationEnabled={navigationEnabled}
-            onNavigationToggle={(enabled) => {
-              setNavigationEnabled(enabled);
-              if (enabled) {
-                const text = sourceFormat === 'asciidoc'
-                  ? adocInput
-                  : (sourceFormat === 'markdown' ? mdOutput : adocInput);
-                if (text.trim().length > 0 && headings.length > 0) {
-                  setNavigationWindowOpen(true);
-                }
-              } else {
-                setNavigationWindowOpen(false);
+                <ConversionSidebar
+          sidebarCollapsed={sidebarCollapsed}
+          onCollapse={toggleSidebarCollapsed}
+          sourceFormat={sourceFormat}
+          targetFormat={targetFormat}
+          onSourceFormatChange={(newFormat) => {
+            setSourceFormat(newFormat);
+            if (newFormat === targetFormat) {
+              if (newFormat === 'asciidoc') setTargetFormat('markdown');
+              else if (newFormat === 'markdown') setTargetFormat('asciidoc');
+              else setTargetFormat('markdown');
+            } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
+              setTargetFormat('markdown');
+            } else if (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') {
+              setTargetFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
+            }
+          }}
+          onTargetFormatChange={(newFormat) => {
+            setTargetFormat(newFormat);
+            if (newFormat === sourceFormat) {
+              if (newFormat === 'asciidoc') setSourceFormat('markdown');
+              else if (newFormat === 'markdown') setSourceFormat('asciidoc');
+              else setSourceFormat('asciidoc');
+            } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
+              setSourceFormat('asciidoc');
+            } else if (sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') {
+              setSourceFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
+            }
+          }}
+          otherOptionsCategory={otherOptionsCategory}
+          otherOptionsCategories={otherOptionsCategories}
+          onCategoryChange={setOtherOptionsCategory}
+          conversionOptions={conversionOptions}
+          updateOption={updateOption}
+          navigationEnabled={navigationEnabled}
+          onNavigationToggle={(enabled) => {
+            setNavigationEnabled(enabled);
+            if (enabled) {
+              const text = sourceFormat === 'asciidoc'
+                ? adocInput
+                : (sourceFormat === 'markdown' ? mdOutput : adocInput);
+              if (text.trim().length > 0 && headings.length > 0) {
+                setNavigationWindowOpen(true);
               }
-            }}
-            headingsCount={headings.length}
-            activeProfileIds={activeProfileIds}
-            onToggleProfile={toggleConversionProfile}
-            onClearProfiles={clearConversionProfiles}
-          />
-        </aside>
+            } else {
+              setNavigationWindowOpen(false);
+            }
+          }}
+          headingsCount={headings.length}
+          activeProfileIds={activeProfileIds}
+          onToggleProfile={toggleConversionProfile}
+          onClearProfiles={clearConversionProfiles}
+        />
+
         {/* 
           ====================================================================
           MAIN CONTENT: CONVERSION GRID
@@ -3469,15 +3353,30 @@ function App() {
         onNavigate={scrollToHeading}
       />
 
-      <Modal
-        isOpen={showEditModal}
-        onClose={() => setShowEditModal(false)}
-        title="Activer l’édition"
-        message="Voulez-vous activer le mode édition pour modifier le contenu ?"
-        confirmText="Activer"
-        cancelText="Annuler"
-        type="info"
-        onConfirm={() => {
+      <AppConfirmModals
+        showDiscardSettingsModal={showDiscardSettingsModal}
+        onCloseDiscardSettings={() => setShowDiscardSettingsModal(false)}
+        onConfirmDiscardSettings={forceCloseSettingsPanel}
+        showResetSettingsModal={showResetSettingsModal}
+        onCloseResetSettings={() => setShowResetSettingsModal(false)}
+        onConfirmResetSettings={resetSettingsToDefaults}
+        showConfirmConvertModal={showConfirmConvertModal}
+        onCloseConfirmConvert={() => setShowConfirmConvertModal(false)}
+        onConfirmConvert={() => {
+          setShowConfirmConvertModal(false);
+          handleConvert({ skipConfirm: true });
+        }}
+        sourceFormat={sourceFormat}
+        targetFormat={targetFormat}
+        showClearLocalDataModal={showClearLocalDataModal}
+        onCloseClearLocalData={() => setShowClearLocalDataModal(false)}
+        onConfirmClearLocalData={clearLocalData}
+        showClearHistoryModal={showClearHistoryModal}
+        onCloseClearHistory={() => setShowClearHistoryModal(false)}
+        onConfirmClearHistory={() => clearHistory(true)}
+        showEditModal={showEditModal}
+        onCloseEditModal={() => setShowEditModal(false)}
+        onConfirmEdit={() => {
           if (
             targetFormat === 'markdown' ||
             targetFormat === 'html' ||
@@ -3491,32 +3390,16 @@ function App() {
           }
           setIsEditingResult(true);
         }}
-      />
-
-      <Modal
-        isOpen={showSaveModal}
-        onClose={() => setShowSaveModal(false)}
-        title="Sauvegarder les modifications"
-        message="Enregistrer les modifications et quitter le mode édition ?"
-        confirmText="Sauvegarder"
-        cancelText="Continuer l’édition"
-        type="info"
-        onConfirm={() => {
+        showSaveModal={showSaveModal}
+        onCloseSaveModal={() => setShowSaveModal(false)}
+        onConfirmSave={() => {
           setIsEditingResult(false);
           setStatus('Modifications sauvegardées');
           setTimeout(() => setStatus(''), 3000);
         }}
-      />
-
-      <Modal
-        isOpen={showCancelModal}
-        onClose={() => setShowCancelModal(false)}
-        title="Annuler l’édition"
-        message="Les modifications non sauvegardées seront perdues."
-        confirmText="Abandonner"
-        cancelText="Continuer l’édition"
-        type="warning"
-        onConfirm={() => {
+        showCancelModal={showCancelModal}
+        onCloseCancelModal={() => setShowCancelModal(false)}
+        onConfirmCancelEdit={() => {
           if (
             targetFormat === 'markdown' ||
             targetFormat === 'html' ||
@@ -3532,105 +3415,30 @@ function App() {
           setIsEditingResult(false);
           setStatus('Édition annulée — modifications non sauvegardées');
         }}
-      />
-
-      <Modal
-        isOpen={showClearResultModal}
-        onClose={() => setShowClearResultModal(false)}
-        title="Effacer le résultat"
-        message="Voulez-vous effacer le résultat ? Cette action est irréversible."
-        confirmText="Effacer"
-        cancelText="Annuler"
-        type="danger"
-        autoFocusConfirm
-        onConfirm={confirmClearResult}
-      />
-
-      <Modal
-        isOpen={showClearSourceModal}
-        onClose={() => setShowClearSourceModal(false)}
-        title="Effacer la source"
-        message="Que souhaitez-vous effacer ?"
-        type="danger"
-        stackActions
-        footer={
-          <>
-            <button type="button" className="modal-button confirm info" onClick={confirmClearSource}>
-              Source uniquement
-            </button>
-            <button type="button" className="modal-button confirm warning" onClick={confirmClearSourceAndResult}>
-              Source et résultat
-            </button>
-            <button
-              type="button"
-              className="modal-button cancel"
-              onClick={() => setShowClearSourceModal(false)}
-            >
-              Annuler
-            </button>
-          </>
-        }
-      />
-
-      <Modal
-        isOpen={Boolean(showConversionModal && confirmationToken && pendingConversion)}
-        onClose={() => {
+        showClearResultModal={showClearResultModal}
+        onCloseClearResult={() => setShowClearResultModal(false)}
+        onConfirmClearResult={confirmClearResult}
+        showClearSourceModal={showClearSourceModal}
+        onCloseClearSource={() => setShowClearSourceModal(false)}
+        onConfirmClearSourceOnly={confirmClearSource}
+        onConfirmClearSourceAndResult={confirmClearSourceAndResult}
+        showConversionModal={showConversionModal}
+        confirmationToken={confirmationToken}
+        pendingConversion={pendingConversion}
+        onCloseConversionConfirm={() => {
           setShowConversionModal(false);
           setConfirmationToken(null);
           setPendingConversion(null);
         }}
-        title="Confirmer la conversion"
-        message={
-          pendingConversion ? (
-            <>
-              <p>
-                Convertir de <strong>{getFormatTitle(pendingConversion.fromFormat)}</strong> vers{' '}
-                <strong>{getFormatTitle(pendingConversion.toFormat)}</strong> ?
-              </p>
-              <p className="modal-body-note">Cette action nécessite une confirmation explicite.</p>
-            </>
-          ) : null
-        }
-        confirmText="Convertir"
-        cancelText="Annuler"
-        type="warning"
-        onConfirm={confirmAndConvert}
-        onCancel={() => {
+        onConfirmAndConvert={confirmAndConvert}
+        onCancelConversionConfirm={() => {
           setConfirmationToken(null);
           setPendingConversion(null);
         }}
-      />
-
-      <Modal
-        isOpen={showConversionErrorModal}
-        onClose={() => setShowConversionErrorModal(false)}
-        title="Erreur de conversion"
-        type="danger"
-        showCancel={false}
-        confirmText="Compris"
-        autoFocusConfirm
-        contentClassName="conversion-error-modal"
-        onConfirm={() => setShowConversionErrorModal(false)}
-        message={
-          <>
-            {conversionErrorDetails.code && (
-              <p className="conversion-error-code">
-                Code : <code>{conversionErrorDetails.code}</code>
-              </p>
-            )}
-            <p className="conversion-error-message">{conversionErrorDetails.message}</p>
-            {conversionErrorDetails.hint && (
-              <div className="conversion-error-hint-box">
-                <p className="conversion-error-hint">{conversionErrorDetails.hint}</p>
-              </div>
-            )}
-            {conversionErrorDetails.requestId && (
-              <p className="conversion-error-request-id">
-                Identifiant : <code>{conversionErrorDetails.requestId}</code>
-              </p>
-            )}
-          </>
-        }
+        getFormatTitle={getFormatTitle}
+        showConversionErrorModal={showConversionErrorModal}
+        onCloseConversionError={() => setShowConversionErrorModal(false)}
+        conversionErrorDetails={conversionErrorDetails}
       />
 
       <Snackbar message={snackbarMessage} onDismiss={dismissSnackbar} />
