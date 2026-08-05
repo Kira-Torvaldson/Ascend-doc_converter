@@ -7,6 +7,7 @@
 
 const assert = require('assert')
 const { convertAsciiDoc } = require('../services/conversion/convert.js')
+const { shutdown } = require('../services/conversion/pandoc-server.js')
 
 async function main() {
   const sample = [
@@ -51,7 +52,21 @@ async function main() {
   console.log('OK admonition conversion (default + bookstack + CRLF)')
 }
 
-main().catch((err) => {
-  console.error('[FAIL]', err && err.message ? err.message : err)
-  process.exit(1)
-})
+main()
+  .then(() => {
+    try {
+      shutdown()
+    } catch (_) {
+      /* ignore */
+    }
+    setTimeout(() => process.exit(0), 50)
+  })
+  .catch((err) => {
+    console.error('[FAIL]', err && err.message ? err.message : err)
+    try {
+      shutdown()
+    } catch (_) {
+      /* ignore */
+    }
+    setTimeout(() => process.exit(1), 50)
+  })

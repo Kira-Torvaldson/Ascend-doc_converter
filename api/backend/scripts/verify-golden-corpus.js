@@ -12,6 +12,7 @@ const fs = require('fs')
 const path = require('path')
 const assert = require('assert')
 const app = require('../app.js')
+const { shutdown } = require('../services/conversion/pandoc-server.js')
 
 const ROOT = path.join(__dirname, '../../..')
 const FIXTURES = path.join(ROOT, 'test/fixtures/conversion')
@@ -142,10 +143,20 @@ async function main() {
 
 main()
   .then(() => {
+    try {
+      shutdown()
+    } catch (_) {
+      /* ignore */
+    }
     setTimeout(() => process.exit(0), 50)
   })
   .catch((err) => {
     console.error('[FAIL] golden corpus verification failed')
     console.error(err && err.stack ? err.stack : String(err))
+    try {
+      shutdown()
+    } catch (_) {
+      /* ignore */
+    }
     setTimeout(() => process.exit(1), 50)
   })

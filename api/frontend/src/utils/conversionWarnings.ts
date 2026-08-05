@@ -9,11 +9,11 @@ export function formatConversionWarning(warning: unknown): string {
   }
   if (warning && typeof warning === 'object') {
     const w = warning as Record<string, unknown>;
-    if (typeof w.message === 'string' && w.message.trim()) return w.message.trim();
-    if (typeof w.code === 'string' && w.code.trim()) {
-      const msg = typeof w.message === 'string' ? w.message.trim() : '';
-      return msg ? `${w.code}: ${msg}` : w.code;
-    }
+    const code = typeof w.code === 'string' ? w.code.trim() : '';
+    const message = typeof w.message === 'string' ? w.message.trim() : '';
+    if (code && message) return `${code}: ${message}`;
+    if (message) return message;
+    if (code) return code;
   }
   try {
     return JSON.stringify(warning);

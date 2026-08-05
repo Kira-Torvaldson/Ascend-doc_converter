@@ -11,6 +11,7 @@ const fs = require('fs')
 const path = require('path')
 const assert = require('assert')
 const app = require('../app.js')
+const { shutdown } = require('../services/conversion/pandoc-server.js')
 
 const ROOT = path.join(__dirname, '../../..')
 const COMPLEX_DIR = path.join(ROOT, 'test/fixtures/conversion/adoc/complex')
@@ -68,6 +69,12 @@ const RULES_BY_FILE = {
     assert.ok(/Para one/i.test(roundtrip), 'first paragraph')
     assert.ok(/Para two/i.test(roundtrip), 'second paragraph')
     assert.ok(/\*bold\*/i.test(roundtrip) || /\*\*bold\*\*/i.test(roundtrip), 'bold in note body')
+  },
+  '08-table-span.adoc': ({ roundtrip, title }) => {
+    assert.match(roundtrip, /^=+ /m, 'level-1 heading')
+    assert.ok(roundtrip.includes(title), `title preserved: ${title}`)
+    assert.ok(/span both/i.test(roundtrip), 'spanned cell content')
+    assert.ok(/\|===/.test(roundtrip) || /\[cols/.test(roundtrip) || /\d+\+/.test(roundtrip), 'table structure')
   },
 }
 
@@ -162,10 +169,20 @@ async function main() {
 
 main()
   .then(() => {
+    try {
+      shutdown()
+    } catch (_) {
+      /* ignore */
+    }
     setTimeout(() => process.exit(0), 50)
   })
   .catch((err) => {
     console.error('[FAIL] roundtrip adoc-md verification failed')
     console.error(err && err.stack ? err.stack : String(err))
+    try {
+      shutdown()
+    } catch (_) {
+      /* ignore */
+    }
     setTimeout(() => process.exit(1), 50)
   })
