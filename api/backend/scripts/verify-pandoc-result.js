@@ -1,5 +1,7 @@
 'use strict'
 
+
+const { exitClean } = require('./lib/verify-exit.js')
 /**
  * Verify Pandoc command path returns a native ConversionResult.
  * Usage: node scripts/verify-pandoc-result.js
@@ -76,11 +78,10 @@ async function main() {
 }
 
 main()
-  .then(() => {
-    setTimeout(() => process.exit(0), 300)
-  })
-  .catch((err) => {
+  .then(() => exitClean(0))
+  .catch(async (err) => {
+
     console.error('[FAIL] pandoc ConversionResult verification failed')
     console.error(err && err.stack ? err.stack : String(err))
-    setTimeout(() => process.exit(1), 300)
+    await exitClean(1)
   })

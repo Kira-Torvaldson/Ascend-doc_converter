@@ -1,5 +1,7 @@
 'use strict'
 
+
+const { exitClean } = require('./lib/verify-exit.js')
 /**
  * Verify AsciiDoc admonitions convert cleanly (default + BookStack).
  * Usage: node scripts/verify-admonition-conversion.js
@@ -7,7 +9,6 @@
 
 const assert = require('assert')
 const { convertAsciiDoc } = require('../services/conversion/convert.js')
-const { shutdown } = require('../services/conversion/pandoc-server.js')
 
 async function main() {
   const sample = [
@@ -53,20 +54,9 @@ async function main() {
 }
 
 main()
-  .then(() => {
-    try {
-      shutdown()
-    } catch (_) {
-      /* ignore */
-    }
-    setTimeout(() => process.exit(0), 50)
-  })
-  .catch((err) => {
+  .then(() => exitClean(0))
+  .catch(async (err) => {
+
     console.error('[FAIL]', err && err.message ? err.message : err)
-    try {
-      shutdown()
-    } catch (_) {
-      /* ignore */
-    }
-    setTimeout(() => process.exit(1), 50)
+    await exitClean(1)
   })

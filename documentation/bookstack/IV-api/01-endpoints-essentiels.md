@@ -37,7 +37,7 @@
 | Méthode | Route | Description | Auth |
 |---------|-------|-------------|------|
 | GET | `/api/config/limits` | Limites runtime (taille, timeout) | Non |
-| GET | `/api/metrics` | Compteurs de conversion | `X-API-Key` si `API_KEY` |
+| GET | `/api/metrics` | Compteurs + `errors_by_code` / `failures_by_route` (persistés sous `reports/conversion-metrics.json`) | `X-API-Key` si `API_KEY` |
 
 ## Confirmation
 

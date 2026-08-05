@@ -1,5 +1,7 @@
 'use strict'
 
+const { exitClean } = require('./lib/verify-exit.js')
+
 const assert = require('assert')
 const app = require('../app.js')
 
@@ -147,16 +149,16 @@ async function main() {
 
   if (!allPassed) {
     process.exitCode = 1
-    setTimeout(() => process.exit(1), 500)
     return
   }
   console.log('[OK] representative e2e scenarios validated for /api/to-asciidoc')
-  setTimeout(() => process.exit(0), 500)
 }
 
-main().catch((error) => {
-  console.error('[FAIL] representative scenario verification failed for /api/to-asciidoc')
-  console.error(error && error.stack ? error.stack : String(error))
-  setTimeout(() => process.exit(1), 500)
-})
+main()
+  .then(() => exitClean(process.exitCode || 0))
+  .catch(async (error) => {
+    console.error('[FAIL] representative scenario verification failed for /api/to-asciidoc')
+    console.error(error && error.stack ? error.stack : String(error))
+    await exitClean(1)
+  })
 

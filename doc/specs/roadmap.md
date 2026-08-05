@@ -6,22 +6,31 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.9.1 (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** Patch fiabilité MD ↔ HTML/TXT (UI + API)  
-**Focus:** Routes dédiées, buffer résultat UI, EMPTY_OUTPUT, timeouts/abort
+**Version:** 0.0.1.9.2 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** Patch ops métriques + fail-contracts + sortie Pandoc propre  
+**Focus:** metrics persistées, contrats échec MD/TXT/HTML, UX warnings, exitClean
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.9.1 (Current — Ascend)
+### 0.0.1.9.2 (Current — Ascend)
+
+**Delivered:**
+- Metrics `error.code` / routes + persistance `reports/conversion-metrics.json`
+- Fail-contracts from-markdown / from-text / from-html ; panneau Métriques + badge header
+- Pandoc shutdown propre (Windows) + `exitClean` ; bannière `ENGINE_FALLBACK`
+
+**Docs:** `doc/releases/v0.0.1.9.2-notes.md`, `doc/specs/axes-ameliorations-0.0.1.9.md`
+
+### 0.0.1.9.1
 
 **Delivered:**
 - `/api/from-markdown`, `/api/from-text` ; buffer UI `otherOutput`
 - Session / historique / ZIP / diff alignés ; aperçu HTML sandbox
 - `EMPTY_OUTPUT` ; timeout Pandoc non masqué ; abort + timeout client
 
-**Docs:** `doc/releases/v0.0.1.9.1-notes.md`, `doc/specs/axes-ameliorations-0.0.1.9.md`
+**Docs:** `doc/releases/v0.0.1.9.1-notes.md`
 
 ### 0.0.1.9
 

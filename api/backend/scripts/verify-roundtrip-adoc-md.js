@@ -1,5 +1,7 @@
 'use strict'
 
+
+const { exitClean } = require('./lib/verify-exit.js')
 /**
  * ASC-004 — Roundtrip semantic checks: adoc -> md -> adoc
  *
@@ -11,7 +13,6 @@ const fs = require('fs')
 const path = require('path')
 const assert = require('assert')
 const app = require('../app.js')
-const { shutdown } = require('../services/conversion/pandoc-server.js')
 
 const ROOT = path.join(__dirname, '../../..')
 const COMPLEX_DIR = path.join(ROOT, 'test/fixtures/conversion/adoc/complex')
@@ -168,21 +169,10 @@ async function main() {
 }
 
 main()
-  .then(() => {
-    try {
-      shutdown()
-    } catch (_) {
-      /* ignore */
-    }
-    setTimeout(() => process.exit(0), 50)
-  })
-  .catch((err) => {
+  .then(() => exitClean(0))
+  .catch(async (err) => {
+
     console.error('[FAIL] roundtrip adoc-md verification failed')
     console.error(err && err.stack ? err.stack : String(err))
-    try {
-      shutdown()
-    } catch (_) {
-      /* ignore */
-    }
-    setTimeout(() => process.exit(1), 50)
+    await exitClean(1)
   })

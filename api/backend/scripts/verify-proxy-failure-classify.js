@@ -1,5 +1,7 @@
 'use strict'
 
+
+const { exitClean } = require('./lib/verify-exit.js')
 /**
  * Unit + light integration checks for structured ConversionResult.error
  * propagation (classifyProxyFailure + execution-orchestrator passthrough).
@@ -132,11 +134,10 @@ async function main() {
 }
 
 main()
-  .then(() => {
-    setTimeout(() => process.exit(0), 300)
-  })
-  .catch((err) => {
+  .then(() => exitClean(0))
+  .catch(async (err) => {
+
     console.error('[FAIL] proxy failure classify verification failed')
     console.error(err && err.stack ? err.stack : String(err))
-    setTimeout(() => process.exit(1), 300)
+    await exitClean(1)
   })

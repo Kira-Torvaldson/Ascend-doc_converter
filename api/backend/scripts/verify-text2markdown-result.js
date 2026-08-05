@@ -1,5 +1,7 @@
 'use strict'
 
+const { exitClean } = require('./lib/verify-exit.js')
+
 /**
  * Verify text2markdown module returns a native ConversionResult.
  * Usage: node scripts/verify-text2markdown-result.js
@@ -80,7 +82,9 @@ async function main() {
   console.log('OK text2markdown ConversionResult (+ lazyload + orchestrator preserve)')
 }
 
-main().catch((err) => {
-  console.error('[FAIL]', err && err.stack ? err.stack : err)
-  process.exit(1)
-})
+main()
+  .then(() => exitClean(0))
+  .catch(async (err) => {
+    console.error('[FAIL]', err && err.stack ? err.stack : err)
+    await exitClean(1)
+  })

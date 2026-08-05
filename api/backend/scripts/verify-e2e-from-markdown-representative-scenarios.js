@@ -1,5 +1,7 @@
 'use strict'
 
+
+const { exitClean } = require('./lib/verify-exit.js')
 /**
  * Contract verification for POST /api/from-markdown (MD → HTML / TXT).
  */
@@ -125,11 +127,10 @@ async function main() {
 }
 
 main()
-  .then(() => {
-    setTimeout(() => process.exit(0), 500)
-  })
-  .catch((err) => {
+  .then(() => exitClean(0))
+  .catch(async (err) => {
+
     console.error('[FAIL] representative scenario verification failed for /api/from-markdown')
     console.error(err && err.stack ? err.stack : String(err))
-    setTimeout(() => process.exit(1), 500)
+    await exitClean(1)
   })

@@ -13,6 +13,23 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.9.2 (2026-08-05)
+
+#### Added
+- Fail-contracts e2e for `/api/from-markdown`, `/api/from-text`, `/api/from-html` (`EMPTY_INPUT`, `FORMAT_UNSUPPORTED`, `EMPTY_OUTPUT`, timeouts where applicable).
+- Conversion metrics: `errors_by_code`, `errors_by_code_top`, `failures_by_route` ; persist ring buffer to `reports/conversion-metrics.json`.
+- Settings → Métriques pane (`GET /api/metrics`) with auto-refresh ; header badge when failures > 0.
+- UX banner for `ENGINE_FALLBACK` + stronger timeout hints.
+- Shared verify helper `scripts/lib/verify-exit.js` (`exitClean`) for clean Pandoc shutdown in tests.
+
+#### Changed
+- Pandoc server shutdown on Windows uses `taskkill /T /F` ; verify/bench scripts exit cleanly.
+- `/api/from-html` calls `htmlConversion.htmlToMarkdown` / `htmlToPlain` via module object (stubbable contracts).
+- `check:ascend` / `check:ascend:ci` include `test:metrics` and from-text / from-markdown failure contracts.
+
+#### Fixed
+- Truncated string in `ConversionWarningsBanner` that broke frontend typecheck.
+
 ### 0.0.1.9.1 (2026-08-05)
 
 #### Added
