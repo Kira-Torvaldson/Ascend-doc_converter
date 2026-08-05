@@ -100,7 +100,7 @@ import {
 } from "./utils/conversionPairs";
 import { createZipBlob } from "./utils/simpleZip";
 import packageJson from "../package.json";
-import { fetchConversionLimits } from "./converters/api";
+import { fetchConversionLimits, fetchConversionMetrics } from "./converters/api";
 import { formatConversionErrorForUi, getHintForCode } from "./converters/error-code-messages";
 import defaultLogo from "./assets/ascend-logo.svg";
 import {
@@ -134,6 +134,7 @@ const SETTINGS_SECTION_IDS = [
   'settingsAccount',
   'settingsInterface',
   'settingsData',
+  'settingsMetrics',
 ] as const;
 const DEFAULT_SETTINGS_SECTION = 'settingsAccount';
 
@@ -226,6 +227,26 @@ function App() {
       const backendMs = limits.conversionTimeoutMs || 30_000;
       setConversionTimeoutMs(Math.max(backendMs + 5_000, 35_000));
     });
+  }, []);
+
+  /** Badge header : échecs conversion (poll /api/metrics). */
+  const [metricsFailureCount, setMetricsFailureCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      const snap = await fetchConversionMetrics();
+      if (!cancelled) {
+        setMetricsFailureCount(snap ? Math.max(0, snap.conversion_failures_total) : 0);
+      }
+    };
+    void poll();
+    const id = window.setInterval(() => {
+      void poll();
+    }, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, []);
 
   /** Logo custom (api/backend/public/ascend-logo.png) si disponible. */
@@ -1208,7 +1229,10 @@ function App() {
     const message = code
       ? formatConversionErrorForUi(code, backendMessage || "La conversion a échoué.", backendHint || null)
       : backendMessage || "La conversion a échoué.";
-    const hint = getHintForCode(code) || backendHint || undefined;
+    let hint = getHintForCode(code) || backendHint || undefined;
+    if (code === 'CONVERSION_TIMEOUT' && hint && !/simplif/i.test(hint)) {
+      hint = `${hint} Simplifiez tableaux et includes si besoin.`;
+    }
     const requestId =
       typeof failure?.meta?.requestId === "string" ? failure.meta.requestId : undefined;
     return { code: code || undefined, message, hint, requestId };
@@ -2957,13 +2981,19 @@ function App() {
         onCloseShortcutsHelp={() => setShortcutsHelpOpen(false)}
         settingsButtonRef={settingsButtonRef}
         settingsOpen={settingsOpen && !settingsMinimized}
+        metricsFailureCount={metricsFailureCount}
         onToggleSettings={() => {
           if (settingsMinimized) {
             setSettingsMinimized(false);
             return;
           }
           if (settingsOpen) closeSettingsPanel();
-          else openSettingsPanel();
+          else {
+            if (metricsFailureCount > 0) {
+              setActiveSettingsSection('settingsMetrics');
+            }
+            openSettingsPanel();
+          }
         }}
       />
 

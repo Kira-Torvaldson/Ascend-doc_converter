@@ -4,6 +4,7 @@
 
 import React, { useRef } from 'react';
 import { SidebarListbox } from './SidebarListbox';
+import { MetricsSettingsPane } from './MetricsSettingsPane';
 import type {
   UserSettings,
   SettingsValidationErrors,
@@ -24,12 +25,14 @@ const SETTINGS_NAV_SECTIONS = [
   { id: 'settingsAccount', label: 'Compte' },
   { id: 'settingsInterface', label: 'Interface' },
   { id: 'settingsData', label: 'Données' },
+  { id: 'settingsMetrics', label: 'Métriques' },
 ] as const;
 
 const SETTINGS_NAV_FULL_LABELS: Record<string, string> = {
   settingsAccount: 'Compte & conversion',
   settingsInterface: 'Interface',
   settingsData: 'Données',
+  settingsMetrics: 'Métriques',
 };
 
 const FORMAT_OPTIONS = [
@@ -626,6 +629,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       </button>
                     </div>
                   )}
+                  {activeSection === 'settingsMetrics' && <MetricsSettingsPane />}
                 </div>
               </div>
             </div>

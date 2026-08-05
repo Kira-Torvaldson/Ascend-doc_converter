@@ -1,5 +1,7 @@
 'use strict'
 
+
+const { exitClean } = require('./lib/verify-exit.js')
 /**
  * Verify html-markdown / html-plain wrappers + in-memory helpers + /api/from-html.
  * Usage: node scripts/verify-html-wrappers.js
@@ -21,7 +23,6 @@ const {
 const htmlMarkdown = require('../services/modules/html-markdown.module.js')
 const htmlPlain = require('../services/modules/html-plain.module.js')
 const { executeConversion } = require('../services/modules/converter-orchestrator.module.js')
-const { shutdown } = require('../services/conversion/pandoc-server.js')
 const app = require('../app.js')
 
 async function post(port, route, body) {
@@ -183,16 +184,9 @@ async function main() {
 }
 
 main()
-  .then(() => {
-    try {
-      shutdown()
-    } catch (_) {}
-    setTimeout(() => process.exit(0), 80)
-  })
-  .catch((err) => {
+  .then(() => exitClean(0))
+  .catch(async (err) => {
+
     console.error('[FAIL]', err && err.stack ? err.stack : err)
-    try {
-      shutdown()
-    } catch (_) {}
-    setTimeout(() => process.exit(1), 80)
+    await exitClean(1)
   })

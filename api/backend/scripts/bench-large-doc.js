@@ -1,5 +1,7 @@
 'use strict'
 
+const { exitClean } = require('./lib/verify-exit.js')
+
 /**
  * Quick benchmark: large-document conversion latency on /api/to-markdown
  * and /api/text-to-markdown (in-memory converters, no Pandoc required),
@@ -115,11 +117,12 @@ async function main() {
     }
   } finally {
     await new Promise((resolve) => server.close(resolve))
-    setTimeout(() => process.exit(process.exitCode || 0), 300)
   }
 }
 
-main().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
+main()
+  .then(() => exitClean(process.exitCode || 0))
+  .catch(async (err) => {
+    console.error(err)
+    await exitClean(1)
+  })

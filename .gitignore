@@ -1,6 +1,7 @@
 /.nyc_output/
 /node_modules/
 /reports/
+api/backend/reports/
 /.nvmrc
 **/node_modules/
 api/frontend/dist/

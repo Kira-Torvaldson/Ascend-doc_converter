@@ -15,13 +15,7 @@ const {
   convertHtmlWithPandoc,
   text2markdown,
 } = require('../services/conversion/convert.js')
-const {
-  htmlToMarkdown,
-  htmlToPlain,
-  markdownToHtml,
-  markdownToPlainBestEffort,
-  plainToHtml,
-} = require('../services/conversion/html-conversion.js')
+const htmlConversion = require('../services/conversion/html-conversion.js')
 const { z } = require('zod')
 const { validate } = require('../middleware/security/validate.middleware.js')
 const { createFailureResult, createSuccessResult } = require('../src/utils/conversion-result.js')
@@ -630,15 +624,15 @@ router.post(
     let converterName = 'pandoc'
     let engine = 'pandoc'
 
-    // Prefer dedicated HTML wrappers for MD / TXT
+    // Prefer dedicated HTML wrappers for MD / TXT (via module object → stubbable in contracts)
     if (normalizedTo === 'markdown' || normalizedTo === 'md') {
       console.log(`[INFO] Converting ${text.length} characters (HTML → markdown) via html-markdown`)
-      result = await htmlToMarkdown(text)
+      result = await htmlConversion.htmlToMarkdown(text)
       converterName = 'html-markdown'
       engine = 'pandoc'
     } else if (normalizedTo === 'txt' || normalizedTo === 'text' || normalizedTo === 'plain') {
       console.log(`[INFO] Converting ${text.length} characters (HTML → txt) via html-plain`)
-      result = htmlToPlain(text)
+      result = htmlConversion.htmlToPlain(text)
       converterName = 'html-plain'
       engine = 'local'
     } else {
@@ -868,10 +862,10 @@ router.post(
       let fallbackReason
       if (normalizedTo === 'html') {
         console.log(`[INFO] Converting ${text.length} characters (Markdown → html) via from-markdown`)
-        result = await markdownToHtml(text)
+        result = await htmlConversion.markdownToHtml(text)
       } else if (normalizedTo === 'txt' || normalizedTo === 'text' || normalizedTo === 'plain') {
         console.log(`[INFO] Converting ${text.length} characters (Markdown → txt) via from-markdown`)
-        const plain = await markdownToPlainBestEffort(text)
+        const plain = await htmlConversion.markdownToPlainBestEffort(text)
         result = plain.text
         engineUsed = plain.engineUsed
         fallbackReason = plain.fallbackReason
@@ -1058,7 +1052,7 @@ router.post(
 
       if (normalizedTo === 'html') {
         console.log(`[INFO] Converting ${text.length} characters (Text → html) via from-text`)
-        result = plainToHtml(text)
+        result = htmlConversion.plainToHtml(text)
         converterName = 'html-plain'
       } else if (normalizedTo === 'markdown' || normalizedTo === 'md') {
         console.log(`[INFO] Converting ${text.length} characters (Text → markdown) via from-text`)

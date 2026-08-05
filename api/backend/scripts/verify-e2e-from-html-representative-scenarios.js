@@ -1,5 +1,7 @@
 'use strict'
 
+const { exitClean } = require('./lib/verify-exit.js')
+
 const assert = require('assert')
 const app = require('../app.js')
 
@@ -171,11 +173,9 @@ async function main() {
 }
 
 main()
-  .then(() => {
-    setTimeout(() => process.exit(process.exitCode || 0), 500)
-  })
-  .catch((error) => {
+  .then(() => exitClean(process.exitCode || 0))
+  .catch(async (error) => {
     console.error('[FAIL] representative scenario verification failed for /api/from-html')
     console.error(error && error.stack ? error.stack : String(error))
-    setTimeout(() => process.exit(1), 500)
+    await exitClean(1)
   })

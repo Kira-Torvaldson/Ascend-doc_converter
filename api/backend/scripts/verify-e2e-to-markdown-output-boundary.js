@@ -1,5 +1,7 @@
 'use strict'
 
+const { exitClean } = require('./lib/verify-exit.js')
+
 /**
  * Sub-step 2.5.4: verify standardized ConversionResult survives to the HTTP
  * response boundary for POST /api/to-markdown (AsciiDoc → Markdown, downdoc).
@@ -108,12 +110,9 @@ async function main() {
 }
 
 main()
-  .then(() => {
-    // Defer exit so libuv can finish closing the HTTP server on Windows (avoids UV_HANDLE_CLOSING assert).
-    setTimeout(() => process.exit(0), 50)
-  })
-  .catch((err) => {
+  .then(() => exitClean(0))
+  .catch(async (err) => {
     console.error('[FAIL] e2e to-markdown output boundary verification failed')
     console.error(err && err.stack ? err.stack : String(err))
-    setTimeout(() => process.exit(1), 50)
+    await exitClean(1)
   })

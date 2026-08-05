@@ -54,14 +54,40 @@ function findFreePort() {
   })
 }
 
+function forceKillChild(proc) {
+  if (!proc || proc.killed) return
+  const pid = proc.pid
+  if (!pid) return
+  if (process.platform === 'win32') {
+    try {
+      // Kill the whole tree — plain kill() often leaves pandoc.exe alive on Windows.
+      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+        shell: false,
+        stdio: 'ignore',
+        windowsHide: true,
+        detached: true,
+      }).unref()
+      return
+    } catch (_) {
+      /* fall through */
+    }
+  }
+  try {
+    proc.kill(process.platform === 'win32' ? undefined : 'SIGKILL')
+  } catch (_) {
+    try { proc.kill() } catch (_) { /* ignore */ }
+  }
+}
+
 function registerExitHook() {
   if (exitHookRegistered) return
   exitHookRegistered = true
-  process.on('exit', () => {
-    if (child && !child.killed) {
-      try { child.kill() } catch (_) {}
-    }
-  })
+  const hardStop = () => {
+    if (child) forceKillChild(child)
+  }
+  process.on('exit', hardStop)
+  process.on('SIGINT', () => { hardStop(); process.exit(130) })
+  process.on('SIGTERM', () => { hardStop(); process.exit(143) })
 }
 
 function markUnavailable(reason) {
@@ -71,9 +97,7 @@ function markUnavailable(reason) {
   state = 'unavailable'
   unavailableSince = Date.now()
   baseUrl = null
-  if (child && !child.killed) {
-    try { child.kill() } catch (_) {}
-  }
+  if (child) forceKillChild(child)
   child = null
   startPromise = null
 }
@@ -129,7 +153,7 @@ async function startServer() {
     await new Promise((resolve) => setTimeout(resolve, STARTUP_PROBE_INTERVAL_MS))
   }
 
-  try { proc.kill() } catch (_) {}
+  forceKillChild(proc)
   return false
 }
 
@@ -200,15 +224,35 @@ async function convertViaServer(from, to, text) {
   }
 }
 
-/** Test/ops helper: stops the server and resets state. */
+/**
+ * Test/ops helper: stops the server and resets state.
+ * Returns a Promise that resolves once the child has exited (or after a short grace).
+ * @returns {Promise<void>}
+ */
 function shutdown() {
-  if (child && !child.killed) {
-    try { child.kill() } catch (_) {}
-  }
+  const proc = child
   child = null
   baseUrl = null
   state = 'idle'
   startPromise = null
+  if (!proc) return Promise.resolve()
+
+  return new Promise((resolve) => {
+    let settled = false
+    const done = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(done, 750)
+    try {
+      proc.once('exit', done)
+    } catch (_) {
+      /* ignore */
+    }
+    forceKillChild(proc)
+  })
 }
 
 function getStatus() {

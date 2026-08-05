@@ -58,3 +58,45 @@ export async function fetchConversionLimits(): Promise<ConversionLimitsSnapshot>
     return DEFAULT_LIMITS;
   }
 }
+
+export type ConversionMetricsSnapshot = {
+  conversion_success_total: number;
+  conversion_failures_total: number;
+  conversion_duration_ms: { p50: number; p95: number; sample_count: number };
+  errors_by_code: Record<string, number>;
+  errors_by_code_top: Array<{ code: string; count: number }>;
+  failures_by_route: Record<string, Record<string, number>>;
+  persisted?: boolean;
+  persisted_at?: string | null;
+};
+
+export async function fetchConversionMetrics(): Promise<ConversionMetricsSnapshot | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/metrics`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || typeof data !== 'object') return null;
+    return {
+      conversion_success_total: Number(data.conversion_success_total) || 0,
+      conversion_failures_total: Number(data.conversion_failures_total) || 0,
+      conversion_duration_ms: {
+        p50: Number(data.conversion_duration_ms?.p50) || 0,
+        p95: Number(data.conversion_duration_ms?.p95) || 0,
+        sample_count: Number(data.conversion_duration_ms?.sample_count) || 0,
+      },
+      errors_by_code:
+        data.errors_by_code && typeof data.errors_by_code === 'object' && !Array.isArray(data.errors_by_code)
+          ? data.errors_by_code
+          : {},
+      errors_by_code_top: Array.isArray(data.errors_by_code_top) ? data.errors_by_code_top : [],
+      failures_by_route:
+        data.failures_by_route && typeof data.failures_by_route === 'object'
+          ? data.failures_by_route
+          : {},
+      persisted: Boolean(data.persisted),
+      persisted_at: typeof data.persisted_at === 'string' ? data.persisted_at : null,
+    };
+  } catch {
+    return null;
+  }
+}

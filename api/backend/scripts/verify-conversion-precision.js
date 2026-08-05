@@ -1,5 +1,7 @@
 'use strict'
 
+
+const { exitClean } = require('./lib/verify-exit.js')
 /**
  * Precision checks for ADOC↔MD (local + Pandoc), without touching UI.
  * Usage: node scripts/verify-conversion-precision.js
@@ -20,7 +22,6 @@ const {
   convertAsciiDocWithPandoc,
   convertMarkdownWithPandoc,
 } = require('../services/conversion/convert.js')
-const { shutdown } = require('../services/conversion/pandoc-server.js')
 
 async function main() {
   const inline = processInlineFormattingSafe('> **NOTE:** Hello **world**.')
@@ -215,20 +216,9 @@ async function main() {
 }
 
 main()
-  .then(() => {
-    try {
-      shutdown()
-    } catch (_) {
-      /* ignore */
-    }
-    setTimeout(() => process.exit(0), 50)
-  })
-  .catch((err) => {
+  .then(() => exitClean(0))
+  .catch(async (err) => {
+
     console.error('[FAIL]', err && err.message ? err.message : err)
-    try {
-      shutdown()
-    } catch (_) {
-      /* ignore */
-    }
-    setTimeout(() => process.exit(1), 50)
+    await exitClean(1)
   })

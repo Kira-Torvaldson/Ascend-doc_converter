@@ -3,9 +3,11 @@
  */
 
 import React, { useState } from 'react';
+import type { ConversionWarningItem } from '../utils/conversionWarnings';
+import { formatConversionWarning } from '../utils/conversionWarnings';
 
 interface ConversionWarningsBannerProps {
-  warnings: string[];
+  warnings: ConversionWarningItem[];
   onDismiss: () => void;
 }
 
@@ -18,9 +20,15 @@ export const ConversionWarningsBanner: React.FC<ConversionWarningsBannerProps> =
 
   if (!warnings.length) return null;
 
+  const hasEngineFallback = warnings.some((w) => w.code === 'ENGINE_FALLBACK');
+  const copyLines = warnings.map((w) => {
+    const base = formatConversionWarning(w);
+    return w.hint ? `${base}\n  → ${w.hint}` : base;
+  });
+
   const copyAll = async () => {
     try {
-      await navigator.clipboard.writeText(warnings.join('\n'));
+      await navigator.clipboard.writeText(copyLines.join('\n'));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
@@ -29,7 +37,11 @@ export const ConversionWarningsBanner: React.FC<ConversionWarningsBannerProps> =
   };
 
   return (
-    <div className="conversion-warnings-banner" role="status" aria-live="polite">
+    <div
+      className={`conversion-warnings-banner${hasEngineFallback ? ' conversion-warnings-banner--fallback' : ''}`}
+      role="status"
+      aria-live="polite"
+    >
       <div className="conversion-warnings-banner-main">
         <div className="conversion-warnings-banner-top">
           <button
@@ -39,8 +51,9 @@ export const ConversionWarningsBanner: React.FC<ConversionWarningsBannerProps> =
             aria-expanded={expanded}
           >
             <span className="conversion-warnings-banner-title">
-              Conversion réussie avec {warnings.length} avertissement
-              {warnings.length > 1 ? 's' : ''}
+              {hasEngineFallback
+                ? 'Conversion réussie — moteur de secours utilisé'
+                : `Conversion réussie avec ${warnings.length} avertissement${warnings.length > 1 ? 's' : ''}`}
             </span>
             <span aria-hidden="true">{expanded ? '▼' : '▶'}</span>
           </button>
@@ -51,7 +64,22 @@ export const ConversionWarningsBanner: React.FC<ConversionWarningsBannerProps> =
         {expanded && (
           <ul className="conversion-warnings-list">
             {warnings.map((w, i) => (
-              <li key={`${i}-${w.slice(0, 24)}`}>{w}</li>
+              <li key={`${i}-${w.code || w.message.slice(0, 24)}`}>
+                {w.title ? (
+                  <>
+                    <strong className="conversion-warnings-item-title">{w.title}</strong>
+                    {w.code ? (
+                      <span className="conversion-warnings-item-code"> ({w.code})</span>
+                    ) : null}
+                    <div className="conversion-warnings-item-message">{w.message}</div>
+                  </>
+                ) : (
+                  formatConversionWarning(w)
+                )}
+                {w.hint ? (
+                  <div className="conversion-warnings-item-hint">{w.hint}</div>
+                ) : null}
+              </li>
             ))}
           </ul>
         )}

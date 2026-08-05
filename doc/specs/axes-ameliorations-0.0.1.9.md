@@ -1,10 +1,10 @@
-# Axes d'amélioration — Ascend `0.0.1.9` / `0.0.1.9.1`
+# Axes d'amélioration — Ascend `0.0.1.9` → `0.0.1.9.2`
 
 | Champ | Valeur |
 |-------|--------|
-| Versions | `0.0.1.9` puis patch `0.0.1.9.1` |
+| Versions | `0.0.1.9` puis patches `0.0.1.9.1`, `0.0.1.9.2` |
 | Base | `0.0.1.8.5` |
-| Type | Patch — ConversionResult bout-en-bout + fiabilité MD/HTML/TXT |
+| Type | Patch — ConversionResult + fiabilité MD/HTML/TXT + ops métriques |
 
 ---
 
@@ -24,11 +24,17 @@
 - Aperçu HTML sandbox ; import `.html` ; couples UI partagés (`conversionPairs`).
 - Scénarios e2e `from-markdown` dans `check:ascend:ci`.
 
-## Reste (candidats post-0.0.1.9.1)
+## Livré en 0.0.1.9.2
+
+- Sortie propre des tests : `pandoc-server.shutdown()` force-kill (Windows `taskkill /T /F`) + helper `scripts/lib/verify-exit.js` (`exitClean`).
+- Métriques : `errors_by_code` (map) + `failures_by_route` ; persistance `reports/conversion-metrics.json` ; script `test:metrics`.
+- Contrats échec `/api/from-markdown`, `/api/from-text`, `/api/from-html` (dont `EMPTY_OUTPUT` stubbable).
+- UX warnings : bannière `ENGINE_FALLBACK` + hint timeout ; panneau Paramètres → Métriques (auto-refresh) + badge header.
+
+## Reste (candidats suivants)
 
 - Stubs `panwriter` / `docverter` → `ConversionResult` quand implémentés.
-- Sortie propre des tests (handles Pandoc server).
-- Warnings agrégés bout-en-bout ; métriques par `error.code`.
+- Hygiene release GitHub (`gh auth` / script).
 
 ---
 
@@ -39,4 +45,4 @@ npm run check:version
 npm run check:ascend:ci
 ```
 
-**Notes :** `doc/releases/v0.0.1.9-notes.md`, `doc/releases/v0.0.1.9.1-notes.md`
+**Notes :** `doc/releases/v0.0.1.9-notes.md`, `doc/releases/v0.0.1.9.1-notes.md`, `doc/releases/v0.0.1.9.2-notes.md`

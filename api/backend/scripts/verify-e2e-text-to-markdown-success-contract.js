@@ -1,5 +1,7 @@
 'use strict'
 
+
+const { exitClean } = require('./lib/verify-exit.js')
 const assert = require('assert')
 const app = require('../app.js')
 
@@ -70,11 +72,10 @@ async function main() {
 }
 
 main()
-  .then(() => {
-    setTimeout(() => process.exit(0), 500)
-  })
-  .catch((err) => {
+  .then(() => exitClean(0))
+  .catch(async (err) => {
+
     console.error('[FAIL] e2e text-to-markdown success-flow contract verification failed')
     console.error(err && err.stack ? err.stack : String(err))
-    setTimeout(() => process.exit(1), 500)
+    await exitClean(1)
   })

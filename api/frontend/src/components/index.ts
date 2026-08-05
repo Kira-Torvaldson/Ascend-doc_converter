@@ -25,6 +25,7 @@ export { SettingsPanel } from './SettingsPanel';
 export { NavigationWindow } from './NavigationWindow';
 export { ShortcutsHelpPopover } from './ShortcutsHelpPopover';
 export { ConversionWarningsBanner } from './ConversionWarningsBanner';
+export { MetricsSettingsPane } from './MetricsSettingsPane';
 export { FindReplaceBar } from './FindReplaceBar';
 export type { FindReplaceTarget } from './FindReplaceBar';
 export { DiffPanel } from './DiffPanel';
