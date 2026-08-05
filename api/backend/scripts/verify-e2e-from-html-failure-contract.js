@@ -28,7 +28,10 @@ function assertFailureConversionResult(result) {
   for (const f of expectedRootFields) assertHas(result, f)
 
   assert.strictEqual(result.success, false)
-  assert.strictEqual(result.converter, 'pandoc')
+  assert.ok(
+    ['html-markdown', 'html-plain', 'pandoc'].includes(result.converter),
+    `Unexpected converter '${result.converter}'`
+  )
   assert.strictEqual(result.inputFormat, 'html')
   assert.ok(result.error && typeof result.error === 'object')
   assert.strictEqual(typeof result.error.code, 'string')

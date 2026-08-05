@@ -21,6 +21,10 @@ const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
 const { isConversionSupported } = require('./converter-orchestrator.module.js')
 const { executeConversionSteps } = require('./execution-orchestrator.js')
+const {
+  formatErrorForLog,
+  makeOrchestratorFailure,
+} = require('./orchestrator-result.js')
 
 // Import pipeline security for load control
 const {
@@ -219,15 +223,18 @@ class MainOrchestrator {
       const canAccept = gracefulDegradationManager.canAcceptNewConversion()
       if (!canAccept.canAccept) {
         const duration = (Date.now() - startTime) / 1000
-        const error = `System overloaded: ${canAccept.message || 'System is temporarily overloaded'}`
-        logs.push(`[${conversionId}] ${error}`)
-        
-        return {
-          success: false,
-          logs: logs,
-          error: error,
-          duration: duration
-        }
+        const message = `System overloaded: ${canAccept.message || 'System is temporarily overloaded'}`
+        logs.push(`[${conversionId}] ${message}`)
+        addLogMessage(conversionId, 'error', message)
+        finalizeLog(conversionId, 'error', { totalDuration: duration, error: message })
+        return makeOrchestratorFailure({
+          code: 'RESOURCE_LIMIT_EXCEEDED',
+          message,
+          logs,
+          duration,
+          details: { stage: 'load-control' },
+          recoverable: true,
+        })
       }
 
       // Step 0.1: Acquire concurrency slot
@@ -235,15 +242,18 @@ class MainOrchestrator {
       const slotAcquisition = concurrencyController.acquireSlot(conversionId)
       if (!slotAcquisition.allowed) {
         const duration = (Date.now() - startTime) / 1000
-        const error = `Concurrency limit reached: ${slotAcquisition.message || 'Maximum concurrent conversions reached'}`
-        logs.push(`[${conversionId}] ${error}`)
-        
-        return {
-          success: false,
-          logs: logs,
-          error: error,
-          duration: duration
-        }
+        const message = `Concurrency limit reached: ${slotAcquisition.message || 'Maximum concurrent conversions reached'}`
+        logs.push(`[${conversionId}] ${message}`)
+        addLogMessage(conversionId, 'error', message)
+        finalizeLog(conversionId, 'error', { totalDuration: duration, error: message })
+        return makeOrchestratorFailure({
+          code: 'RESOURCE_LIMIT_EXCEEDED',
+          message,
+          logs,
+          duration,
+          details: { stage: 'concurrency' },
+          recoverable: true,
+        })
       }
       logs.push(`[${conversionId}] Concurrency slot acquired`)
 
@@ -256,17 +266,18 @@ class MainOrchestrator {
       const normalizedContent = rawContent.trim().normalize('NFC')
       if (normalizedContent.length === 0) {
         const duration = (Date.now() - startTime) / 1000
-        const msg = 'Input is empty (or empty after normalization) → conversion skipped → no output produced'
-        logs.push(`[${conversionId}] ${msg}`)
-        addLogMessage(conversionId, 'info', msg)
-        concurrencyController.releaseSlot(conversionId)
-        return {
-          success: false,
+        const message = 'Input is empty (or empty after normalization) → conversion skipped → no output produced'
+        logs.push(`[${conversionId}] ${message}`)
+        addLogMessage(conversionId, 'info', message)
+        finalizeLog(conversionId, 'error', { totalDuration: duration, error: message })
+        return makeOrchestratorFailure({
+          code: 'EMPTY_INPUT',
+          message,
           logs,
-          error: msg,
           duration,
-          pipelineState: 'empty_input'
-        }
+          pipelineState: 'empty_input',
+          details: { stage: 'input-normalization' },
+        })
       }
       logs.push(`[${conversionId}] Content size after normalization: ${normalizedContent.length} characters`)
       addLogMessage(conversionId, 'info', `Content size after normalization: ${normalizedContent.length} characters`)
@@ -277,18 +288,21 @@ class MainOrchestrator {
 
       if (conversionPath.length === 0) {
         const duration = (Date.now() - startTime) / 1000
-        const error = `No conversion path found from ${sourceFormat} to ${targetFormat}`
-        logs.push(`[${conversionId}] ${error}`)
-        
-        // Release slot on early failure
-        concurrencyController.releaseSlot(conversionId)
-        
-        return {
-          success: false,
-          logs: logs,
-          error: error,
-          duration: duration
-        }
+        const message = `No conversion path found from ${sourceFormat} to ${targetFormat}`
+        logs.push(`[${conversionId}] ${message}`)
+        addLogMessage(conversionId, 'error', message)
+        finalizeLog(conversionId, 'error', { totalDuration: duration, error: message })
+        return makeOrchestratorFailure({
+          code: 'FORMAT_UNSUPPORTED',
+          message,
+          logs,
+          duration,
+          details: {
+            stage: 'path-finding',
+            sourceFormat,
+            targetFormat,
+          },
+        })
       }
 
       logs.push(`[${conversionId}] Conversion path: ${conversionPath.length} step(s)`)
@@ -326,8 +340,9 @@ class MainOrchestrator {
       // Step 6: Check execution result
       if (!executionResult.success) {
         const duration = (Date.now() - startTime) / 1000
-        logs.push(`[${conversionId}] Execution failed: ${executionResult.error}`)
-        addLogMessage(conversionId, 'error', `Execution failed: ${executionResult.error}`)
+        const errorSummary = formatErrorForLog(executionResult.error)
+        logs.push(`[${conversionId}] Execution failed: ${errorSummary}`)
+        addLogMessage(conversionId, 'error', `Execution failed: ${errorSummary}`)
         finalizeLog(conversionId, 'error', {
           totalDuration: duration,
           error: executionResult.error
@@ -376,6 +391,7 @@ class MainOrchestrator {
     } catch (error) {
       // Secure error handling: exhaustive capture
       const duration = (Date.now() - startTime) / 1000
+      const message = `Main orchestrator error: ${error.message}`
       logs.push(`[${conversionId}] Unexpected error in main orchestrator: ${error.message}`)
 
       // Record error in structured log
@@ -388,16 +404,18 @@ class MainOrchestrator {
       // Record failure for graceful degradation
       gracefulDegradationManager.recordFailure(conversionId)
 
-      return {
-        success: false,
-        logs: logs,
-        error: `Main orchestrator error: ${error.message}`,
-        duration: duration
-      }
+      return makeOrchestratorFailure({
+        code: 'INTERNAL_ERROR',
+        message,
+        logs,
+        duration,
+        details: { stage: 'main-unexpected' },
+      })
     } finally {
-      // Step 8: Always release concurrency slot
+      // Step 8: Always release concurrency slot + resource budget
       logs.push(`[${conversionId}] Releasing concurrency slot...`)
       concurrencyController.releaseSlot(conversionId)
+      resourceBudgetManager.releaseBudget(conversionId)
       logs.push(`[${conversionId}] Concurrency slot released`)
 
       // Step 9: Always cleanup temporary input file

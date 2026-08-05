@@ -30,7 +30,7 @@ function assertSuccessConversionResult(result) {
   assert.strictEqual(result.success, true)
   assert.strictEqual(result.error, null)
   assert.strictEqual(typeof result.conversionId, 'string')
-  assert.strictEqual(result.converter, 'pandoc')
+  assert.strictEqual(result.converter, 'html-markdown')
   assert.ok(Array.isArray(result.pipeline))
   assert.strictEqual(result.inputFormat, 'html')
   assert.strictEqual(result.outputFormat, 'markdown')

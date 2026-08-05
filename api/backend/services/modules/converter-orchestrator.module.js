@@ -28,6 +28,100 @@ const {
 const { validateConversionRequest } = require('../../../../lib/security/validate-conversion-request.js')
 const { safeSpawn } = require('../../../../lib/security/safe-spawn.js')
 const { writeConversionAuditLog } = require('../../../../lib/logging/conversion-audit-log.js')
+const { createSuccessResult, createFailureResult } = require('../../src/utils/conversion-result.js')
+const {
+  isStandardizedSuccess,
+  isStandardizedFailure,
+  coerceOrchestratorError,
+  makeOrchestratorFailure,
+} = require('./orchestrator-result.js')
+
+function buildPandocFileBlock(filePath) {
+  let size = 0
+  try {
+    if (filePath && existsSync(filePath)) size = statSync(filePath).size
+  } catch (_) { /* ignore */ }
+  return {
+    originalName: path.basename(filePath || ''),
+    storedPath: filePath,
+    size,
+    mimeType: null,
+  }
+}
+
+function buildPandocOutputBlock(filePath) {
+  let size = 0
+  try {
+    if (filePath && existsSync(filePath)) size = statSync(filePath).size
+  } catch (_) { /* ignore */ }
+  return { path: filePath, size, mimeType: null }
+}
+
+/**
+ * Native ConversionResult for the Pandoc command path.
+ */
+function createPandocResult({
+  success,
+  conversionId,
+  startTime,
+  logs,
+  inputPath,
+  outputPath,
+  fromFormat,
+  toFormat,
+  errorCode = null,
+  message = null,
+  details = null,
+  recoverable = false,
+  processExitCode = null,
+  meta = {},
+}) {
+  const endTime = Date.now()
+  const durationMs = endTime - startTime
+  const duration = durationMs / 1000
+  const base = {
+    conversionId,
+    converter: 'pandoc',
+    pipeline: [`${fromFormat}->${toFormat}`],
+    inputFormat: fromFormat,
+    outputFormat: toFormat,
+    inputFile: buildPandocFileBlock(inputPath),
+    startedAt: new Date(startTime).toISOString(),
+    finishedAt: new Date(endTime).toISOString(),
+    durationMs,
+    warnings: [],
+    logs,
+    meta: {
+      ...meta,
+      processExitCode,
+    },
+  }
+
+  let result
+  if (success) {
+    result = createSuccessResult({
+      ...base,
+      outputFile: buildPandocOutputBlock(outputPath),
+    })
+  } else {
+    result = createFailureResult({
+      ...base,
+      outputFile: outputPath && existsSync(outputPath) ? buildPandocOutputBlock(outputPath) : null,
+      error: {
+        code: errorCode || 'CONVERSION_FAILED',
+        message: message || 'Pandoc conversion failed',
+        details: details ?? null,
+        recoverable: Boolean(recoverable),
+      },
+    })
+  }
+
+  // Legacy fields consumed by audit / older callers
+  result.duration = duration
+  result.processExitCode = processExitCode
+  if (!success && errorCode) result.errorCode = errorCode
+  return result
+}
 
 // Import pipeline security for load control (only for external calls)
 const {
@@ -56,6 +150,34 @@ const CONVERTER_REGISTRY = {
     executionType: 'lazy-load', // Utilise le lazy loading
     modulePath: path.join(MODULES_DIR, 'adoc-to-md.converter.js')
   },
+  // Dedicated HTML wrappers take priority over generic Pandoc for these pairs
+  'html-markdown': {
+    name: 'html-markdown',
+    supportedFormats: {
+      from: ['html', 'markdown'],
+      to: ['html', 'markdown']
+    },
+    executionType: 'lazy-load',
+    modulePath: path.join(MODULES_DIR, 'html-markdown.module.js')
+  },
+  'html-plain': {
+    name: 'html-plain',
+    supportedFormats: {
+      from: ['html', 'txt'],
+      to: ['html', 'txt']
+    },
+    executionType: 'lazy-load',
+    modulePath: path.join(MODULES_DIR, 'html-plain.module.js')
+  },
+  'text2markdown': {
+    name: 'text2markdown',
+    supportedFormats: {
+      from: ['txt'],
+      to: ['markdown']
+    },
+    executionType: 'lazy-load',
+    modulePath: path.join(MODULES_DIR, 'text2markdown.module.js')
+  },
   'pandoc': {
     name: 'pandoc',
     supportedFormats: {
@@ -64,23 +186,26 @@ const CONVERTER_REGISTRY = {
     },
     executionType: 'command', // Uses child_process.spawn directly
     binaryPath: (() => {
-      // Use EnvMap if available, fallback to a safe default path.
+      // Prefer an existing absolute path; otherwise bare "pandoc" (PATH), like convert.js.
+      const candidates = []
       try {
         const { envMap } = require('../config/envmap.module.js')
-        return envMap.get('PANDOC_PATH')
-      } catch (e) {
-        return '/usr/bin/pandoc'
+        candidates.push(envMap.get('PANDOC_PATH'))
+      } catch (_) { /* ignore */ }
+      if (process.env.PANDOC_PATH) candidates.push(process.env.PANDOC_PATH)
+      if (process.platform === 'win32') {
+        candidates.push('C:\\Program Files\\Pandoc\\pandoc.exe', 'pandoc.exe', 'pandoc')
+      } else {
+        candidates.push('/usr/bin/pandoc', '/usr/local/bin/pandoc', 'pandoc')
       }
+      for (const candidate of candidates) {
+        if (!candidate || typeof candidate !== 'string') continue
+        const isBare = !path.isAbsolute(candidate) && !candidate.includes('/') && !candidate.includes('\\')
+        if (isBare) return candidate
+        if (existsSync(candidate)) return candidate
+      }
+      return process.platform === 'win32' ? 'pandoc.exe' : 'pandoc'
     })()
-  },
-  'text2markdown': {
-    name: 'text2markdown',
-    supportedFormats: {
-      from: ['txt'],
-      to: ['markdown']
-    },
-    executionType: 'lazy-load', // Uses lazy loading (to be created)
-    modulePath: path.join(MODULES_DIR, 'text2markdown.module.js')
   },
   'panwriter': {
     name: 'panwriter',
@@ -203,16 +328,17 @@ class ConverterOrchestrator {
         const slotAcquisition = concurrencyController.acquireSlot(conversionId)
         if (!slotAcquisition.allowed) {
           const duration = (Date.now() - startTime) / 1000
-          const error = `Concurrency limit reached: ${slotAcquisition.message || 'Maximum concurrent conversions reached'}`
-          logs.push(`[${conversionId}] ${error}`)
+          const message = `Concurrency limit reached: ${slotAcquisition.message || 'Maximum concurrent conversions reached'}`
+          logs.push(`[${conversionId}] ${message}`)
           audit.errorCode = 'RESOURCE_LIMIT_EXCEEDED'
-          
-          return {
-            success: false,
-            logs: logs,
-            error: error,
-            duration: duration
-          }
+          return makeOrchestratorFailure({
+            code: 'RESOURCE_LIMIT_EXCEEDED',
+            message,
+            logs,
+            duration,
+            details: { stage: 'converter-concurrency' },
+            recoverable: true,
+          })
         }
         slotAcquired = true
         logs.push(`[${conversionId}] Concurrency slot acquired`)
@@ -299,16 +425,19 @@ class ConverterOrchestrator {
         )
       } else {
         const duration = (Date.now() - startTime) / 1000
-        const error = `Unknown execution type: ${converter.config.executionType}`
-        logs.push(`[${conversionId}] ${error}`)
+        const message = `Unknown execution type: ${converter.config.executionType}`
+        logs.push(`[${conversionId}] ${message}`)
         audit.errorCode = 'FORMAT_UNSUPPORTED'
-        
-        return {
-          success: false,
-          logs: logs,
-          error: error,
-          duration: duration
-        }
+        return makeOrchestratorFailure({
+          code: 'FORMAT_UNSUPPORTED',
+          message,
+          logs,
+          duration,
+          details: {
+            stage: 'converter-dispatch',
+            executionType: converter.config.executionType,
+          },
+        })
       }
 
       // Step 3: Merge logs and standardize result
@@ -333,13 +462,51 @@ class ConverterOrchestrator {
         }
       }
       audit.success = result.success !== false
-      audit.errorCode = result.errorCode || (result.success === false ? 'CONVERSION_FAILED' : null)
+      const structuredErrorCode =
+        result &&
+        result.error &&
+        typeof result.error === 'object' &&
+        typeof result.error.code === 'string'
+          ? result.error.code
+          : null
+      audit.errorCode =
+        structuredErrorCode ||
+        result.errorCode ||
+        (result.success === false ? 'CONVERSION_FAILED' : null)
       audit.processExitCode = Number.isFinite(result.processExitCode) ? result.processExitCode : null
 
+      // Preserve standardized ConversionResult from migrated modules (downdoc, …).
+      if (isStandardizedSuccess(result) || isStandardizedFailure(result)) {
+        const ret = {
+          ...result,
+          logs: allLogs,
+          warnings: Array.isArray(result.warnings) ? result.warnings : [],
+          meta:
+            result.meta && typeof result.meta === 'object' && !Array.isArray(result.meta)
+              ? result.meta
+              : {},
+        }
+        if (typeof ret.duration !== 'number') {
+          ret.duration =
+            typeof ret.durationMs === 'number' ? ret.durationMs / 1000 : duration
+        }
+        return ret
+      }
+
+      const legacySuccess = result.success !== false
       return {
-        success: result.success !== false, // Ensure success is a boolean
+        success: legacySuccess,
         logs: allLogs,
-        error: result.error || null,
+        error: legacySuccess
+          ? null
+          : coerceOrchestratorError(
+            result.error,
+            result.errorCode || audit.errorCode || null,
+            { stage: 'converter-legacy' }
+          ),
+        errorCode: legacySuccess
+          ? null
+          : (result.errorCode || audit.errorCode || null),
         duration: duration
       }
 
@@ -353,35 +520,41 @@ class ConverterOrchestrator {
         return {
           success: false,
           logs: logs,
-          error: error.message,
+          error: coerceOrchestratorError(error.message, error.code, {
+            stage: 'converter-security',
+          }),
           errorCode: error.code,
           duration: duration
         }
       }
 
       logs.push(`[${conversionId}] Unexpected error in orchestrator: ${error.message}`)
-      audit.errorCode = 'ORCHESTRATOR_ERROR'
+      audit.errorCode = 'INTERNAL_ERROR'
 
       // Record failure for graceful degradation (only for external calls)
       if (!isInternalCall) {
         gracefulDegradationManager.recordFailure(conversionId)
       }
 
-      return {
-        success: false,
-        logs: logs,
-        error: `Orchestrator error: ${error.message}`,
-        duration: duration
-      }
+      return makeOrchestratorFailure({
+        code: 'INTERNAL_ERROR',
+        message: `Orchestrator error: ${error.message}`,
+        logs,
+        duration,
+        details: { stage: 'converter-unexpected' },
+      })
     } finally {
       audit.endTimestamp = new Date().toISOString()
       audit.durationMs = Date.now() - startTime
       writeConversionAuditLog(audit)
-      // Release concurrency slot (only for external calls)
-      if (!isInternalCall && slotAcquired) {
-        logs.push(`[${conversionId}] Releasing concurrency slot...`)
-        concurrencyController.releaseSlot(conversionId)
-        logs.push(`[${conversionId}] Concurrency slot released`)
+      // Release concurrency slot + budget (only for external calls)
+      if (!isInternalCall) {
+        if (slotAcquired) {
+          logs.push(`[${conversionId}] Releasing concurrency slot...`)
+          concurrencyController.releaseSlot(conversionId)
+          logs.push(`[${conversionId}] Concurrency slot released`)
+        }
+        resourceBudgetManager.releaseBudget(conversionId)
       }
     }
   }
@@ -402,26 +575,34 @@ class ConverterOrchestrator {
   async executeCommandConverter(converterName, converterConfig, inputPath, outputPath, fromFormat, toFormat, conversionId, options) {
     const startTime = Date.now()
     const logs = []
+    const normalizedFrom = (fromFormat || '').toLowerCase()
+    const normalizedTo = (toFormat || '').toLowerCase()
 
     try {
-      // For Pandoc, use whitelist and secure execution
+      // For Pandoc, use whitelist and secure execution → native ConversionResult
       if (converterName === 'pandoc') {
-        const { readFileSync, writeFileSync } = require('fs')
-        const path = require('path')
-        
-        // Check that Pandoc binary exists
         const pandocPath = converterConfig.binaryPath
-        if (!existsSync(pandocPath)) {
-          const duration = (Date.now() - startTime) / 1000
-          const error = `Pandoc binary not found at ${pandocPath}`
-          logs.push(`[${conversionId}] ${error}`)
-          
-          return {
+        const isBareCommand =
+          typeof pandocPath === 'string' &&
+          !path.isAbsolute(pandocPath) &&
+          !pandocPath.includes('/') &&
+          !pandocPath.includes('\\')
+        if (!isBareCommand && !existsSync(pandocPath)) {
+          const message = `Pandoc binary not found at ${pandocPath}`
+          logs.push(`[${conversionId}] ${message}`)
+          return createPandocResult({
             success: false,
-            logs: logs,
-            error: error,
-            duration: duration
-          }
+            conversionId,
+            startTime,
+            logs,
+            inputPath,
+            outputPath,
+            fromFormat: normalizedFrom,
+            toFormat: normalizedTo,
+            errorCode: 'INTERNAL_ERROR',
+            message,
+            details: { stage: 'pandoc-binary', pandocPath },
+          })
         }
 
         // Pandoc conversion whitelist (copied from secure-converter.js)
@@ -451,25 +632,27 @@ class ConverterOrchestrator {
           'json_yaml': ['-f', 'json', '-t', 'yaml']
         }
 
-        const normalizedFrom = fromFormat.toLowerCase()
-        const normalizedTo = toFormat.toLowerCase()
         const conversionKey = `${normalizedFrom}_${normalizedTo}`
         const pandocArgs = CONVERSION_WHITELIST[conversionKey]
 
         if (!pandocArgs) {
-          const duration = (Date.now() - startTime) / 1000
-          const error = `Conversion ${fromFormat} → ${toFormat} not in Pandoc whitelist`
-          logs.push(`[${conversionId}] ${error}`)
-          
-          return {
+          const message = `Conversion ${fromFormat} → ${toFormat} not in Pandoc whitelist`
+          logs.push(`[${conversionId}] ${message}`)
+          return createPandocResult({
             success: false,
-            logs: logs,
-            error: error,
-            duration: duration
-          }
+            conversionId,
+            startTime,
+            logs,
+            inputPath,
+            outputPath,
+            fromFormat: normalizedFrom,
+            toFormat: normalizedTo,
+            errorCode: 'FORMAT_UNSUPPORTED',
+            message,
+            details: { stage: 'pandoc-whitelist', conversionKey },
+          })
         }
 
-        // Build arguments securely
         const args = [
           ...pandocArgs,
           '-o', outputPath,
@@ -479,7 +662,6 @@ class ConverterOrchestrator {
         logs.push(`[${conversionId}] Executing Pandoc command...`)
         logs.push(`[${conversionId}] Command: ${pandocPath} ${args.join(' ')}`)
 
-        // Execute Pandoc with spawn (never exec or execSync)
         const timeout = options.timeout || 30000
         const processResult = await safeSpawn(pandocPath, args, {
           cwd: path.dirname(inputPath),
@@ -487,60 +669,99 @@ class ConverterOrchestrator {
         })
 
         if (processResult.code !== 0) {
+          const message = `Pandoc conversion failed (exit ${processResult.code})`
           logs.push(`[${conversionId}] Pandoc exited with code ${processResult.code}`)
-          throw new Error('Pandoc conversion failed')
+          return createPandocResult({
+            success: false,
+            conversionId,
+            startTime,
+            logs,
+            inputPath,
+            outputPath,
+            fromFormat: normalizedFrom,
+            toFormat: normalizedTo,
+            errorCode: 'CONVERSION_FAILED',
+            message,
+            details: { stage: 'pandoc-process', exitCode: processResult.code },
+            processExitCode: processResult.code,
+          })
         }
 
-        // Check that output file exists
         if (!existsSync(outputPath)) {
-          logs.push(`[${conversionId}] Output file was not created`)
-          throw new Error('Output file was not created by Pandoc')
+          const message = 'Output file was not created by Pandoc'
+          logs.push(`[${conversionId}] ${message}`)
+          return createPandocResult({
+            success: false,
+            conversionId,
+            startTime,
+            logs,
+            inputPath,
+            outputPath,
+            fromFormat: normalizedFrom,
+            toFormat: normalizedTo,
+            errorCode: 'OUTPUT_NOT_CREATED',
+            message,
+            details: { stage: 'pandoc-output' },
+            processExitCode: processResult.code,
+          })
         }
 
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Pandoc conversion successful`)
-        return {
+        return createPandocResult({
           success: true,
-          logs: logs,
-          error: null,
-          duration: duration,
-          processExitCode: processResult.code
-        }
-      } else {
-        // Other command-type converters (to be implemented if necessary)
-        const duration = (Date.now() - startTime) / 1000
-        const error = `Command converter '${converterName}' not yet implemented`
-        logs.push(`[${conversionId}] ${error}`)
-        
-        return {
-          success: false,
-          logs: logs,
-          error: error,
-          duration: duration
-        }
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          fromFormat: normalizedFrom,
+          toFormat: normalizedTo,
+          processExitCode: processResult.code,
+        })
       }
+
+      // Other command-type converters (to be implemented if necessary)
+      const message = `Command converter '${converterName}' not yet implemented`
+      logs.push(`[${conversionId}] ${message}`)
+      return makeOrchestratorFailure({
+        code: 'FORMAT_UNSUPPORTED',
+        message,
+        logs,
+        duration: (Date.now() - startTime) / 1000,
+        details: { stage: 'command-converter', converterName },
+      })
     } catch (error) {
-      // Secure error handling
-      const duration = (Date.now() - startTime) / 1000
       if (isSecurityError(error) && error.code === SECURITY_ERROR_CODES.CONVERSION_TIMEOUT) {
         logs.push(`[${conversionId}] Command timeout`)
-        return {
+        return createPandocResult({
           success: false,
-          logs: logs,
-          error: 'Command execution timeout',
-          errorCode: SECURITY_ERROR_CODES.CONVERSION_TIMEOUT,
-          duration: duration,
-          processExitCode: null
-        }
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          fromFormat: normalizedFrom,
+          toFormat: normalizedTo,
+          errorCode: 'CONVERSION_TIMEOUT',
+          message: 'Command execution timeout',
+          details: { stage: 'pandoc-timeout' },
+          recoverable: true,
+        })
       }
-      logs.push(`[${conversionId}] Command execution failed`)
-
-      return {
+      logs.push(`[${conversionId}] Command execution failed: ${error.message || error}`)
+      return createPandocResult({
         success: false,
-        logs: logs,
-        error: 'Command execution error',
-        duration: duration
-      }
+        conversionId,
+        startTime,
+        logs,
+        inputPath,
+        outputPath,
+        fromFormat: normalizedFrom,
+        toFormat: normalizedTo,
+        errorCode: 'CONVERSION_FAILED',
+        message: error.message || 'Command execution error',
+        details: { stage: 'pandoc-unexpected' },
+      })
     }
   }
 

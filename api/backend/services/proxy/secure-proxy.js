@@ -49,18 +49,11 @@ const { randomUUID } = require('crypto')
 // This is the existing conversion service that we're proxying
 const { executeConversionRequest } = require('../modules/main-orchestrator.js')
 const { createSuccessResult, createFailureResult } = require('../../src/utils/conversion-result.js')
-const { buildRouteError } = require('../../src/utils/error-envelope.js')
-
-/** Maps legacy orchestrator failure messages / pipeline states to canonical codes. */
-function classifyProxyFailure(orchestratorResult) {
-  const pipelineState = orchestratorResult && orchestratorResult.pipelineState
-  const message = String((orchestratorResult && orchestratorResult.error) || '')
-  if (pipelineState === 'empty_input') return 'EMPTY_INPUT'
-  if (/No conversion path found/i.test(message)) return 'FORMAT_UNSUPPORTED'
-  if (/overloaded|Concurrency limit/i.test(message)) return 'RESOURCE_LIMIT_EXCEEDED'
-  if (/timeout/i.test(message)) return 'CONVERSION_TIMEOUT'
-  return 'CONVERSION_FAILED'
-}
+const { buildRouteError, normalizeErrorObject } = require('../../src/utils/error-envelope.js')
+const {
+  classifyProxyFailure,
+  legacyProxyErrorString,
+} = require('./proxy-failure.js')
 
 function buildProxyConversionResult({
   conversionId,
@@ -113,13 +106,36 @@ function buildProxyConversionResult({
   }
 
   const code = classifyProxyFailure(orchestratorResult)
-  const message = String((orchestratorResult && orchestratorResult.error) || 'Conversion failed for unknown reason')
+  const err = orchestratorResult && orchestratorResult.error
+  const pipelineState = (orchestratorResult && orchestratorResult.pipelineState) || null
+
+  if (err && typeof err === 'object' && !Array.isArray(err) && typeof err.code === 'string') {
+    const existingDetails =
+      err.details && typeof err.details === 'object' && !Array.isArray(err.details)
+        ? err.details
+        : {}
+    return createFailureResult({
+      ...base,
+      outputFile: null,
+      error: normalizeErrorObject({
+        ...err,
+        code,
+        details: {
+          ...existingDetails,
+          stage: 'main-orchestrator',
+          pipelineState,
+        },
+      }),
+    })
+  }
+
+  const message = legacyProxyErrorString(err, 'Conversion failed for unknown reason')
   return createFailureResult({
     ...base,
     outputFile: null,
     error: buildRouteError(code, message, {
       stage: 'main-orchestrator',
-      pipelineState: (orchestratorResult && orchestratorResult.pipelineState) || null,
+      pipelineState,
     }),
   })
 }
@@ -516,7 +532,12 @@ router.post('/convert', async (req, res) => {
       })
       return res.status(500).json({
         success: false,
-        error: orchestratorResult.error || 'Conversion failed for unknown reason',
+        // Legacy bulk clients expect a string; structured code lives in conversionResult.error
+        error: legacyProxyErrorString(
+          orchestratorResult.error,
+          (conversionResult.error && conversionResult.error.message) ||
+            'Conversion failed for unknown reason'
+        ),
         conversionResult
       })
     }

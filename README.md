@@ -1,16 +1,18 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.8.5-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.9-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.8.5)
+## Latest changes (v0.0.1.9)
 
-- **Conversion precision v2**
-  - Tables à spans (`colspan`), images dimensionnées, callouts portables, warnings `include::` / `{attr}`.
+- **ConversionResult bout-en-bout**
+  - Pandoc + orchestrateurs propagent `error.code` ; proxy sans collapse générique.
+- **HTML**
+  - Wrappers `html-markdown` / `html-plain` (HTML ↔ MD / TXT).
 - **DX**
-  - Arrêt propre du serveur Pandoc dans les scripts de vérif ; bannière warnings avec code.
+  - Résolution Pandoc Windows/PATH ; scripts `test:pandoc-result`, `test:proxy-failure-classify`, `test:html-wrappers`.
 
 ## Overview
 

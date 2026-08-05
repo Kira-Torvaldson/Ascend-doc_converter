@@ -15,6 +15,10 @@
 const path = require('path')
 const fs = require('fs')
 const { createFailureResult } = require('../../src/utils/conversion-result.js')
+const {
+  isStandardizedSuccess,
+  isStandardizedFailure,
+} = require('./orchestrator-result.js')
 
 // ============================================================================
 // CONFIGURATION
@@ -51,6 +55,14 @@ const AVAILABLE_MODULES = {
   'text2markdown': {
     path: path.join(MODULES_DIR, 'text2markdown.module.js'),
     name: 'text2markdown'
+  },
+  'html-markdown': {
+    path: path.join(MODULES_DIR, 'html-markdown.module.js'),
+    name: 'html-markdown'
+  },
+  'html-plain': {
+    path: path.join(MODULES_DIR, 'html-plain.module.js'),
+    name: 'html-plain'
   },
   'panwriter': {
     path: path.join(MODULES_DIR, 'panwriter.module.js'),
@@ -512,26 +524,7 @@ class LazyLoadManager {
 
       // Preserve standardized success/failure ConversionResult from migrated paths.
       // Keep a legacy `duration` (seconds) field for backward compatibility.
-      const looksLikeStandardizedSuccess =
-        moduleResult &&
-        moduleResult.success === true &&
-        moduleResult.error === null &&
-        Object.prototype.hasOwnProperty.call(moduleResult, 'conversionId') &&
-        Object.prototype.hasOwnProperty.call(moduleResult, 'durationMs') &&
-        Object.prototype.hasOwnProperty.call(moduleResult, 'inputFile') &&
-        Object.prototype.hasOwnProperty.call(moduleResult, 'outputFile')
-
-      const looksLikeStandardizedFailure =
-        moduleResult &&
-        moduleResult.success === false &&
-        moduleResult.error &&
-        typeof moduleResult.error === 'object' &&
-        typeof moduleResult.error.code === 'string' &&
-        Object.prototype.hasOwnProperty.call(moduleResult, 'conversionId') &&
-        Object.prototype.hasOwnProperty.call(moduleResult, 'durationMs') &&
-        Object.prototype.hasOwnProperty.call(moduleResult, 'inputFile')
-
-      if (looksLikeStandardizedSuccess || looksLikeStandardizedFailure) {
+      if (isStandardizedSuccess(moduleResult) || isStandardizedFailure(moduleResult)) {
         const ret = {
           ...moduleResult,
           logs: allLogs,

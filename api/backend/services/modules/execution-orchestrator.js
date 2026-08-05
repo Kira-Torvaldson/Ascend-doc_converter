@@ -20,6 +20,12 @@ const { mkdirSync, rmSync, existsSync, copyFileSync, readFileSync, statSync, unl
 const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
 const { executeConversion } = require('./converter-orchestrator.module.js')
+const {
+  isStandardizedFailure,
+  formatErrorForLog,
+  coerceOrchestratorError,
+  makeOrchestratorFailure,
+} = require('./orchestrator-result.js')
 
 // Import structured logger
 const {
@@ -199,15 +205,15 @@ class ExecutionOrchestrator {
       // Step 1: Validate input file exists
       if (!existsSync(inputFilePath)) {
         const duration = (Date.now() - startTime) / 1000
-        const error = `Input file not found: ${inputFilePath}`
-        logs.push(`[${conversionId}] ${error}`)
-        
-        return {
-          success: false,
-          logs: logs,
-          error: error,
-          duration: duration
-        }
+        const message = `Input file not found: ${inputFilePath}`
+        logs.push(`[${conversionId}] ${message}`)
+        return makeOrchestratorFailure({
+          code: 'PATH_NOT_FOUND',
+          message,
+          logs,
+          duration,
+          details: { stage: 'execution-input' },
+        })
       }
 
       // ------------------------------------------------------------------------
@@ -217,43 +223,44 @@ class ExecutionOrchestrator {
       const inputBytes = statSync(inputFilePath).size
       if (inputBytes === 0) {
         const duration = (Date.now() - startTime) / 1000
-        const msg = 'Input is empty → conversion skipped → no output produced'
-        logs.push(`[${conversionId}] ${msg}`)
-        addLogMessage(conversionId, 'info', msg)
-        return {
-          success: false,
+        const message = 'Input is empty → conversion skipped → no output produced'
+        logs.push(`[${conversionId}] ${message}`)
+        addLogMessage(conversionId, 'info', message)
+        return makeOrchestratorFailure({
+          code: 'EMPTY_INPUT',
+          message,
           logs,
-          error: msg,
           duration,
-          pipelineState: 'empty_input'
-        }
+          pipelineState: 'empty_input',
+          details: { stage: 'execution-input' },
+        })
       }
 
       // Step 2: Validate conversion path
       if (!Array.isArray(conversionPath) || conversionPath.length === 0) {
         const duration = (Date.now() - startTime) / 1000
-        const error = 'Invalid or empty conversion path'
-        logs.push(`[${conversionId}] ${error}`)
-        
-        return {
-          success: false,
-          logs: logs,
-          error: error,
-          duration: duration
-        }
+        const message = 'Invalid or empty conversion path'
+        logs.push(`[${conversionId}] ${message}`)
+        return makeOrchestratorFailure({
+          code: 'FORMAT_UNSUPPORTED',
+          message,
+          logs,
+          duration,
+          details: { stage: 'execution-path' },
+        })
       }
 
       if (conversionPath.length > EXECUTION_CONFIG.MAX_CONVERSION_STEPS) {
         const duration = (Date.now() - startTime) / 1000
-        const error = `Conversion path exceeds maximum steps (${EXECUTION_CONFIG.MAX_CONVERSION_STEPS})`
-        logs.push(`[${conversionId}] ${error}`)
-        
-        return {
-          success: false,
-          logs: logs,
-          error: error,
-          duration: duration
-        }
+        const message = `Conversion path exceeds maximum steps (${EXECUTION_CONFIG.MAX_CONVERSION_STEPS})`
+        logs.push(`[${conversionId}] ${message}`)
+        return makeOrchestratorFailure({
+          code: 'INVALID_INPUT',
+          message,
+          logs,
+          duration,
+          details: { stage: 'execution-path', maxSteps: EXECUTION_CONFIG.MAX_CONVERSION_STEPS },
+        })
       }
 
       // Step 3: Create temporary directory
@@ -299,7 +306,9 @@ class ExecutionOrchestrator {
           step.to,
           {
             ...options,
-            conversionId: `${conversionId}-step${stepNumber}`,
+            // Keep parent conversionId for audit/log correlation; step is metadata.
+            conversionId,
+            executionStep: stepNumber,
             _internal: true // Flag to indicate internal call (load control managed by main orchestrator)
           }
         )
@@ -327,13 +336,31 @@ class ExecutionOrchestrator {
             error: stepResult.error || null
           })
           const duration = (Date.now() - startTime) / 1000
-          logs.push(`[${conversionId}] Step ${stepNumber} failed: ${stepResult.error}`)
-          addLogMessage(conversionId, 'error', `Step ${stepNumber} failed: ${stepResult.error}`)
+          const errorSummary = formatErrorForLog(stepResult.error)
+          logs.push(`[${conversionId}] Step ${stepNumber} failed: ${errorSummary}`)
+          addLogMessage(conversionId, 'error', `Step ${stepNumber} failed: ${errorSummary}`)
+
+          // Prefer ConversionResult / errorCode; never stringify to a bare message.
+          const stepDetails = {
+            executionStep: stepNumber,
+            fromFormat: step.from,
+            toFormat: step.to,
+            converter: step.converter || null,
+          }
+          const structuredError = isStandardizedFailure(stepResult)
+            ? coerceOrchestratorError(stepResult.error, null, stepDetails)
+            : coerceOrchestratorError(
+              stepResult.error,
+              stepResult.errorCode || null,
+              stepDetails
+            )
+
           return {
             success: false,
             logs: logs,
-            error: `Step ${stepNumber} failed: ${stepResult.error}`,
-            duration: duration
+            error: structuredError,
+            duration: duration,
+            pipelineState: 'step_failed'
           }
         }
 
@@ -344,9 +371,9 @@ class ExecutionOrchestrator {
             try { unlinkSync(outputFile) } catch (_) { /* ignore */ }
           }
           const wrapperName = step.converter || `step${stepNumber}`
-          const msg = `Wrapper ${wrapperName} failed: output invalid or empty (${validation.reason})`
-          logs.push(`[${conversionId}] ${msg}`)
-          addLogMessage(conversionId, 'warn', msg)
+          const message = `Wrapper ${wrapperName} failed: output invalid or empty (${validation.reason})`
+          logs.push(`[${conversionId}] ${message}`)
+          addLogMessage(conversionId, 'warn', message)
           recordStep(conversionId, {
             stepNumber: stepNumber,
             module: step.converter || 'auto',
@@ -360,13 +387,19 @@ class ExecutionOrchestrator {
             error: validation.reason
           })
           const duration = (Date.now() - startTime) / 1000
-          return {
-            success: false,
+          return makeOrchestratorFailure({
+            code: 'OUTPUT_INVALID',
+            message,
             logs,
-            error: msg,
             duration,
-            pipelineState: 'wrapper_failed_clean'
-          }
+            pipelineState: 'wrapper_failed_clean',
+            details: {
+              stage: 'post-wrapper-validation',
+              executionStep: stepNumber,
+              reason: validation.reason,
+              converter: wrapperName,
+            },
+          })
         }
 
         recordStep(conversionId, {
@@ -413,19 +446,20 @@ class ExecutionOrchestrator {
 
       if (validArtifacts.length === 0) {
         const duration = (Date.now() - startTime) / 1000
-        const msg = 'Pipeline finished without valid output artifact → success forbidden'
-        logs.push(`[${conversionId}] ${msg}`)
-        addLogMessage(conversionId, 'warn', msg)
+        const message = 'Pipeline finished without valid output artifact → success forbidden'
+        logs.push(`[${conversionId}] ${message}`)
+        addLogMessage(conversionId, 'warn', message)
         if (existsSync(finalOutputFile) && statSync(finalOutputFile).size === 0) {
           try { unlinkSync(finalOutputFile) } catch (_) { /* ignore */ }
         }
-        return {
-          success: false,
+        return makeOrchestratorFailure({
+          code: 'OUTPUT_NOT_CREATED',
+          message,
           logs,
-          error: msg,
           duration,
-          pipelineState: 'no_output'
-        }
+          pipelineState: 'no_output',
+          details: { stage: 'execution-output' },
+        })
       }
 
       const finalContent = readFileSync(finalOutputFile, 'utf8')
@@ -448,24 +482,24 @@ class ExecutionOrchestrator {
         logs: logs,
         error: null,
         duration: duration,
-        // Additional info for orchestrator communication
-        outputFile: finalOutputFile,
+        // Temp paths are cleaned in finally — only in-memory content is durable.
         outputContent: finalContent,
         stepsExecuted: conversionPath.length,
-        workDirectory: workDir
       }
 
     } catch (error) {
       // Secure error handling: exhaustive capture
       const duration = (Date.now() - startTime) / 1000
+      const message = `Execution error: ${error.message}`
       logs.push(`[${conversionId}] Unexpected error in execution orchestrator: ${error.message}`)
 
-      return {
-        success: false,
-        logs: logs,
-        error: `Execution error: ${error.message}`,
-        duration: duration
-      }
+      return makeOrchestratorFailure({
+        code: 'INTERNAL_ERROR',
+        message,
+        logs,
+        duration,
+        details: { stage: 'execution-unexpected' },
+      })
     } finally {
       // Step 8: Always cleanup temporary directory
       logs.push(`[${conversionId}] Cleaning up temporary directory...`)

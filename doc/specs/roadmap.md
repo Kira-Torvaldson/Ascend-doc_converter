@@ -6,15 +6,24 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.8.5 (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** Patch précision conversion v2 + DX  
-**Focus:** Spans tables, callouts, warnings, shutdown Pandoc
+**Version:** 0.0.1.9 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** Patch ConversionResult orchestrateurs + Pandoc + HTML  
+**Focus:** Erreurs structurées bout-en-bout, wrappers HTML, résolution Pandoc
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.8.5 (Current — Ascend)
+### 0.0.1.9 (Current — Ascend)
+
+**Delivered:**
+- Pandoc command path → native `ConversionResult`
+- Orchestrator structured errors + `orchestrator-result` / `proxy-failure` helpers
+- HTML wrappers (`html-markdown`, `html-plain`) + verify scripts
+
+**Docs:** `doc/releases/v0.0.1.9-notes.md`
+
+### 0.0.1.8.5
 
 **Delivered:**
 - Tables spans (GFM colspan + roundtrip), images w/h, callouts `(n)`, warnings include/attr

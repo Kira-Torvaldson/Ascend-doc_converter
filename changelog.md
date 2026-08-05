@@ -13,6 +13,23 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.9 (2026-08-05)
+
+#### Added
+- Native `ConversionResult` on the Pandoc command path (success + structured failure codes).
+- HTML wrappers `html-markdown` / `html-plain` (HTML ↔ MD / TXT) registered before Pandoc.
+- Shared `orchestrator-result.js` helpers; `proxy-failure.js` classification by `error.code`.
+- Verify scripts: `test:pandoc-result`, `test:proxy-failure-classify`, `test:html-wrappers`.
+
+#### Changed
+- Orchestrators (main / execution / converter) propagate structured `error` objects (no stringify).
+- Early failures use canonical codes (`EMPTY_INPUT`, `FORMAT_UNSUPPORTED`, `RESOURCE_LIMIT_EXCEEDED`, …).
+- `finalizeLog` + `releaseBudget` on main/converter teardown; parent `conversionId` kept across steps.
+- Pandoc binary resolution: existing absolute path, else PATH (`pandoc`) — Windows-friendly.
+
+#### Fixed
+- Proxy `classifyProxyFailure` no longer collapses structured errors to generic `CONVERSION_FAILED`.
+
 ### 0.0.1.8.5 (2026-08-05)
 
 #### Added

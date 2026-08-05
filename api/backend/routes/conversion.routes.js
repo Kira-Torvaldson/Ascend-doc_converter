@@ -10,6 +10,7 @@ const express = require('express')
 const router = express.Router()
 const { randomUUID } = require('crypto')
 const { convertAsciiDoc, convertMarkdownWithPandoc, convertHtmlWithPandoc, text2markdown } = require('../services/conversion/convert.js')
+const { htmlToMarkdown, htmlToPlain } = require('../services/conversion/html-conversion.js')
 const { z } = require('zod')
 const { validate } = require('../middleware/security/validate.middleware.js')
 const { createFailureResult, createSuccessResult } = require('../src/utils/conversion-result.js')
@@ -170,6 +171,13 @@ function buildTextToMarkdownFailure({
   })
 }
 
+function resolveFromHtmlConverter(targetFormat) {
+  const t = typeof targetFormat === 'string' ? targetFormat.toLowerCase().trim() : ''
+  if (t === 'markdown' || t === 'md') return 'html-markdown'
+  if (t === 'txt' || t === 'text' || t === 'plain') return 'html-plain'
+  return 'pandoc'
+}
+
 function buildFromHtmlFailure({
   conversionId,
   startedAt,
@@ -180,6 +188,7 @@ function buildFromHtmlFailure({
   message,
   details = null,
   outputFile = null,
+  converter = null,
 }) {
   const finishedAt = new Date().toISOString()
   const normalizedTo =
@@ -188,7 +197,7 @@ function buildFromHtmlFailure({
       : 'unknown'
   return createFailureResult({
     conversionId,
-    converter: 'pandoc',
+    converter: converter || resolveFromHtmlConverter(normalizedTo),
     pipeline: [`html->${normalizedTo}`],
     inputFormat: 'html',
     outputFormat: normalizedTo,
@@ -605,13 +614,29 @@ router.post(
       return res.status(400).json({ ...failure, detail: failure.error.message })
     }
 
-    console.log(`[INFO] Converting ${text.length} characters (HTML → ${to}) with Pandoc`)
+    const normalizedTo = typeof to === 'string' ? to.toLowerCase() : String(to)
+    let result
+    let converterName = 'pandoc'
+    let engine = 'pandoc'
 
-    // Use Pandoc for conversion
-    const result = await convertHtmlWithPandoc(text, to)
+    // Prefer dedicated HTML wrappers for MD / TXT
+    if (normalizedTo === 'markdown' || normalizedTo === 'md') {
+      console.log(`[INFO] Converting ${text.length} characters (HTML → markdown) via html-markdown`)
+      result = await htmlToMarkdown(text)
+      converterName = 'html-markdown'
+      engine = 'pandoc'
+    } else if (normalizedTo === 'txt' || normalizedTo === 'text' || normalizedTo === 'plain') {
+      console.log(`[INFO] Converting ${text.length} characters (HTML → txt) via html-plain`)
+      result = htmlToPlain(text)
+      converterName = 'html-plain'
+      engine = 'local'
+    } else {
+      console.log(`[INFO] Converting ${text.length} characters (HTML → ${to}) with Pandoc`)
+      result = await convertHtmlWithPandoc(text, to)
+    }
+
     const finishedAt = new Date().toISOString()
     const durationMs = Date.now() - startedAtMs
-    const normalizedTo = typeof to === 'string' ? to.toLowerCase() : String(to)
     const outputMimeTypeMap = {
       markdown: 'text/markdown',
       asciidoc: 'text/asciidoc',
@@ -630,7 +655,7 @@ router.post(
 
     const conversionResult = createSuccessResult({
       conversionId,
-      converter: 'pandoc',
+      converter: converterName,
       pipeline: [`html->${normalizedTo}`],
       inputFormat: 'html',
       outputFormat: normalizedTo,
@@ -650,7 +675,7 @@ router.post(
       durationMs,
       warnings: [],
       logs: [],
-      meta: { route: '/api/from-html', transport: 'in-memory', targetFormat: normalizedTo },
+      meta: { route: '/api/from-html', transport: 'in-memory', targetFormat: normalizedTo, engine },
     })
 
     console.log(`[INFO] Conversion successful: ${result.length} ${to} characters generated`)

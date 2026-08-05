@@ -1,6 +1,6 @@
 {
   "name": "ascend-backend",
-  "version": "0.0.1.8.5",
+  "version": "0.0.1.9",
   "description": "Backend Node.js pour Ascend - Conversion AsciiDoc ⇄ Markdown",
   "main": "server.js",
   "type": "commonjs",
@@ -14,7 +14,11 @@
     "test:roundtrip": "node scripts/verify-roundtrip-adoc-md.js",
     "test:capacity": "node scripts/verify-capacity-profile.js",
     "test:admonitions": "node scripts/verify-admonition-conversion.js",
-    "test:precision": "node scripts/verify-conversion-precision.js"
+    "test:precision": "node scripts/verify-conversion-precision.js",
+    "test:text2markdown-result": "node scripts/verify-text2markdown-result.js",
+    "test:proxy-failure-classify": "node scripts/verify-proxy-failure-classify.js",
+    "test:pandoc-result": "node scripts/verify-pandoc-result.js",
+    "test:html-wrappers": "node scripts/verify-html-wrappers.js"
   },
   "keywords": [
     "asciidoc",
