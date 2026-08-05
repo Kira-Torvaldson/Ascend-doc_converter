@@ -17,6 +17,105 @@
 const { readFileSync, writeFileSync, statSync, existsSync, unlinkSync } = require('fs')
 const path = require('path')
 const { getMaxInputSizeBytes } = require('../config/conversion-limits.js')
+const { createSuccessResult, createFailureResult } = require('../../src/utils/conversion-result.js')
+
+function inferMimeTypeFromPath(filePath) {
+  const ext = path.extname(filePath || '').toLowerCase()
+  if (ext === '.txt' || ext === '.text') return 'text/plain'
+  if (ext === '.md' || ext === '.markdown') return 'text/markdown'
+  return null
+}
+
+function buildInputFileBlock(filePath) {
+  let size = 0
+  try {
+    if (filePath && existsSync(filePath)) size = statSync(filePath).size
+  } catch (_) {
+    /* best-effort */
+  }
+  return {
+    originalName: path.basename(filePath || ''),
+    storedPath: filePath,
+    size,
+    mimeType: inferMimeTypeFromPath(filePath),
+  }
+}
+
+function buildOutputFileBlock(filePath) {
+  let size = 0
+  try {
+    if (filePath && existsSync(filePath)) size = statSync(filePath).size
+  } catch (_) {
+    /* best-effort */
+  }
+  return {
+    path: filePath,
+    size,
+    mimeType: inferMimeTypeFromPath(filePath),
+  }
+}
+
+function makeErrorObject({ code, message, details, recoverable }) {
+  const err = { code, message, details: details ?? null, recoverable: Boolean(recoverable) }
+  Object.defineProperty(err, 'toString', {
+    value: function toString() {
+      return this.message
+    },
+    enumerable: false,
+  })
+  return err
+}
+
+function validationErrorToCode(message) {
+  const m = String(message || '').toLowerCase()
+  if (m.includes('not found')) return 'INVALID_INPUT'
+  if (m.includes('exceeds maximum')) return 'PAYLOAD_TOO_LARGE'
+  if (m.includes('is empty') || m.includes('empty or invalid')) return 'EMPTY_INPUT'
+  if (m.includes('extension')) return 'FORMAT_UNSUPPORTED'
+  return 'INVALID_INPUT'
+}
+
+function createText2MarkdownFailure({
+  conversionId,
+  startTime,
+  logs,
+  inputPath,
+  outputPath,
+  errorCode,
+  message,
+  details,
+  recoverable,
+  meta,
+  outputFile,
+}) {
+  const endTime = Date.now()
+  const durationSeconds = (endTime - startTime) / 1000
+  const result = createFailureResult({
+    conversionId,
+    converter: 'text2markdown',
+    pipeline: ['text->markdown'],
+    inputFormat: 'txt',
+    outputFormat: 'markdown',
+    inputFile: buildInputFileBlock(inputPath),
+    startedAt: new Date(startTime).toISOString(),
+    finishedAt: new Date(endTime).toISOString(),
+    durationMs: endTime - startTime,
+    error: makeErrorObject({
+      code: errorCode,
+      message,
+      details,
+      recoverable,
+    }),
+    outputFile:
+      outputFile ??
+      (outputPath && existsSync(outputPath) ? buildOutputFileBlock(outputPath) : null),
+    warnings: [],
+    logs: Array.isArray(logs) ? logs : [],
+    meta: meta && typeof meta === 'object' ? meta : {},
+  })
+  result.duration = durationSeconds
+  return result
+}
 
 // ============================================================================
 // CONFIGURATION
@@ -280,7 +379,7 @@ const text2markdownModule = {
    * @param {string} outputPath - Absolute path to output Markdown file
    * @param {Object} options - Conversion options (optional)
    * @param {string} options.conversionId - Conversion ID for logs (optional)
-   * @returns {Promise<ModuleResult>} Conversion result
+   * @returns {Promise<object>} ConversionResult (native) with legacy `duration` (seconds)
    */
   async run(inputPath, outputPath, options = {}) {
     const startTime = Date.now()
@@ -297,14 +396,19 @@ const text2markdownModule = {
       logs.push(`[${conversionId}] Validating input file...`)
       const validation = validateInput(inputPath)
       if (!validation.valid) {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Validation failed: ${validation.error}`)
-        return {
-          success: false,
-          logs: logs,
-          error: validation.error,
-          duration: duration
-        }
+        return createText2MarkdownFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: validationErrorToCode(validation.error),
+          message: validation.error,
+          details: { stage: 'input-validation' },
+          recoverable: false,
+          meta: { stage: 'input-validation' },
+        })
       }
       logs.push(`[${conversionId}] Input file validated`)
 
@@ -314,26 +418,36 @@ const text2markdownModule = {
       try {
         textContent = readFileSync(inputPath, 'utf8')
       } catch (error) {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Failed to read input file: ${error.message}`)
-        return {
-          success: false,
-          logs: logs,
-          error: `Failed to read input file: ${error.message}`,
-          duration: duration
-        }
+        return createText2MarkdownFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: 'INVALID_INPUT',
+          message: `Failed to read input file: ${error.message}`,
+          details: { stage: 'read-input' },
+          recoverable: false,
+          meta: { stage: 'read-input' },
+        })
       }
 
       // Validate that content is not empty
       if (!textContent || typeof textContent !== 'string' || textContent.trim().length === 0) {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Input file is empty or invalid`)
-        return {
-          success: false,
-          logs: logs,
-          error: 'Input file content is empty or invalid',
-          duration: duration
-        }
+        return createText2MarkdownFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: 'EMPTY_INPUT',
+          message: 'Input file content is empty or invalid',
+          details: { stage: 'content-validation' },
+          recoverable: false,
+          meta: { stage: 'content-validation' },
+        })
       }
       logs.push(`[${conversionId}] Input file read successfully (${textContent.length} characters)`)
 
@@ -344,26 +458,36 @@ const text2markdownModule = {
         markdown = convertTextToMarkdown(textContent)
         logs.push(`[${conversionId}] Conversion completed`)
       } catch (error) {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Conversion failed: ${error.message}`)
-        return {
-          success: false,
-          logs: logs,
-          error: `Conversion failed: ${error.message}`,
-          duration: duration
-        }
+        return createText2MarkdownFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: 'CONVERSION_FAILED',
+          message: `Conversion failed: ${error.message}`,
+          details: { stage: 'convert' },
+          recoverable: true,
+          meta: { stage: 'convert' },
+        })
       }
 
       // Verify conversion actually happened
       if (!markdown || typeof markdown !== 'string') {
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] ERROR: Conversion returned invalid result. Type: ${typeof markdown}`)
-        return {
-          success: false,
-          logs: logs,
-          error: 'Conversion returned invalid result',
-          duration: duration
-        }
+        return createText2MarkdownFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: 'CONVERSION_FAILED',
+          message: 'Conversion returned invalid result',
+          details: { stage: 'convert-validate' },
+          recoverable: true,
+          meta: { stage: 'convert-validate' },
+        })
       }
 
       // Step 4: Result post-processing (text2markdown.module.md)
@@ -379,48 +503,58 @@ const text2markdownModule = {
         logs.push(`[${conversionId}] Output file written successfully`)
       } catch (error) {
         // Obligation 3 - Secure error handling: do not create partial file
-        // If writing fails, remove file if it was partially created
         if (existsSync(outputPath)) {
           try {
             unlinkSync(outputPath)
             logs.push(`[${conversionId}] Partial output file removed`)
           } catch (unlinkError) {
-            // Log but do not propagate deletion error
             logs.push(`[${conversionId}] Warning: Failed to remove partial output file`)
           }
         }
 
-        const duration = (Date.now() - startTime) / 1000
         logs.push(`[${conversionId}] Failed to write output file: ${error.message}`)
-        return {
-          success: false,
-          logs: logs,
-          error: `Failed to write output file: ${error.message}`,
-          duration: duration
-        }
+        return createText2MarkdownFailure({
+          conversionId,
+          startTime,
+          logs,
+          inputPath,
+          outputPath,
+          errorCode: 'OUTPUT_NOT_CREATED',
+          message: `Failed to write output file: ${error.message}`,
+          details: { stage: 'write-output' },
+          recoverable: true,
+          meta: { stage: 'write-output' },
+        })
       }
 
-      // Step 6: Return result (text2markdown.module.md)
+      // Step 6: Return standardized ConversionResult
       const endTime = Date.now()
       const duration = (endTime - startTime) / 1000
       logs.push(`[${conversionId}] Conversion completed successfully`)
       logs.push(`[${conversionId}] Duration: ${duration.toFixed(3)}s`)
       logs.push(`[${conversionId}] Finished at ${new Date().toISOString()}`)
 
-      return {
-        success: true,
-        logs: logs,
-        error: null,
-        duration: duration
-      }
-
+      const success = createSuccessResult({
+        conversionId,
+        converter: 'text2markdown',
+        pipeline: ['text->markdown'],
+        inputFormat: 'txt',
+        outputFormat: 'markdown',
+        inputFile: buildInputFileBlock(inputPath),
+        outputFile: buildOutputFileBlock(outputPath),
+        startedAt: new Date(startTime).toISOString(),
+        finishedAt: new Date(endTime).toISOString(),
+        durationMs: endTime - startTime,
+        warnings: [],
+        logs,
+        meta: { stage: 'complete' },
+      })
+      success.duration = duration
+      return success
     } catch (error) {
       // Obligation 3 - Secure error handling: exhaustive capture
-      // Any unexpected error must be captured and transformed into ModuleResult
-      const duration = (Date.now() - startTime) / 1000
       logs.push(`[${conversionId}] Unexpected error: ${error.message}`)
 
-      // Ensure no partial output file is left behind
       if (existsSync(outputPath)) {
         try {
           unlinkSync(outputPath)
@@ -430,12 +564,18 @@ const text2markdownModule = {
         }
       }
 
-      return {
-        success: false,
-        logs: logs,
-        error: `Unexpected error: ${error.message}`,
-        duration: duration
-      }
+      return createText2MarkdownFailure({
+        conversionId,
+        startTime,
+        logs,
+        inputPath,
+        outputPath,
+        errorCode: 'INTERNAL_ERROR',
+        message: `Unexpected error: ${error.message}`,
+        details: { stage: 'unexpected' },
+        recoverable: false,
+        meta: { stage: 'unexpected' },
+      })
     }
   }
 }

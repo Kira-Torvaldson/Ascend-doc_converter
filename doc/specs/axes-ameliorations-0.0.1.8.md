@@ -25,9 +25,18 @@
 - Performance gros documents : chemin chaud 100 % en mémoire (`/api/to-markdown`, helpers Pandoc via stdin/stdout), I/O async partout, compression HTTP, `basicCleanup` et `MimeTypeDetector` optimisés, bench `bench-large-doc.js`.
 - Serveur Pandoc persistant (`pandoc server`) avec repli CLI automatique et clé EnvMap `PANDOC_SERVER_ENABLED` — plus de coût de démarrage du binaire par requête.
 
-## Reste (candidats 0.0.1.9+)
+## Livré en 0.0.1.9 (suite ConversionResult)
 
-- Migration des modules legacy (`text2markdown.module`, orchestrateurs) vers `ConversionResult` natif.
+- Pandoc commande → `ConversionResult` natif + résolution binaire Windows/PATH.
+- Orchestrateurs : erreurs précoces structurées, helper `orchestrator-result.js`, proxy par `error.code`.
+- Wrappers HTML `html-markdown` / `html-plain`.
+- Scripts `test:pandoc-result`, `test:proxy-failure-classify`, `test:html-wrappers`.
+
+## Reste (candidats post-0.0.1.9)
+
+- Stubs `panwriter` / `docverter` → `ConversionResult` quand implémentés.
+- Sortie propre des tests (handles Pandoc server).
+- Warnings agrégés bout-en-bout ; métriques par `error.code`.
 
 ---
 

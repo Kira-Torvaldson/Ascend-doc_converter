@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { FormatType } from '../types';
 import { getFormatTitle } from '../utils/formatHelpers';
 
-const COMING_SOON: FormatType[] = ['html', 'pdf', 'yaml', 'json', 'txt'];
+const COMING_SOON: FormatType[] = ['pdf', 'yaml', 'json'];
 
 interface FormatSelectorProps {
   label: string;
@@ -26,7 +26,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
   label,
   value,
   onChange,
-  formats = ['asciidoc', 'markdown'],
+  formats = ['asciidoc', 'markdown', 'html', 'txt'],
   comingSoon = COMING_SOON,
   disabled = false,
   id,

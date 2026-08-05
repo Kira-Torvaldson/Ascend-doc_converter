@@ -7,7 +7,9 @@ function assertHas(obj, key) {
   assert.ok(Object.prototype.hasOwnProperty.call(obj, key), `Missing field: ${key}`)
 }
 
-function assertConversionResultRoot(result) {
+const HTML_CONVERTERS = new Set(['html-markdown', 'html-plain', 'pandoc'])
+
+function assertConversionResultRoot(result, expectedConverter = null) {
   const expectedRootFields = [
     'success',
     'conversionId',
@@ -29,7 +31,14 @@ function assertConversionResultRoot(result) {
 
   assert.strictEqual(typeof result.success, 'boolean')
   assert.strictEqual(typeof result.conversionId, 'string')
-  assert.strictEqual(result.converter, 'pandoc')
+  if (expectedConverter) {
+    assert.strictEqual(result.converter, expectedConverter)
+  } else {
+    assert.ok(
+      HTML_CONVERTERS.has(result.converter),
+      `Unexpected converter '${result.converter}', expected one of: ${[...HTML_CONVERTERS].join(', ')}`
+    )
+  }
   assert.ok(Array.isArray(result.pipeline))
   assert.strictEqual(result.inputFormat, 'html')
   assert.strictEqual(typeof result.outputFormat, 'string')
@@ -42,8 +51,8 @@ function assertConversionResultRoot(result) {
   assert.ok(result.meta && typeof result.meta === 'object' && !Array.isArray(result.meta))
 }
 
-function assertSuccessContract(result) {
-  assertConversionResultRoot(result)
+function assertSuccessContract(result, expectedConverter = null) {
+  assertConversionResultRoot(result, expectedConverter)
   assert.strictEqual(result.success, true)
   assert.strictEqual(result.error, null)
   assert.ok(result.outputFile && typeof result.outputFile === 'object')
@@ -99,7 +108,7 @@ async function main() {
         assert.strictEqual(typeof body.markdown, 'string')
         assert.ok(body.markdown.length > 0)
         assert.ok(body.conversionResult && typeof body.conversionResult === 'object')
-        assertSuccessContract(body.conversionResult)
+        assertSuccessContract(body.conversionResult, 'html-markdown')
         assert.strictEqual(body.conversionResult.outputFormat, 'markdown')
       })) && allPassed
 
@@ -118,7 +127,7 @@ async function main() {
         assert.strictEqual(typeof body.asciidoc, 'string')
         assert.ok(body.asciidoc.length > 0)
         assert.ok(body.conversionResult && typeof body.conversionResult === 'object')
-        assertSuccessContract(body.conversionResult)
+        assertSuccessContract(body.conversionResult, 'pandoc')
         assert.strictEqual(body.conversionResult.outputFormat, 'asciidoc')
       })) && allPassed
 

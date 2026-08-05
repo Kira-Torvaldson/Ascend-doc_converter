@@ -76,12 +76,20 @@ export const ConversionSidebar: React.FC<ConversionSidebarProps> = ({
           value={targetFormat}
           onChange={onTargetFormatChange}
         />
-        {(sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') ||
-        (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') ? (
-          <div className="conversion-warning" role="status">
-            Seules les conversions AsciiDoc ↔ Markdown sont disponibles pour le moment.
-          </div>
-        ) : null}
+        {(() => {
+          const ok =
+            (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
+            (sourceFormat === 'markdown' && targetFormat === 'asciidoc') ||
+            (sourceFormat === 'html' &&
+              (targetFormat === 'markdown' || targetFormat === 'txt' || targetFormat === 'asciidoc')) ||
+            (sourceFormat === 'markdown' && targetFormat === 'html') ||
+            (sourceFormat === 'txt' && (targetFormat === 'markdown' || targetFormat === 'html'))
+          return !ok ? (
+            <div className="conversion-warning" role="status">
+              Couples supportés : AsciiDoc↔Markdown, HTML→Markdown/TXT, Markdown→HTML, TXT→Markdown/HTML.
+            </div>
+          ) : null
+        })()}
       </div>
     </div>
     <OtherOptionsPanel
