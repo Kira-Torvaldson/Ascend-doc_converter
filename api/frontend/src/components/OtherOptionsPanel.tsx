@@ -7,10 +7,10 @@ import { SidebarListbox } from './SidebarListbox';
 import { ConversionProfilesSection } from './ConversionProfilesSection';
 import type { ConversionOptions, FormatType } from '../types';
 
-export interface OtherOptionsCategory {
+export type OtherOptionsCategory = {
   value: string;
   label: string;
-}
+};
 
 interface OtherOptionsPanelProps {
   category: string;

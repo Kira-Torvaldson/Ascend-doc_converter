@@ -53,6 +53,21 @@ const RULES_BY_FILE = {
       'cross reference preserved'
     )
     assert.ok(/Target Section/i.test(roundtrip), 'xref target section preserved')
+    assert.ok(/target-section/i.test(roundtrip), 'xref id preserved')
+  },
+  '06-definition-list.adoc': ({ roundtrip, title }) => {
+    assert.match(roundtrip, /^=+ /m, 'level-1 heading')
+    assert.ok(roundtrip.includes(title), `title preserved: ${title}`)
+    assert.ok(/Term::/i.test(roundtrip) || (/Term/i.test(roundtrip) && /Definition here/i.test(roundtrip)), 'definition term')
+    assert.ok(/Another Term::/i.test(roundtrip) || /Second definition/i.test(roundtrip), 'second definition')
+  },
+  '07-admonition-multipara.adoc': ({ roundtrip, title }) => {
+    assert.match(roundtrip, /^=+ /m, 'level-1 heading')
+    assert.ok(roundtrip.includes(title), `title preserved: ${title}`)
+    assert.ok(/NOTE/i.test(roundtrip), 'note admonition')
+    assert.ok(/Para one/i.test(roundtrip), 'first paragraph')
+    assert.ok(/Para two/i.test(roundtrip), 'second paragraph')
+    assert.ok(/\*bold\*/i.test(roundtrip) || /\*\*bold\*\*/i.test(roundtrip), 'bold in note body')
   },
 }
 

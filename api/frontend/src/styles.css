@@ -837,6 +837,29 @@ html.page-custom-bg .header {
   margin-left: auto;
 }
 
+.find-replace-target {
+  display: inline-flex;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 0.35rem;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.find-replace-target-btn {
+  border: none;
+  background: transparent;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--theme-text-muted, #64748b);
+  cursor: pointer;
+}
+
+.find-replace-target-btn.is-active {
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--accent-strong, #2563eb);
+}
+
 .editor-with-lines {
   display: flex;
   align-items: stretch;
@@ -847,21 +870,21 @@ html.page-custom-bg .header {
 }
 
 .editor-line-gutter {
-  flex: 0 0 2.6rem;
+  flex: 0 0 calc(var(--editor-gutter-ch, 3) * 1ch + 1rem);
+  min-width: 2.5rem;
+  margin: 0;
   overflow: hidden;
   text-align: right;
-  padding: 0.75rem 0.4rem 0.75rem 0.2rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.75rem;
-  line-height: 1.5;
+  padding: 1rem 0.45rem 1rem 0.2rem;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: var(--editor-font-size, 0.9rem);
+  line-height: 1.65;
   color: #94a3b8;
   background: rgba(148, 163, 184, 0.08);
   border-right: 1px solid rgba(148, 163, 184, 0.25);
   user-select: none;
-}
-
-.editor-line-number {
-  height: 1.5em;
+  white-space: pre;
+  tab-size: 4;
 }
 
 .editor-with-lines textarea {
@@ -869,6 +892,21 @@ html.page-custom-bg .header {
   min-width: 0;
   border: none;
   resize: none;
+  /* Aligné sur la gouttière : 1 numéro = 1 ligne logique */
+  white-space: pre;
+  overflow-x: auto;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+[data-editor-word-wrap="true"] .editor-with-lines textarea {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+/* Wrap : les n° ne suivent plus les lignes visuelles — on atténue la gouttière */
+[data-editor-word-wrap="true"] .editor-line-gutter {
+  opacity: 0.45;
 }
 
 .result-view-toggle {
@@ -895,24 +933,60 @@ html.page-custom-bg .header {
 
 .result-preview {
   flex: 1;
+  min-height: 0;
   overflow: auto;
-  padding: 1rem 1.1rem;
-  line-height: 1.55;
-  font-size: 0.9rem;
+  padding: 0.75rem 0.9rem;
+  line-height: 1.45;
+  font-size: 0.875rem;
 }
 
 .result-preview h1,
 .result-preview h2,
-.result-preview h3 {
-  margin: 0.6em 0 0.35em;
+.result-preview h3,
+.result-preview h4 {
+  margin: 0.45em 0 0.2em;
+  font-size: 1.05em;
+  font-weight: 650;
+  line-height: 1.3;
 }
+
+.result-preview h1 { font-size: 1.2em; }
+.result-preview h2 { font-size: 1.1em; }
 
 .result-preview code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  background: rgba(148, 163, 184, 0.15);
-  padding: 0.05rem 0.3rem;
-  border-radius: 0.25rem;
+  background: rgba(148, 163, 184, 0.12);
+  padding: 0 0.25rem;
+  border-radius: 0.2rem;
+  font-size: 0.92em;
 }
+
+/* Notes / citations : compactes, sans gonfler l’aperçu */
+.result-preview .preview-note,
+.result-preview .preview-quote {
+  display: block;
+  margin: 0.35rem 0;
+  padding: 0.2rem 0.55rem;
+  border-left: 2px solid rgba(100, 116, 139, 0.45);
+  background: rgba(148, 163, 184, 0.08);
+  border-radius: 0 0.25rem 0.25rem 0;
+  font-size: inherit;
+  line-height: 1.4;
+}
+
+.result-preview .preview-note-label {
+  font-weight: 700;
+  font-size: 0.78em;
+  letter-spacing: 0.02em;
+  color: #475569;
+  margin-right: 0.35rem;
+}
+
+.result-preview .preview-note--note { border-left-color: rgba(14, 165, 233, 0.65); }
+.result-preview .preview-note--tip { border-left-color: rgba(34, 197, 94, 0.65); }
+.result-preview .preview-note--warning,
+.result-preview .preview-note--caution { border-left-color: rgba(245, 158, 11, 0.7); }
+.result-preview .preview-note--important { border-left-color: rgba(239, 68, 68, 0.65); }
 
 .diff-panel {
   top: 50%;
@@ -4160,6 +4234,19 @@ html.page-custom-bg:has(.main-layout.sidebar-collapsed) .page::after {
 }
 .panel.result-locked .result-textarea::-moz-selection {
   background: transparent;
+}
+/* Find ouvert : rendre la sélection visible même sur résultat verrouillé */
+:root[data-find-replace-open] .panel.result-locked .result-textarea {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+}
+:root[data-find-replace-open] .panel.result-locked .result-textarea::selection {
+  background: rgba(37, 99, 235, 0.35);
+}
+:root[data-find-replace-open] .panel.result-locked .result-textarea::-moz-selection {
+  background: rgba(37, 99, 235, 0.35);
 }
 /* Indicateur visuel : zone inactive */
 .panel.result-locked {

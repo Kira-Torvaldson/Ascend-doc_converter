@@ -1,19 +1,18 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.8.3-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.8.4-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.8.3)
+## Latest changes (v0.0.1.8.4)
 
-- **Settings**
-  - Side rail navigation, interface presets, editor font, export/import with custom background.
-  - Default conversion profile on first/empty session; `Ctrl+,` shortcut.
-- **Chrome**
-  - Sober header/navbar (Convert moved to Source panel), sidebar + footer alignment.
-- **Editor**
-  - Profiles, session draft, find/replace, diff, line numbers utilities.
+- **Conversion precision**
+  - Notes multi-paragraphes, listes de définitions, xrefs/ancres, gras dans les admonitions ; bascule Pandoc pour tables à spans.
+- **Capacity soft-auto**
+  - Plafonds entrée / concurrence / timeout dérivés de la machine (`ASCEND_CAPACITY`).
+- **Quality gates**
+  - Fixtures golden étendues ; `test:admonitions`, `test:precision`, `test:capacity` en CI.
 
 ## Overview
 

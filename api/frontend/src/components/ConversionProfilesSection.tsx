@@ -35,14 +35,23 @@ export const ConversionProfilesSection: React.FC<ConversionProfilesSectionProps>
     [activeProfileIds]
   );
 
-  const profileOptions = CONVERSION_PROFILES.map((p) => ({
-    value: p.id,
-    label: activeProfileIds.includes(p.id) ? `${p.label} · actif` : p.label,
-  }));
+  const profileOptions = useMemo(
+    () =>
+      CONVERSION_PROFILES.map((p) => ({
+        value: p.id,
+        label: activeProfileIds.includes(p.id) ? `${p.label} · actif` : p.label,
+      })),
+    [activeProfileIds]
+  );
 
   const handleSelectProfile = (profileId: string) => {
+    if (activeProfileIds.includes(profileId)) {
+      onToggleProfile(profileId);
+      setSelectedProfileId(profileId);
+      return;
+    }
     setSelectedProfileId(profileId);
-    if (activeProfileIds.includes(profileId)) return;
+    // Toujours déléguer : App affiche le snackbar « max atteint » si besoin
     onToggleProfile(profileId);
   };
 

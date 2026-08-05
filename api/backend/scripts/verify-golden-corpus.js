@@ -134,7 +134,7 @@ async function main() {
       throw new Error('One or more golden corpus scenarios failed')
     }
 
-    console.log('[OK] Golden corpus verification passed (16 fixtures)')
+    console.log('[OK] Golden corpus verification passed')
   } finally {
     await new Promise((resolve) => server.close(resolve))
   }

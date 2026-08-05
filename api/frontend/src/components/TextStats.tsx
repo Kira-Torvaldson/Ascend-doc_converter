@@ -2,7 +2,7 @@
  * Affiche caractères / mots / lignes pour un panneau éditeur.
  */
 
-import React from 'react';
+import React, { useDeferredValue, useMemo } from 'react';
 import { getTextStats } from '../utils/textStats';
 
 interface TextStatsProps {
@@ -10,7 +10,8 @@ interface TextStatsProps {
 }
 
 export const TextStats: React.FC<TextStatsProps> = ({ text }) => {
-  const stats = getTextStats(text);
+  const deferred = useDeferredValue(text);
+  const stats = useMemo(() => getTextStats(deferred), [deferred]);
   return (
     <div className="text-stats">
       <span data-tooltip="Nombre de caractères">

@@ -1,9 +1,5 @@
 # Admonition Test
 
-**📌 NOTE**\
-This is a note block.
+> **NOTE:** This is a note block.
 
-<dl><dt><strong>⚠️ WARNING</strong></dt><dd>
-
-Watch out for edge cases.
-</dd></dl>
+> **WARNING:** Watch out for edge cases.

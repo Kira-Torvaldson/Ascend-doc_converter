@@ -22,11 +22,26 @@ This section reflects **implemented** limits after ASC-008 (single source via En
 | Conversion timeout | **30 s** | — | `CONVERSION_TIMEOUT_MS` (EnvMap) |
 | UI fetch timeout | **30 s** | — | `generic-converter.ts` |
 
-**Override:** set `MAX_INPUT_SIZE_MB` and optionally `CONVERSION_TIMEOUT_MS` in the environment (see `container/.env.example`). Express and UI limits follow the backend snapshot.
+**Override (manual):** set `ASCEND_CAPACITY=manual` then `MAX_INPUT_SIZE_MB` / `CONVERSION_TIMEOUT_MS` / `MAX_CONCURRENT_CONVERSIONS` (see `container/.env.example`). Express and UI limits follow the backend snapshot.
+
+### Soft-auto capacity (default)
+
+By default (`ASCEND_CAPACITY=soft-auto`), Ascend derives limits from the host machine without saturating it:
+
+- ~**20 %** of host RAM as budget
+- ~**30 %** of CPU cores for concurrency (capped)
+- hard caps: input **5–16 Mo** (desktop) / **5–24 Mo** (server), concurrency ≤ 4 / 8
+
+| Variable | Values | Default |
+|----------|--------|---------|
+| `ASCEND_CAPACITY` | `soft-auto` \| `manual` | `soft-auto` |
+| `ASCEND_HOST_PROFILE` | `auto` \| `desktop` \| `server` | `auto` |
+
+Source: `services/config/capacity-profile.js` → `conversion-limits.js`. Verify with `node scripts/verify-capacity-profile.js`.
 
 **API discovery:**
 
-- `GET /api/config/limits` — limits exposed to the UI
+- `GET /api/config/limits` — limits exposed to the UI (includes `capacity` block in soft-auto)
 - `GET /api/metrics` — conversion counters (requires `X-API-Key` when `API_KEY` is set in production)
 
 **Operational runbook:** `doc/guides/operations/runbook.md`

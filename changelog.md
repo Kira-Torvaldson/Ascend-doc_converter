@@ -13,6 +13,24 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.8.4 (2026-08-05)
+
+#### Added
+- Conversion precision pipeline (`conversion-precision.js`) : definition lists, multi-paragraph admonitions, xref/anchor preservation, AsciiDoc bold in note bodies, Pandoc fallback for table cell spans.
+- Soft-auto capacity profile (`capacity-profile.js`) deriving input/concurrency/timeout ceilings from host RAM/CPU (override via `ASCEND_CAPACITY=manual`).
+- Shared `normalize-admonitions.js` ; verification scripts `test:admonitions`, `test:precision`, `test:capacity`.
+- Golden fixtures `06-definition-list`, `07-admonition-multipara` ; roundtrip rules for new cases.
+- Editor extractions `ConversionSidebar`, `AppConfirmModals` ; deferred text stats / lighter gutter.
+
+#### Changed
+- Admonitions normalize to portable Markdown blockquotes (`> **NOTE:**`) in default and BookStack modes.
+- CI `check:ascend` / `check:ascend:ci` include admonition, precision, and capacity checks.
+- Golden expected outputs for admonition and xref updated to the more precise forms.
+
+#### Fixed
+- BookStack hard-break/`**` mangling on note labels ; CRLF breaking AsciiDoc admonition blocks.
+- Local MD→AsciiDoc nested lists flattened ; code fences missing `[source,lang]`.
+
 ### 0.0.1.8.3 (2026-08-04)
 
 #### Added

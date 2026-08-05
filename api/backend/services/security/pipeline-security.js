@@ -26,14 +26,20 @@ const os = require('os')
 // CONFIGURATION
 // ============================================================================
 
-// EnvMap is the single source of truth for security configuration
+// EnvMap + capacity soft-auto (conversion-limits) for runtime budgets
 const { envMap } = require('../config/envmap.module.js')
+const {
+  getMaxConcurrentConversions,
+  getMaxCpuTimeMs,
+  getMaxMemoryMb,
+  getMaxWallTimeMs,
+} = require('../config/conversion-limits.js')
 
 const SECURITY_CONFIG = {
-  // Limite maximale de conversions simultanées (Règle 21)
+  // Limite maximale de conversions simultanées (Règle 21) — valeur initiale ; runtime via getter
   MAX_CONCURRENT_CONVERSIONS: envMap.get('MAX_CONCURRENT_CONVERSIONS'),
 
-  // Budget de ressources par conversion (Règle 22)
+  // Budget de ressources par conversion (Règle 22) — valeurs initiales ; runtime via getters
   RESOURCE_BUDGET: {
     MAX_CPU_TIME: envMap.get('MAX_CPU_TIME_MS'), // 30s
     MAX_MEMORY_MB: envMap.get('MAX_MEMORY_MB'), // 512 MB
@@ -77,18 +83,27 @@ class ConcurrencyController {
     this.maxConcurrent = SECURITY_CONFIG.MAX_CONCURRENT_CONVERSIONS
   }
 
+  getMaxConcurrent() {
+    try {
+      return getMaxConcurrentConversions()
+    } catch {
+      return this.maxConcurrent
+    }
+  }
+
   /**
    * Tente d'acquérir un slot pour une nouvelle conversion
    * @param {string} conversionId - ID unique de la conversion
    * @returns {Object} { allowed: boolean, reason?: string }
    */
   acquireSlot(conversionId) {
+    const maxConcurrent = this.getMaxConcurrent()
     // Règle 21.1 : Vérification atomique de la limite
-    if (this.activeConversions.size >= this.maxConcurrent) {
+    if (this.activeConversions.size >= maxConcurrent) {
       return {
         allowed: false,
         reason: 'CAPACITY_EXCEEDED',
-        message: `Maximum concurrent conversions (${this.maxConcurrent}) reached`
+        message: `Maximum concurrent conversions (${maxConcurrent}) reached`
       }
     }
 
@@ -127,7 +142,7 @@ class ConcurrencyController {
    * @returns {boolean}
    */
   canAcceptNew() {
-    return this.activeConversions.size < this.maxConcurrent
+    return this.activeConversions.size < this.getMaxConcurrent()
   }
 }
 
@@ -392,13 +407,23 @@ class ResourceBudgetManager {
    * @returns {Object} Budget initialisé
    */
   initializeBudget(conversionId) {
+    let maxCpuTime = SECURITY_CONFIG.RESOURCE_BUDGET.MAX_CPU_TIME
+    let maxMemoryMB = SECURITY_CONFIG.RESOURCE_BUDGET.MAX_MEMORY_MB
+    let maxWallTime = SECURITY_CONFIG.RESOURCE_BUDGET.MAX_WALL_TIME
+    try {
+      maxCpuTime = getMaxCpuTimeMs()
+      maxMemoryMB = getMaxMemoryMb()
+      maxWallTime = getMaxWallTimeMs()
+    } catch {
+      /* keep SECURITY_CONFIG defaults */
+    }
     const budget = {
       startTime: Date.now(),
       startCpu: process.cpuUsage(),
       maxMemory: 0,
-      maxCpuTime: SECURITY_CONFIG.RESOURCE_BUDGET.MAX_CPU_TIME,
-      maxMemoryMB: SECURITY_CONFIG.RESOURCE_BUDGET.MAX_MEMORY_MB,
-      maxWallTime: SECURITY_CONFIG.RESOURCE_BUDGET.MAX_WALL_TIME
+      maxCpuTime,
+      maxMemoryMB,
+      maxWallTime
     }
 
     this.activeBudgets.set(conversionId, budget)
@@ -624,7 +649,7 @@ class GracefulDegradationManager {
     
     // Vérification du nombre de conversions simultanées
     const activeCount = concurrencyController.getActiveCount()
-    const maxConcurrent = SECURITY_CONFIG.MAX_CONCURRENT_CONVERSIONS
+    const maxConcurrent = concurrencyController.getMaxConcurrent()
     if (activeCount >= maxConcurrent * 0.9) {
       reasons.push('HIGH_CONCURRENCY')
     }

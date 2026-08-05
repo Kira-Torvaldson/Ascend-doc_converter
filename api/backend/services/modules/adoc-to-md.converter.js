@@ -20,7 +20,10 @@
 const { statSync, existsSync, unlinkSync } = require('fs')
 const { readFile, writeFile } = require('fs/promises')
 const path = require('path')
-const { adaptForBookStack } = require('../../../shared/adapters/bookstack-adapter.js')
+const {
+  adaptForBookStack,
+  normalizeAdmonitionsToBlockquotes,
+} = require('../../../shared/adapters/bookstack-adapter.js')
 const { convertAsciiDocWithPandoc } = require('../conversion/convert.js')
 const { createSuccessResult, createFailureResult } = require('../../src/utils/conversion-result.js')
 const { getMaxInputSizeBytes } = require('../config/conversion-limits.js')
@@ -500,7 +503,7 @@ const downdocModule = {
         })
       }
 
-      // Apply BookStack adapter if necessary
+      // Normalize admonitions; apply full BookStack adapter when requested
       if (options.mode === 'bookstack') {
         logs.push(`[${conversionId}] Applying BookStack adapter...`)
         const markdownBeforeAdapter = markdown
@@ -517,6 +520,8 @@ const downdocModule = {
           logs.push(`[${conversionId}] WARNING: After BookStack adapter, markdown is identical to input, using pre-adapter version`)
           markdown = markdownBeforeAdapter
         }
+      } else {
+        markdown = normalizeAdmonitionsToBlockquotes(markdown)
       }
       logs.push(`[${conversionId}] Post-processing completed`)
       logs.push(`[${conversionId}] Final markdown length: ${markdown.length} characters`)

@@ -166,6 +166,9 @@ function adaptForBookStack(markdown: string | null | undefined): string {
   // ============================================================================
   // PHASE 3: Process admonitions - convert to Markdown blockquotes
   // ============================================================================
+
+  // Downdoc emits a trailing "\" (hard break) after paragraph admonition labels.
+  result = result.replace(/^(\*\*[^\n*]+?\*\*)\s*\\$/gm, '$1')
   
   const admonitionEmojis: Record<string, string> = {
     '📝': 'note',
@@ -188,10 +191,10 @@ function adaptForBookStack(markdown: string | null | undefined): string {
     const nextLine = i < lines.length - 1 ? lines[i + 1] : ''
     const prevLine = i > 0 ? lines[i - 1] : ''
     
-    // Check for admonition start patterns
-    const emojiMatch = line.match(/^\*\*([📝💡⚠️🔥❗⚠📌])\s+(\w+)\*\*\s*$/)
+    // Check for admonition start patterns (optional trailing \)
+    const emojiMatch = line.match(/^\*\*([📝💡⚠️🔥❗⚠📌])\s+(\w+)\*\*\s*\\?\s*$/)
     const emojiMatchWithContent = line.match(/^\*\*([📝💡⚠️🔥❗⚠📌])\s+(\w+)\*\*\s+(.+)$/)
-    const emojiMatchLoose = line.match(/^\*\*([^\*]+?)\s+(NOTE|TIP|WARNING|CAUTION|IMPORTANT)\*\*\s*$/i)
+    const emojiMatchLoose = line.match(/^\*\*([^\*]+?)\s+(NOTE|TIP|WARNING|CAUTION|IMPORTANT)\*\*\s*\\?\s*$/i)
     const emojiMatchWithContentLoose = line.match(/^\*\*([^\*]+?)\s+(NOTE|TIP|WARNING|CAUTION|IMPORTANT)\*\*\s+(.+)$/i)
     
     // HTML format from downdoc: <dl><dt><strong>EMOJI TYPE</strong></dt><dd>
@@ -420,6 +423,8 @@ function adaptForBookStack(markdown: string | null | undefined): string {
   }
   
   result = processedLines.join('\n')
+  // Drop solitary ">" leftovers after single-paragraph admonitions
+  result = result.replace(/(^> \*\*(?:NOTE|TIP|WARNING|CAUTION|IMPORTANT):\*\* [^\n]+)\n>(\n)/gim, '$1$2')
 
   // ============================================================================
   // PHASE 3.5: Fix horizontal rules AGAIN before line-by-line processing
@@ -796,7 +801,8 @@ function adaptForBookStack(markdown: string | null | undefined): string {
     const prevLine = i > 0 ? listLines[i - 1] : ''
     const nextLine = i < listLines.length - 1 ? listLines[i + 1] : ''
     
-    const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s*(.+)$/)
+    // Require whitespace after marker so **bold** / *italic* are not treated as lists
+    const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/)
     
     if (listMatch) {
       const [, indent, marker, content] = listMatch
