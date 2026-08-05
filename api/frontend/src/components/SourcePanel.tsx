@@ -139,7 +139,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
         <div className="panel-header-actions">
           <label className="file-input-label">
             <span>📄</span>
-            <input type="file" accept=".adoc,.asciidoc,.md,.txt" onChange={onFileChange} />
+            <input type="file" accept=".adoc,.asciidoc,.md,.txt,.html,.htm" onChange={onFileChange} />
           </label>
           <label className="file-input-label">
             <span>📁</span>
@@ -240,7 +240,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
         {isDraggingFile && (
           <div className="source-drop-overlay" aria-hidden="true">
             <span className="source-drop-overlay-title">Déposer le fichier</span>
-            <span className="source-drop-overlay-hint">.adoc · .md · .txt</span>
+            <span className="source-drop-overlay-hint">.adoc · .md · .txt · .html</span>
           </div>
         )}
         {isEmpty && !isDraggingFile && (

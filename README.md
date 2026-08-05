@@ -1,18 +1,18 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.9-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.9.1-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.9)
+## Latest changes (v0.0.1.9.1)
 
-- **ConversionResult bout-en-bout**
-  - Pandoc + orchestrateurs propagent `error.code` ; proxy sans collapse générique.
-- **HTML**
-  - Wrappers `html-markdown` / `html-plain` (HTML ↔ MD / TXT).
-- **DX**
-  - Résolution Pandoc Windows/PATH ; scripts `test:pandoc-result`, `test:proxy-failure-classify`, `test:html-wrappers`.
+- **MD ↔ HTML/TXT**
+  - Routes `/api/from-markdown` et `/api/from-text` ; buffer UI dédié (source Markdown intacte).
+- **Fiabilité**
+  - `EMPTY_OUTPUT` ; timeout Pandoc non masqué ; abort + timeout client aligné backend.
+- **UX**
+  - Aperçu HTML sandbox ; import `.html` ; session / historique / ZIP / diff cohérents.
 
 ## Overview
 

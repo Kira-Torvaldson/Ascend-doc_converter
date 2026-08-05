@@ -579,6 +579,103 @@ describe('convertText (success consumption)', () => {
     )
   })
 
+  describe('markdown -> html/txt via /api/from-markdown', () => {
+    it('posts to from-markdown and reads data.html', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        makeOkResponse({
+          html: '<p>Hello</p>',
+          conversionResult: { success: true, conversionId: 'm1', error: null, meta: {} },
+        })
+      )
+      ;(globalThis as any).fetch = fetchMock
+
+      await convertText(
+        '# Hello',
+        'markdown',
+        'html',
+        setStatus,
+        setOutput,
+        setLoading,
+        setNotification,
+        {},
+        null,
+        setShowErrorModal,
+        setErrorMessage,
+        setBackendConversionResult,
+        setConversionUiState
+      )
+
+      const [endpoint, init] = fetchMock.mock.calls[0]
+      expect(endpoint).toContain('/api/from-markdown')
+      expect(JSON.parse(init.body)).toEqual({ text: '# Hello', to: 'html' })
+      expect(setOutput).toHaveBeenLastCalledWith('<p>Hello</p>')
+      expect(setConversionUiState).toHaveBeenCalledWith('success')
+    })
+
+    it('rejects empty html output as EMPTY_OUTPUT', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        makeOkResponse({
+          html: '   ',
+          conversionResult: { success: true, conversionId: 'm-empty', error: null, meta: {} },
+        })
+      )
+      ;(globalThis as any).fetch = fetchMock
+
+      await convertText(
+        '# Hello',
+        'markdown',
+        'html',
+        setStatus,
+        setOutput,
+        setLoading,
+        setNotification,
+        {},
+        null,
+        setShowErrorModal,
+        setErrorMessage,
+        setBackendConversionResult,
+        setConversionUiState
+      )
+
+      expect(setOutput).toHaveBeenCalledWith('')
+      expect(setConversionUiState).toHaveBeenCalledWith('error')
+      expect(setNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'error' })
+      )
+    })
+
+    it('posts to from-text for txt→html', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        makeOkResponse({
+          html: '<p>Hello</p>',
+          conversionResult: { success: true, conversionId: 't1', error: null, meta: {} },
+        })
+      )
+      ;(globalThis as any).fetch = fetchMock
+
+      await convertText(
+        'Hello',
+        'txt',
+        'html',
+        setStatus,
+        setOutput,
+        setLoading,
+        setNotification,
+        {},
+        null,
+        setShowErrorModal,
+        setErrorMessage,
+        setBackendConversionResult,
+        setConversionUiState
+      )
+
+      const [endpoint, init] = fetchMock.mock.calls[0]
+      expect(endpoint).toContain('/api/from-text')
+      expect(JSON.parse(init.body)).toEqual({ text: 'Hello', to: 'html' })
+      expect(setOutput).toHaveBeenLastCalledWith('<p>Hello</p>')
+    })
+  })
+
   describe('Step 8 (html -> *) contract-first behavior', () => {
     it('consumes standardized success ConversionResult and uses data[targetFormat] as output (html->markdown)', async () => {
       const fetchMock = vi.fn().mockResolvedValue(

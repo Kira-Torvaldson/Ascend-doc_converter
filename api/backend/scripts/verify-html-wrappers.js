@@ -10,7 +10,14 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { randomUUID } = require('crypto')
-const { htmlToPlain, plainToHtml, htmlToMarkdown, markdownToHtml } = require('../services/conversion/html-conversion.js')
+const {
+  htmlToPlain,
+  plainToHtml,
+  htmlToMarkdown,
+  markdownToHtml,
+  markdownToPlain,
+  isPandocTimeoutError,
+} = require('../services/conversion/html-conversion.js')
 const htmlMarkdown = require('../services/modules/html-markdown.module.js')
 const htmlPlain = require('../services/modules/html-plain.module.js')
 const { executeConversion } = require('../services/modules/converter-orchestrator.module.js')
@@ -42,6 +49,23 @@ async function main() {
   assert.ok(!/</.test(plain), 'plain has no tags')
   const backHtml = plainToHtml('Hello\n\nWorld')
   assert.ok(backHtml.includes('<p>Hello</p>'), 'plain->html paragraphs')
+
+  const mdPlain = markdownToPlain('# Title\n\nHello **world** and [link](https://ex.com).\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n')
+  assert.ok(/Title/.test(mdPlain), 'md-plain title')
+  assert.ok(/Hello world/.test(mdPlain), 'md-plain emphasis stripped')
+  assert.ok(/link/.test(mdPlain) && !/https:/.test(mdPlain), 'md-plain link text only')
+  assert.ok(/\t/.test(mdPlain) || /1/.test(mdPlain), 'md-plain table cells')
+
+  assert.strictEqual(
+    isPandocTimeoutError(Object.assign(new Error('Pandoc conversion timed out'), { code: 'CONVERSION_TIMEOUT' })),
+    true,
+    'timeout error detected by code'
+  )
+  assert.strictEqual(
+    isPandocTimeoutError(new Error('spawn pandoc ENOENT')),
+    false,
+    'non-timeout error is not classified as timeout'
+  )
 
   // Pandoc HTML <-> MD
   const md = await htmlToMarkdown(sampleHtml)
@@ -129,11 +153,33 @@ async function main() {
     assert.strictEqual(apiTxt.status, 200, 'from-html txt status')
     assert.ok(typeof apiTxt.json.txt === 'string')
     assert.strictEqual(apiTxt.json.conversionResult.converter, 'html-plain')
+
+    const sampleMd = '# Title\n\nHello **world**.\n'
+    const apiMdHtml = await post(port, '/api/from-markdown', { text: sampleMd, to: 'html' })
+    assert.strictEqual(apiMdHtml.status, 200, 'from-markdown html status')
+    assert.ok(typeof apiMdHtml.json.html === 'string' && apiMdHtml.json.html.includes('<'))
+    assert.strictEqual(apiMdHtml.json.conversionResult.success, true)
+
+    const apiMdTxt = await post(port, '/api/from-markdown', { text: sampleMd, to: 'txt' })
+    assert.strictEqual(apiMdTxt.status, 200, 'from-markdown txt status')
+    assert.ok(typeof apiMdTxt.json.txt === 'string' && /hello/i.test(apiMdTxt.json.txt))
+    assert.strictEqual(apiMdTxt.json.conversionResult.success, true)
+    assert.ok(
+      apiMdTxt.json.conversionResult.meta &&
+        (apiMdTxt.json.conversionResult.meta.engineUsed === 'pandoc' ||
+          apiMdTxt.json.conversionResult.meta.engineUsed === 'local'),
+      'from-markdown txt exposes engineUsed'
+    )
+
+    const apiTxtHtml = await post(port, '/api/from-text', { text: 'Hello\n\nWorld', to: 'html' })
+    assert.strictEqual(apiTxtHtml.status, 200, 'from-text html status')
+    assert.ok(typeof apiTxtHtml.json.html === 'string' && apiTxtHtml.json.html.includes('<p>'))
+    assert.strictEqual(apiTxtHtml.json.conversionResult.converter, 'html-plain')
   } finally {
     await new Promise((resolve) => server.close(resolve))
   }
 
-  console.log('OK html wrappers (helpers + modules + orchestrator + /api/from-html)')
+  console.log('OK html wrappers + /api/from-markdown + /api/from-text')
 }
 
 main()

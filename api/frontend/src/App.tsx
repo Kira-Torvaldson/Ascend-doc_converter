@@ -90,6 +90,14 @@ import {
   sanitizeActiveProfileIds,
 } from "./utils/conversionProfiles";
 import { renderPreviewHtml } from "./utils/renderPreview";
+import {
+  isSupportedUiConversion,
+  SUPPORTED_CONVERSION_HINT,
+  readResultBuffer,
+  writeResultBuffer,
+  supportsRichPreview,
+  resultUsesOtherBuffer,
+} from "./utils/conversionPairs";
 import { createZipBlob } from "./utils/simpleZip";
 import packageJson from "../package.json";
 import { fetchConversionLimits } from "./converters/api";
@@ -138,6 +146,35 @@ function pickFormatType(value: string | undefined, fallback: FormatType): Format
   return fallback;
 }
 
+/** true si la conversion passe par /api/convert (token requis). */
+function conversionNeedsConfirmationToken(source: FormatType, target: FormatType): boolean {
+  if (source === 'asciidoc' && target === 'markdown') return false;
+  if (source === 'markdown' && target === 'asciidoc') return false;
+  if (source === 'markdown' && (target === 'html' || target === 'txt')) return false; // /api/from-markdown
+  if (source === 'txt' && target === 'markdown') return false;
+  if (source === 'txt' && target === 'html') return false; // /api/from-text
+  if (source === 'html') return false; // /api/from-html
+  return true;
+}
+
+/** Format destination alternatif si collision source === cible. */
+function complementaryTargetFormat(source: FormatType): FormatType {
+  if (source === 'asciidoc') return 'markdown';
+  if (source === 'markdown') return 'asciidoc';
+  if (source === 'html') return 'markdown';
+  if (source === 'txt') return 'markdown';
+  return 'markdown';
+}
+
+/** Format source alternatif si collision source === cible. */
+function complementarySourceFormat(target: FormatType): FormatType {
+  if (target === 'asciidoc') return 'markdown';
+  if (target === 'markdown') return 'asciidoc';
+  if (target === 'html') return 'markdown';
+  if (target === 'txt') return 'html';
+  return 'asciidoc';
+}
+
 function normalizeSettingsSectionId(id: string): string | null {
   if (id === 'settingsProfil' || id === 'settingsConversion') return 'settingsAccount';
   if (id === 'settingsGeneral') return null; // section retirée (P0)
@@ -178,11 +215,16 @@ function loadSidebarCollapsed(): boolean {
 
 function App() {
   const [maxSourceSizeMb, setMaxSourceSizeMb] = useState(DEFAULT_MAX_SOURCE_SIZE_MB);
+  const [conversionTimeoutMs, setConversionTimeoutMs] = useState(30_000);
   const [logoSrc, setLogoSrc] = useState("/public/ascend-logo.png");
+  const conversionAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetchConversionLimits().then((limits) => {
       setMaxSourceSizeMb(limits.maxSourceUiMb || limits.maxInputSizeMb || DEFAULT_MAX_SOURCE_SIZE_MB);
+      // Client abort slightly above backend timeout so the server can classify first.
+      const backendMs = limits.conversionTimeoutMs || 30_000;
+      setConversionTimeoutMs(Math.max(backendMs + 5_000, 35_000));
     });
   }, []);
 
@@ -204,8 +246,14 @@ function App() {
   /** Source panel content (AsciiDoc or other format according to sourceFormat) */
   const [adocInput, setAdocInput] = useState<string>(() => sessionBootstrap?.adocInput ?? "");
   
-  /** Destination panel content (conversion result) */
+  /** Markdown buffer (source when sourceFormat=markdown, or result when target=markdown). */
   const [mdOutput, setMdOutput] = useState<string>(() => sessionBootstrap?.mdOutput ?? "");
+
+  /**
+   * Dedicated result buffer when source is Markdown and target is HTML/TXT/…
+   * Avoids clearing/overwriting the Markdown source in mdOutput.
+   */
+  const [otherOutput, setOtherOutput] = useState<string>(() => sessionBootstrap?.otherOutput ?? "");
 
   // ==========================================================================
   // STATES: CONVERSION AND STATUS
@@ -333,6 +381,9 @@ function App() {
   
   /** Backup of Markdown content before editing */
   const [originalMdOutput, setOriginalMdOutput] = useState<string>("");
+
+  /** Backup of HTML/TXT result buffer before editing (source Markdown) */
+  const [originalOtherOutput, setOriginalOtherOutput] = useState<string>("");
   
   // ==========================================================================
   // STATES: SECURE CONFIRMATION WITH TOKENS
@@ -1120,6 +1171,7 @@ function App() {
       persistSessionDraft({
         adocInput,
         mdOutput,
+        otherOutput,
         sourceFormat,
         targetFormat,
         conversionOptions,
@@ -1131,6 +1183,7 @@ function App() {
   }, [
     adocInput,
     mdOutput,
+    otherOutput,
     sourceFormat,
     targetFormat,
     conversionOptions,
@@ -1181,9 +1234,28 @@ function App() {
    * (recalculates if any of these states change)
    */
   const sourceTextForUi = sourceFormat === 'markdown' ? mdOutput : adocInput;
-  const resultTextForUi = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+  const resultTextForUi = readResultBuffer(sourceFormat, targetFormat, {
+    adocInput,
+    mdOutput,
+    otherOutput,
+  });
   const deferredSourceForHeadings = useDeferredValue(sourceTextForUi);
   const deferredSourceForResultMeta = useDeferredValue(sourceTextForUi);
+
+  // Markdown/TXT → HTML : bascule auto sur l’aperçu rendu.
+  useEffect(() => {
+    if (conversionUiState !== 'success') return;
+    if (targetFormat === 'html' && resultTextForUi.trim()) {
+      setResultViewMode('preview');
+    }
+  }, [conversionUiState, targetFormat, resultTextForUi]);
+
+  // Quitter l’aperçu quand le format cible n’a plus de preview riche.
+  useEffect(() => {
+    if (!supportsRichPreview(targetFormat) && resultViewMode === 'preview') {
+      setResultViewMode('text');
+    }
+  }, [targetFormat, resultViewMode]);
 
   const headings = useMemo(() => {
     if (sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') {
@@ -1348,9 +1420,9 @@ function App() {
   
   const loadSourceFile = useCallback(async (file: File, options?: { alignFormat?: boolean }) => {
     if (!isAcceptedSourceFile(file)) {
-      setStatus('Formats acceptés : .adoc, .asciidoc, .md, .txt');
+      setStatus('Formats acceptés : .adoc, .asciidoc, .md, .txt, .html');
       setNotification({
-        message: 'Formats acceptés : .adoc, .asciidoc, .md, .txt',
+        message: 'Formats acceptés : .adoc, .asciidoc, .md, .txt, .html',
         type: 'error',
         visible: true,
       });
@@ -1417,7 +1489,7 @@ function App() {
    * 
    * @param event - File input change event (with webkitdirectory)
    * 
-   * ACCEPTED FORMATS: .adoc, .asciidoc, .md, .txt
+   * ACCEPTED FORMATS: .adoc, .asciidoc, .md, .txt, .html, .htm
    */
   const handleFolderChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -1425,8 +1497,7 @@ function App() {
 
     const fileArray = Array.from(files);
     const textFiles = fileArray.filter(file => {
-      const ext = file.name.toLowerCase().split('.').pop();
-      return ['.adoc', '.asciidoc', '.md', '.txt'].some(validExt => 
+      return ['.adoc', '.asciidoc', '.md', '.txt', '.html', '.htm'].some(validExt =>
         file.name.toLowerCase().endsWith(validExt)
       );
     });
@@ -1472,10 +1543,10 @@ function App() {
           text = removeExperimentalTag(text);
         }
         // Use sourceFormat to determine where to put text
-        if (sourceFormat === 'asciidoc' || sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json') {
-          setAdocInput(text);
-        } else if (sourceFormat === 'markdown') {
+        if (sourceFormat === 'markdown') {
           setMdOutput(text);
+        } else {
+          setAdocInput(text);
         }
         setStatus(`Fichier chargé : ${selectedFile.name}`);
       };
@@ -1539,7 +1610,11 @@ function App() {
    */
   const handleCopy = async () => {
     // Copy result text according to destination format
-    const textToCopy = targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt' ? mdOutput : adocInput;
+    const textToCopy = readResultBuffer(sourceFormat, targetFormat, {
+      adocInput,
+      mdOutput,
+      otherOutput,
+    });
     if (!textToCopy || !textToCopy.trim()) {
       setStatus("Aucun texte à copier");
       return;
@@ -1591,7 +1666,11 @@ function App() {
    */
   const handleExport = useCallback(() => {
     // Get content directly from state
-    const textToExport = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+    const textToExport = readResultBuffer(sourceFormat, targetFormat, {
+      adocInput,
+      mdOutput,
+      otherOutput,
+    });
     if (!textToExport || !textToExport.trim()) {
       setStatus("Aucun contenu à exporter");
       return;
@@ -1626,7 +1705,7 @@ function App() {
     URL.revokeObjectURL(url);
 
     setStatus(`Fichier exporté: ${fileName}`);
-  }, [targetFormat, adocInput, mdOutput]);
+  }, [sourceFormat, targetFormat, adocInput, mdOutput, otherOutput]);
 
   /**
    * Saves current conversion to history
@@ -1635,7 +1714,11 @@ function App() {
     if (!userSettings.conversion.saveConversionHistory) return;
     // Get content directly from state
     const sourceContent = sourceFormat === 'markdown' ? mdOutput : adocInput;
-    const resultContent = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+    const resultContent = readResultBuffer(sourceFormat, targetFormat, {
+      adocInput,
+      mdOutput,
+      otherOutput,
+    });
     
     if (!sourceContent.trim() || !resultContent.trim()) {
       return; // Don't save empty conversions
@@ -1669,6 +1752,7 @@ function App() {
     targetFormat,
     adocInput,
     mdOutput,
+    otherOutput,
     conversionOptions,
     activeProfileIds,
   ]);
@@ -1687,13 +1771,16 @@ function App() {
         : item.sourceContent;
       setAdocInput(processedSource);
     }
-    
-    if (item.toFormat === 'asciidoc') {
-      const processedResult = removeExperimentalTag(item.resultContent);
-      setAdocInput(processedResult);
-    } else {
-      setMdOutput(item.resultContent);
-    }
+
+    const processedResult =
+      item.toFormat === 'asciidoc'
+        ? removeExperimentalTag(item.resultContent)
+        : item.resultContent;
+    writeResultBuffer(item.fromFormat, item.toFormat, processedResult, {
+      setAdocInput,
+      setMdOutput,
+      setOtherOutput,
+    });
     
     setSourceFormat(item.fromFormat);
     setTargetFormat(item.toFormat);
@@ -1753,45 +1840,6 @@ function App() {
   }, [showSnackbar]);
 
   /**
-   * Renders markdown/asciidoc as HTML preview
-   */
-  const renderPreview = useCallback((content: string, format: FormatType): string => {
-    if (!content.trim()) return '';
-
-    // For now, we'll use a simple markdown renderer
-    // In production, you might want to use a library like marked or markdown-it
-    if (format === 'markdown') {
-      // Simple markdown to HTML conversion
-      let html = content
-        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-        .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
-        .replace(/^##### (.*$)/gim, '<h5>$1</h5>')
-        .replace(/^###### (.*$)/gim, '<h6>$1</h6>')
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em>$1</em>')
-        .replace(/`(.*?)`/g, '<code>$1</code>')
-        .replace(/\n/g, '<br>');
-      return html;
-    } else if (format === 'asciidoc') {
-      // Simple asciidoc to HTML conversion
-      let html = content
-        .replace(/^= (.*$)/gim, '<h1>$1</h1>')
-        .replace(/^== (.*$)/gim, '<h2>$1</h2>')
-        .replace(/^=== (.*$)/gim, '<h3>$1</h3>')
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em>$1</em>')
-        .replace(/`(.*?)`/g, '<code>$1</code>')
-        .replace(/\n/g, '<br>');
-      return html;
-    } else if (format === 'html') {
-      return content;
-    }
-    return `<pre>${content}</pre>`;
-  }, []);
-
-  /**
    * Triggers result panel clearing (displays confirmation modal)
    */
   const handleClear = () => {
@@ -1805,12 +1853,11 @@ function App() {
    * Does not touch source content.
    */
   const confirmClearResult = () => {
-    // Clear only result according to destination format
-    if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
-      setMdOutput("");
-    } else if (targetFormat === 'asciidoc') {
-      setAdocInput("");
-    }
+    writeResultBuffer(sourceFormat, targetFormat, '', {
+      setAdocInput,
+      setMdOutput,
+      setOtherOutput,
+    });
     setIsEditingResult(false);
     setResultModified(false);
     setStatus("Résultat effacé");
@@ -1903,12 +1950,12 @@ function App() {
       setMdOutput("");
     }
     
-    // Clear result
-    if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
-      setMdOutput("");
-    } else if (targetFormat === 'asciidoc') {
-      setAdocInput("");
-    }
+    // Clear result (without touching the source buffer when they diverge)
+    writeResultBuffer(sourceFormat, targetFormat, '', {
+      setAdocInput,
+      setMdOutput,
+      setOtherOutput,
+    });
     
     // Reset files
     setCurrentFileName(null);
@@ -2074,24 +2121,19 @@ function App() {
     // Close modal
     setShowConversionModal(false);
 
-    // Determine where to put result according to destination format
+    const fromFormat = pendingConversion.fromFormat;
+    const toFormat = pendingConversion.toFormat;
+
     const setOutputByFormat = (result: string) => {
-      if (targetFormat === 'markdown' || targetFormat === 'html' || targetFormat === 'pdf' || targetFormat === 'yaml' || targetFormat === 'json' || targetFormat === 'txt') {
-        setMdOutput(result);
-      } else if (targetFormat === 'asciidoc') {
-        setAdocInput(result);
-      }
+      writeResultBuffer(fromFormat, toFormat, result, {
+        setAdocInput,
+        setMdOutput,
+        setOtherOutput,
+      });
     };
 
-    // Determine source text according to source format
-    let sourceText = "";
-    if (sourceFormat === 'asciidoc') {
-      sourceText = adocInput;
-    } else if (sourceFormat === 'markdown') {
-      sourceText = mdOutput;
-    } else if (sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
-      sourceText = adocInput;
-    }
+    // Source text for the formats frozen in the pending confirmation.
+    const sourceText = fromFormat === 'markdown' ? mdOutput : adocInput;
 
     let opts = conversionOptions;
     if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
@@ -2106,6 +2148,9 @@ function App() {
       if (!metadata.language) metadata.language = userSettings.profile.defaultLanguage;
       opts = { ...opts, metadata };
     }
+    conversionAbortRef.current?.abort();
+    const abortController = new AbortController();
+    conversionAbortRef.current = abortController;
     const attemptId = activeAttemptIdRef.current + 1;
     activeAttemptIdRef.current = attemptId;
     setLastAttemptId(attemptId);
@@ -2121,8 +2166,8 @@ function App() {
     setJustConverted(true);
     convertText(
       sourceText,
-      pendingConversion.fromFormat,
-      pendingConversion.toFormat,
+      fromFormat,
+      toFormat,
       guardedSetStatus,
       guardedSetOutput,
       guardedSetLoading,
@@ -2132,14 +2177,16 @@ function App() {
       guardedSetShowConversionErrorModal,
       guardedSetConversionErrorMessage,
       guardedSetLastBackendConversionResult,
-      guardedSetConversionUiState
+      guardedSetConversionUiState,
+      conversionTimeoutMs,
+      abortController.signal
     );
     setTimeout(() => {
       setJustConverted(false);
       setConfirmationToken(null);
       setPendingConversion(null);
     }, 2000);
-  }, [confirmationToken, pendingConversion, targetFormat, conversionOptions, userSettings, sourceFormat, adocInput, mdOutput]);
+  }, [confirmationToken, pendingConversion, conversionOptions, userSettings, adocInput, mdOutput, conversionTimeoutMs]);
 
   // ==========================================================================
   // EFFECT: SAVE TO HISTORY AFTER SUCCESSFUL CONVERSION
@@ -2208,7 +2255,11 @@ function App() {
       const timer = setTimeout(() => {
         // Determine source and result content based on formats
         const sourceContent = sourceFormat === 'markdown' ? mdOutput : adocInput;
-        const resultContent = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+        const resultContent = readResultBuffer(sourceFormat, targetFormat, {
+          adocInput,
+          mdOutput,
+          otherOutput,
+        });
 
         // Save only if both contents are not empty and user allows history
         if (userSettings.conversion.saveConversionHistory && sourceContent.trim() && resultContent.trim()) {
@@ -2252,6 +2303,7 @@ function App() {
     targetFormat,
     adocInput,
     mdOutput,
+    otherOutput,
     conversionOptions,
     activeProfileIds,
     userSettings.conversion.saveConversionHistory,
@@ -2284,16 +2336,10 @@ function App() {
       return;
     }
 
-    // Only allow AsciiDoc ↔ Markdown conversions
-    const isAllowedConversion = 
-      (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
-      (sourceFormat === 'markdown' && targetFormat === 'asciidoc') ||
-      (sourceFormat === 'txt' && targetFormat === 'markdown');
-
-    if (!isAllowedConversion) {
-      setStatus("Seules les conversions AsciiDoc ↔ Markdown sont disponibles pour le moment");
+    if (!isSupportedUiConversion(sourceFormat, targetFormat)) {
+      setStatus("Ce couple de formats n'est pas disponible pour le moment");
       setNotification({
-        message: "Seules les conversions AsciiDoc ↔ Markdown sont disponibles pour le moment",
+        message: SUPPORTED_CONVERSION_HINT,
         type: 'error',
         visible: true
       });
@@ -2305,13 +2351,8 @@ function App() {
       return;
     }
 
-    // Check if conversion requires a token
-    // Simple conversions don't need one
-    const needsToken = !(
-      (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
-      (sourceFormat === 'markdown' && targetFormat === 'asciidoc') ||
-      (sourceFormat === 'txt' && targetFormat === 'markdown')
-    );
+    // Check if conversion requires a token (/api/convert)
+    const needsToken = conversionNeedsConfirmationToken(sourceFormat, targetFormat);
 
     if (needsToken) {
       // Complex conversion: request a token
@@ -2360,16 +2401,12 @@ function App() {
         return;
       }
 
-      // Determine where to put result according to destination format
       const setOutputByFormat = (result: string) => {
-        if (targetFormat === 'markdown') {
-          setMdOutput(result);
-        } else if (targetFormat === 'asciidoc') {
-          setAdocInput(result);
-        } else {
-          // For other formats (html, pdf, yaml, json, txt), use mdOutput
-          setMdOutput(result);
-        }
+        writeResultBuffer(sourceFormat, targetFormat, result, {
+          setAdocInput,
+          setMdOutput,
+          setOtherOutput,
+        });
       };
 
       let opts = conversionOptions;
@@ -2385,6 +2422,9 @@ function App() {
         if (!metadata.language) metadata.language = userSettings.profile.defaultLanguage;
         opts = { ...opts, metadata };
       }
+      conversionAbortRef.current?.abort();
+      const abortController = new AbortController();
+      conversionAbortRef.current = abortController;
       const attemptId = activeAttemptIdRef.current + 1;
       activeAttemptIdRef.current = attemptId;
       setLastAttemptId(attemptId);
@@ -2411,10 +2451,12 @@ function App() {
         guardedSetShowConversionErrorModal,
         guardedSetConversionErrorMessage,
         guardedSetLastBackendConversionResult,
-        guardedSetConversionUiState
+        guardedSetConversionUiState,
+        conversionTimeoutMs,
+        abortController.signal
       );
     }
-  }, [loading, requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, isEditingResult]);
+  }, [loading, requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, isEditingResult, conversionTimeoutMs]);
 
   const toggleHistoryPanel = useCallback(() => {
     if (historyWindowMinimized) {
@@ -2468,12 +2510,28 @@ function App() {
 
   const handleExportZip = useCallback(() => {
     const sourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
-    const resultText = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+    const resultText = readResultBuffer(sourceFormat, targetFormat, {
+      adocInput,
+      mdOutput,
+      otherOutput,
+    });
     const base = (currentFileName || 'document').replace(/\.[^/.]+$/, '');
     const srcExt =
-      sourceFormat === 'markdown' ? 'md' : sourceFormat === 'asciidoc' ? 'adoc' : 'txt';
+      sourceFormat === 'markdown'
+        ? 'md'
+        : sourceFormat === 'asciidoc'
+          ? 'adoc'
+          : sourceFormat === 'html'
+            ? 'html'
+            : 'txt';
     const outExt =
-      targetFormat === 'markdown' ? 'md' : targetFormat === 'asciidoc' ? 'adoc' : 'txt';
+      targetFormat === 'markdown'
+        ? 'md'
+        : targetFormat === 'asciidoc'
+          ? 'adoc'
+          : targetFormat === 'html'
+            ? 'html'
+            : 'txt';
     const blob = createZipBlob([
       { name: `${base}-source.${srcExt}`, content: sourceText },
       { name: `${base}-result.${outExt}`, content: resultText },
@@ -2504,6 +2562,7 @@ function App() {
     targetFormat,
     adocInput,
     mdOutput,
+    otherOutput,
     currentFileName,
     conversionWarnings,
     showSnackbar,
@@ -2511,7 +2570,11 @@ function App() {
 
   const openDiffPanel = useCallback(() => {
     const left = sourceFormat === 'markdown' ? mdOutput : adocInput;
-    const right = targetFormat === 'asciidoc' ? adocInput : mdOutput;
+    const right = readResultBuffer(sourceFormat, targetFormat, {
+      adocInput,
+      mdOutput,
+      otherOutput,
+    });
     startTransition(() => {
       setDiffSnapshot({
         left,
@@ -2521,7 +2584,7 @@ function App() {
       });
       setShowDiffPanel(true);
     });
-  }, [sourceFormat, targetFormat, adocInput, mdOutput, getFormatTitle]);
+  }, [sourceFormat, targetFormat, adocInput, mdOutput, otherOutput, getFormatTitle]);
 
   useEffect(() => {
     document.documentElement.toggleAttribute('data-find-replace-open', showFindReplace);
@@ -2591,12 +2654,12 @@ function App() {
    * @returns Result panel content
    */
   const getTargetContent = useCallback((format: FormatType): string => {
-    if (format === 'asciidoc') {
-      return adocInput; // AsciiDoc in result panel uses adocInput
-    } else {
-      return mdOutput; // All other formats use mdOutput
-    }
-  }, [adocInput, mdOutput]);
+    return readResultBuffer(sourceFormat, format, {
+      adocInput,
+      mdOutput,
+      otherOutput,
+    });
+  }, [sourceFormat, adocInput, mdOutput, otherOutput]);
 
   /**
    * Sets source panel content according to format
@@ -2621,18 +2684,19 @@ function App() {
    * 
    * LOGIC:
    * - AsciiDoc → setAdocInput
-   * - All other formats → setMdOutput
+   * - Markdown source + HTML/TXT → setOtherOutput
+   * - Otherwise → setMdOutput
    * 
    * @param format - Current destination format
    * @param content - New content to set
    */
   const setTargetContent = useCallback((format: FormatType, content: string) => {
-    if (format === 'asciidoc') {
-      setAdocInput(content);
-    } else {
-      setMdOutput(content);
-    }
-  }, []);
+    writeResultBuffer(sourceFormat, format, content, {
+      setAdocInput,
+      setMdOutput,
+      setOtherOutput,
+    });
+  }, [sourceFormat]);
 
   /**
    * Swaps source and destination formats (swap button/arrows)
@@ -2646,35 +2710,33 @@ function App() {
    *       to properly manage content according to formats
    */
   const handleSwap = useCallback(() => {
-    // Swap formats
     const newSourceFormat = targetFormat;
     const newTargetFormat = sourceFormat;
-    
-    // Get current content directly from state
+
     const currentSourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
-    const currentTargetText = targetFormat === 'asciidoc' ? adocInput : mdOutput;
-    
-    // Swap formats
+    const currentTargetText = readResultBuffer(sourceFormat, targetFormat, {
+      adocInput,
+      mdOutput,
+      otherOutput,
+    });
+
     setSourceFormat(newSourceFormat);
     setTargetFormat(newTargetFormat);
-    
-    // Swap content directly:
-    // - Old result becomes new source
-    // - Old source becomes new result
+
+    // Place old result into the new source buffer.
     if (newSourceFormat === 'markdown') {
       setMdOutput(currentTargetText);
     } else {
       setAdocInput(currentTargetText);
     }
-    
-    if (newTargetFormat === 'asciidoc') {
-      setAdocInput(currentSourceText);
-    } else {
-      setMdOutput(currentSourceText);
-    }
-    
-    // Note: Source panel always stays on left and result on right
-  }, [sourceFormat, targetFormat, adocInput, mdOutput]);
+
+    // Place old source into the new result buffer (may be otherOutput).
+    writeResultBuffer(newSourceFormat, newTargetFormat, currentSourceText, {
+      setAdocInput,
+      setMdOutput,
+      setOtherOutput,
+    });
+  }, [sourceFormat, targetFormat, adocInput, mdOutput, otherOutput]);
 
   /**
    * ============================================================================
@@ -2713,10 +2775,6 @@ function App() {
     const setSourceValue = sourceFormat === 'markdown' ? setMdOutput : setAdocInput;
     const sourceRef = sourceFormat === 'markdown' ? mdTextAreaRef : adocTextAreaRef;
 
-    const isAllowedConversion =
-      (sourceFormat === 'asciidoc' && targetFormat === 'markdown') ||
-      (sourceFormat === 'markdown' && targetFormat === 'asciidoc');
-
     return (
       <SourcePanel
         title={getFormatTitle(sourceFormat)}
@@ -2725,7 +2783,7 @@ function App() {
         placeholder={getFormatPlaceholder(sourceFormat)}
         textAreaRef={sourceRef}
         onConvert={handleConvert}
-        canConvert={sourceFormat !== targetFormat && isAllowedConversion}
+        canConvert={sourceFormat !== targetFormat && isSupportedUiConversion(sourceFormat, targetFormat)}
         onClear={handleClearSource}
         sourceModified={sourceModified}
         format={sourceFormat}
@@ -2744,8 +2802,15 @@ function App() {
   }, [sourceFormat, targetFormat, sourceTextForUi, currentFileName, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, sourceModified, handleClearSource, handleDropSourceFile, handleFolderChange]);
 
   const resultCard = useMemo(() => {
-    const setResultValue = targetFormat === 'asciidoc' ? setAdocInput : setMdOutput;
+    const setResultValue = (content: string) => {
+      writeResultBuffer(sourceFormat, targetFormat, content, {
+        setAdocInput,
+        setMdOutput,
+        setOtherOutput,
+      });
+    };
     const sourceHasContent = !!deferredSourceForResultMeta.trim();
+    const richPreview = supportsRichPreview(targetFormat);
 
     const resultActions: PanelActionItem[] = resultTextForUi
       ? [
@@ -2808,15 +2873,17 @@ function App() {
         viewMode={resultViewMode}
         onViewModeChange={setResultViewMode}
         previewHtml={
-          resultViewMode === 'preview'
+          resultViewMode === 'preview' && richPreview
             ? renderPreviewHtml(resultTextForUi, targetFormat)
             : ''
         }
+        previewAsHtmlDocument={targetFormat === 'html'}
+        showPreviewToggle={richPreview}
         textAreaRef={resultTextAreaRef}
       />
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetFormat, resultTextForUi, deferredSourceForResultMeta, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear, handleExportZip, resultViewMode, openDiffPanel]);
+  }, [sourceFormat, targetFormat, resultTextForUi, deferredSourceForResultMeta, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear, handleExportZip, resultViewMode, openDiffPanel]);
 
   return (
     <div className="page">
@@ -3099,14 +3166,21 @@ function App() {
         }
         haystack={
           findTarget === 'result'
-            ? (targetFormat === 'asciidoc' ? adocInput : mdOutput)
+            ? readResultBuffer(sourceFormat, targetFormat, {
+                adocInput,
+                mdOutput,
+                otherOutput,
+              })
             : (sourceFormat === 'markdown' ? mdOutput : adocInput)
         }
         readOnly={findTarget === 'result' && !isEditingResult}
         onReplaceInTarget={(next) => {
           if (findTarget === 'result') {
-            if (targetFormat === 'asciidoc') setAdocInput(next);
-            else setMdOutput(next);
+            writeResultBuffer(sourceFormat, targetFormat, next, {
+              setAdocInput,
+              setMdOutput,
+              setOtherOutput,
+            });
             setResultModified(true);
           } else if (sourceFormat === 'markdown') {
             setMdOutput(next);
@@ -3154,26 +3228,19 @@ function App() {
           targetFormat={targetFormat}
           onSourceFormatChange={(newFormat) => {
             setSourceFormat(newFormat);
+            setOtherOutput('');
+            // Ne forcer la destination que en cas de collision (même format).
             if (newFormat === targetFormat) {
-              if (newFormat === 'asciidoc') setTargetFormat('markdown');
-              else if (newFormat === 'markdown') setTargetFormat('asciidoc');
-              else setTargetFormat('markdown');
-            } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
-              setTargetFormat('markdown');
-            } else if (targetFormat !== 'asciidoc' && targetFormat !== 'markdown') {
-              setTargetFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
+              setTargetFormat(complementaryTargetFormat(newFormat));
             }
           }}
           onTargetFormatChange={(newFormat) => {
             setTargetFormat(newFormat);
+            setOtherOutput('');
+            // Ne forcer la source que en cas de collision (même format).
+            // Avant : choisir HTML/TXT en destination basculait la source en AsciiDoc.
             if (newFormat === sourceFormat) {
-              if (newFormat === 'asciidoc') setSourceFormat('markdown');
-              else if (newFormat === 'markdown') setSourceFormat('asciidoc');
-              else setSourceFormat('asciidoc');
-            } else if (newFormat !== 'asciidoc' && newFormat !== 'markdown') {
-              setSourceFormat('asciidoc');
-            } else if (sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') {
-              setSourceFormat(newFormat === 'asciidoc' ? 'markdown' : 'asciidoc');
+              setSourceFormat(complementarySourceFormat(newFormat));
             }
           }}
           otherOptionsCategory={otherOptionsCategory}
@@ -3377,16 +3444,12 @@ function App() {
         showEditModal={showEditModal}
         onCloseEditModal={() => setShowEditModal(false)}
         onConfirmEdit={() => {
-          if (
-            targetFormat === 'markdown' ||
-            targetFormat === 'html' ||
-            targetFormat === 'pdf' ||
-            targetFormat === 'yaml' ||
-            targetFormat === 'json'
-          ) {
-            setOriginalMdOutput(mdOutput);
-          } else {
+          if (targetFormat === 'asciidoc') {
             setOriginalAdocInput(adocInput);
+          } else if (resultUsesOtherBuffer(sourceFormat, targetFormat)) {
+            setOriginalOtherOutput(otherOutput);
+          } else {
+            setOriginalMdOutput(mdOutput);
           }
           setIsEditingResult(true);
         }}
@@ -3400,17 +3463,12 @@ function App() {
         showCancelModal={showCancelModal}
         onCloseCancelModal={() => setShowCancelModal(false)}
         onConfirmCancelEdit={() => {
-          if (
-            targetFormat === 'markdown' ||
-            targetFormat === 'html' ||
-            targetFormat === 'pdf' ||
-            targetFormat === 'yaml' ||
-            targetFormat === 'json' ||
-            targetFormat === 'txt'
-          ) {
-            setMdOutput(originalMdOutput);
-          } else {
+          if (targetFormat === 'asciidoc') {
             setAdocInput(originalAdocInput);
+          } else if (resultUsesOtherBuffer(sourceFormat, targetFormat)) {
+            setOtherOutput(originalOtherOutput);
+          } else {
+            setMdOutput(originalMdOutput);
           }
           setIsEditingResult(false);
           setStatus('Édition annulée — modifications non sauvegardées');

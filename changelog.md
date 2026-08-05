@@ -13,6 +13,27 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.9.1 (2026-08-05)
+
+#### Added
+- `POST /api/from-markdown` (Markdown → HTML / TXT / AsciiDoc) and `POST /api/from-text` (TXT → HTML / Markdown) with `ConversionResult`.
+- Dedicated UI result buffer `otherOutput` so Markdown→HTML/TXT never overwrites the Markdown source.
+- Code `EMPTY_OUTPUT` (error envelope + UI messages) when conversion returns empty content.
+- UI helpers `conversionPairs` / `sanitizeHtmlPreview` ; import `.html` / `.htm` as source.
+- E2E script `verify-e2e-from-markdown-representative-scenarios.js` (wired in `check:ascend:ci`).
+
+#### Changed
+- Session draft persists/restores `otherOutput` ; history, ZIP, and diff read the correct result buffer.
+- Client conversion timeout aligned with backend limits ; previous in-flight request aborted on new attempt.
+- `markdownToPlainBestEffort` falls back locally only for non-timeout Pandoc failures ; timeouts rethrown.
+- `/api/from-html` response keys normalized (`md`→`markdown`, `text`→`txt`).
+- Result preview: HTML in sandboxed iframe ; Texte/Aperçu toggle only for rich formats.
+
+#### Fixed
+- Markdown→HTML/TXT UI path (wrong endpoint, format selectors, empty/clobbered result).
+- Auto-history saving Markdown source instead of HTML/TXT result.
+- Stale HTML/TXT result when changing source/target formats.
+
 ### 0.0.1.9 (2026-08-05)
 
 #### Added

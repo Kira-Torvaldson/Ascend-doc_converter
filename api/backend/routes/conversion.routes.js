@@ -9,8 +9,19 @@
 const express = require('express')
 const router = express.Router()
 const { randomUUID } = require('crypto')
-const { convertAsciiDoc, convertMarkdownWithPandoc, convertHtmlWithPandoc, text2markdown } = require('../services/conversion/convert.js')
-const { htmlToMarkdown, htmlToPlain } = require('../services/conversion/html-conversion.js')
+const {
+  convertAsciiDoc,
+  convertMarkdownWithPandoc,
+  convertHtmlWithPandoc,
+  text2markdown,
+} = require('../services/conversion/convert.js')
+const {
+  htmlToMarkdown,
+  htmlToPlain,
+  markdownToHtml,
+  markdownToPlainBestEffort,
+  plainToHtml,
+} = require('../services/conversion/html-conversion.js')
 const { z } = require('zod')
 const { validate } = require('../middleware/security/validate.middleware.js')
 const { createFailureResult, createSuccessResult } = require('../src/utils/conversion-result.js')
@@ -635,6 +646,25 @@ router.post(
       result = await convertHtmlWithPandoc(text, to)
     }
 
+    const outputKey =
+      normalizedTo === 'md' ? 'markdown'
+        : normalizedTo === 'text' || normalizedTo === 'plain' ? 'txt'
+          : normalizedTo
+
+    if (typeof result !== 'string' || !result.trim()) {
+      const failure = buildFromHtmlFailure({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        inputText: text,
+        targetFormat: outputKey,
+        code: 'EMPTY_OUTPUT',
+        message: 'Conversion produced an empty result',
+        details: { stage: 'post-convert', converter: converterName },
+      })
+      return res.status(500).json({ ...failure, detail: failure.error.message })
+    }
+
     const finishedAt = new Date().toISOString()
     const durationMs = Date.now() - startedAtMs
     const outputMimeTypeMap = {
@@ -651,14 +681,14 @@ router.post(
       docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       epub: 'application/epub+zip',
     }
-    const outputMimeType = outputMimeTypeMap[normalizedTo] || 'application/octet-stream'
+    const outputMimeType = outputMimeTypeMap[outputKey] || 'application/octet-stream'
 
     const conversionResult = createSuccessResult({
       conversionId,
       converter: converterName,
-      pipeline: [`html->${normalizedTo}`],
+      pipeline: [`html->${outputKey}`],
       inputFormat: 'html',
-      outputFormat: normalizedTo,
+      outputFormat: outputKey,
       inputFile: {
         originalName: 'input.html',
         storedPath: 'in-memory://request/body.html',
@@ -666,7 +696,7 @@ router.post(
         mimeType: 'text/html',
       },
       outputFile: {
-        path: `in-memory://response/body.${normalizedTo}`,
+        path: `in-memory://response/body.${outputKey}`,
         size: Buffer.byteLength(result, 'utf8'),
         mimeType: outputMimeType,
       },
@@ -675,12 +705,12 @@ router.post(
       durationMs,
       warnings: [],
       logs: [],
-      meta: { route: '/api/from-html', transport: 'in-memory', targetFormat: normalizedTo, engine },
+      meta: { route: '/api/from-html', transport: 'in-memory', targetFormat: outputKey, engine },
     })
 
-    console.log(`[INFO] Conversion successful: ${result.length} ${to} characters generated`)
+    console.log(`[INFO] Conversion successful: ${result.length} ${outputKey} characters generated`)
 
-    return res.json({ [to]: result, conversionResult })
+    return res.json({ [outputKey]: result, conversionResult })
   } catch (error) {
     console.error(`[ERROR] Error during HTML → ${req.body.to} conversion:`, error)
     const downstreamFailure = extractStandardizedFailureFromError(error)
@@ -705,6 +735,410 @@ router.post(
     return res.status(500).json({ ...failure, detail: failure.error.message })
   }
 })
+
+function buildFromMarkdownFailure({
+  conversionId,
+  startedAt,
+  startedAtMs,
+  inputText,
+  targetFormat,
+  code,
+  message,
+  details = null,
+}) {
+  const finishedAt = new Date().toISOString()
+  const normalizedTo =
+    typeof targetFormat === 'string' && targetFormat.trim().length > 0
+      ? targetFormat.toLowerCase()
+      : 'unknown'
+  return createFailureResult({
+    conversionId,
+    converter: 'pandoc',
+    pipeline: [`markdown->${normalizedTo}`],
+    inputFormat: 'markdown',
+    outputFormat: normalizedTo,
+    inputFile: {
+      originalName: 'input.md',
+      storedPath: 'in-memory://request/body.md',
+      size: Buffer.byteLength(inputText || '', 'utf8'),
+      mimeType: 'text/markdown',
+    },
+    outputFile: null,
+    startedAt,
+    finishedAt,
+    durationMs: Date.now() - startedAtMs,
+    error: routeFailureError(code, message, details),
+    warnings: [],
+    logs: [],
+    meta: { route: '/api/from-markdown', transport: 'in-memory', targetFormat: normalizedTo },
+  })
+}
+
+function classifyFromMarkdownInternalError(error) {
+  const rawMessage = error && error.message ? String(error.message) : String(error || '')
+  if (
+    rawMessage.includes('Pandoc conversion timed out') ||
+    rawMessage.includes('CONVERSION_TIMEOUT')
+  ) {
+    return {
+      code: 'CONVERSION_TIMEOUT',
+      message: `Conversion error: ${rawMessage}`,
+      details: { stage: 'pandoc-execution', rawMessage },
+    }
+  }
+  if (
+    rawMessage.includes('Pandoc conversion failed') ||
+    rawMessage.includes('Failed to execute Pandoc conversion') ||
+    rawMessage.includes('Unsupported output format')
+  ) {
+    return {
+      code: 'CONVERSION_FAILED',
+      message: `Conversion error: ${rawMessage}`,
+      details: { stage: 'pandoc-execution', rawMessage },
+    }
+  }
+  return {
+    code: 'INTERNAL_ERROR',
+    message: `Conversion error: ${rawMessage}`,
+    details: { stage: 'from-markdown', rawMessage },
+  }
+}
+
+// Endpoint: Markdown → HTML / TXT / AsciiDoc (in-memory Pandoc, no confirmation token)
+router.post(
+  '/from-markdown',
+  validate({
+    body: z.object({
+      text: z.string(),
+      to: z.string(),
+    }),
+  }),
+  async (req, res) => {
+    const conversionId = randomUUID()
+    const startedAt = new Date().toISOString()
+    const startedAtMs = Date.now()
+    try {
+      const { text, to } = req.body
+
+      if (!text.trim()) {
+        const failure = buildFromMarkdownFailure({
+          conversionId,
+          startedAt,
+          startedAtMs,
+          inputText: '',
+          targetFormat: to,
+          code: 'EMPTY_INPUT',
+          message: 'The Markdown text to convert is empty',
+          details: { stage: 'route-precheck' },
+        })
+        return res.status(400).json({ ...failure, detail: failure.error.message })
+      }
+
+      if (isTextPayloadTooLarge(text)) {
+        const failure = buildFromMarkdownFailure({
+          conversionId,
+          startedAt,
+          startedAtMs,
+          inputText: text,
+          targetFormat: to,
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Request payload is too large',
+          details: { stage: 'route-precheck', maxBytes: getMaxInputSizeBytes() },
+        })
+        return res.status(400).json({ ...failure, detail: failure.error.message })
+      }
+
+      if (!to.trim()) {
+        const failure = buildFromMarkdownFailure({
+          conversionId,
+          startedAt,
+          startedAtMs,
+          inputText: text,
+          targetFormat: '',
+          code: 'CONVERSION_FAILED',
+          message: 'The output format is empty',
+          details: { stage: 'route-precheck', reason: 'OUTPUT_FORMAT_EMPTY' },
+        })
+        return res.status(400).json({ ...failure, detail: failure.error.message })
+      }
+
+      const normalizedTo = String(to).toLowerCase()
+      let result
+      let engineUsed = 'pandoc'
+      let fallbackReason
+      if (normalizedTo === 'html') {
+        console.log(`[INFO] Converting ${text.length} characters (Markdown → html) via from-markdown`)
+        result = await markdownToHtml(text)
+      } else if (normalizedTo === 'txt' || normalizedTo === 'text' || normalizedTo === 'plain') {
+        console.log(`[INFO] Converting ${text.length} characters (Markdown → txt) via from-markdown`)
+        const plain = await markdownToPlainBestEffort(text)
+        result = plain.text
+        engineUsed = plain.engineUsed
+        fallbackReason = plain.fallbackReason
+      } else if (normalizedTo === 'asciidoc' || normalizedTo === 'adoc') {
+        console.log(`[INFO] Converting ${text.length} characters (Markdown → asciidoc) via from-markdown`)
+        result = await convertMarkdownWithPandoc(text)
+      } else {
+        const failure = buildFromMarkdownFailure({
+          conversionId,
+          startedAt,
+          startedAtMs,
+          inputText: text,
+          targetFormat: normalizedTo,
+          code: 'FORMAT_UNSUPPORTED',
+          message: `Unsupported Markdown target format: ${to}`,
+          details: { stage: 'route-precheck', supported: ['html', 'txt', 'asciidoc'] },
+        })
+        return res.status(400).json({ ...failure, detail: failure.error.message })
+      }
+
+      const outputKey =
+        normalizedTo === 'adoc' ? 'asciidoc'
+          : normalizedTo === 'text' || normalizedTo === 'plain' ? 'txt'
+            : normalizedTo
+
+      if (typeof result !== 'string' || !result.trim()) {
+        const failure = buildFromMarkdownFailure({
+          conversionId,
+          startedAt,
+          startedAtMs,
+          inputText: text,
+          targetFormat: outputKey,
+          code: 'EMPTY_OUTPUT',
+          message: 'Conversion produced an empty result',
+          details: { stage: 'post-convert', engineUsed },
+        })
+        return res.status(500).json({ ...failure, detail: failure.error.message })
+      }
+
+      const finishedAt = new Date().toISOString()
+      const durationMs = Date.now() - startedAtMs
+
+      const conversionResult = createSuccessResult({
+        conversionId,
+        converter: engineUsed,
+        pipeline: [`markdown->${outputKey}`],
+        inputFormat: 'markdown',
+        outputFormat: outputKey,
+        inputFile: {
+          originalName: 'input.md',
+          storedPath: 'in-memory://request/body.md',
+          size: Buffer.byteLength(text, 'utf8'),
+          mimeType: 'text/markdown',
+        },
+        outputFile: {
+          path: `in-memory://response/body.${outputKey}`,
+          size: Buffer.byteLength(result, 'utf8'),
+          mimeType:
+            outputKey === 'html' ? 'text/html'
+              : outputKey === 'txt' ? 'text/plain'
+                : 'text/asciidoc',
+        },
+        startedAt,
+        finishedAt,
+        durationMs,
+        warnings: fallbackReason
+          ? [{ code: 'ENGINE_FALLBACK', message: `Used ${engineUsed} stripper after Pandoc failure`, details: { fallbackReason } }]
+          : [],
+        logs: [],
+        meta: {
+          route: '/api/from-markdown',
+          transport: 'in-memory',
+          targetFormat: outputKey,
+          engineUsed,
+          ...(fallbackReason ? { fallbackReason } : {}),
+        },
+      })
+
+      console.log(`[INFO] Conversion successful: ${result.length} ${outputKey} characters generated`)
+      return res.json({ [outputKey]: result, conversionResult })
+    } catch (error) {
+      console.error(`[ERROR] Error during Markdown → ${req.body && req.body.to} conversion:`, error)
+      const classified = classifyFromMarkdownInternalError(error)
+      const failure = buildFromMarkdownFailure({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        inputText: req.body && req.body.text ? String(req.body.text) : '',
+        targetFormat: req.body && req.body.to ? String(req.body.to) : '',
+        code: classified.code,
+        message: classified.message,
+        details: classified.details,
+      })
+      return res.status(500).json({ ...failure, detail: failure.error.message })
+    }
+  }
+)
+
+function buildFromTextFailure({
+  conversionId,
+  startedAt,
+  startedAtMs,
+  inputText,
+  targetFormat,
+  code,
+  message,
+  details = null,
+}) {
+  const finishedAt = new Date().toISOString()
+  const normalizedTo =
+    typeof targetFormat === 'string' && targetFormat.trim().length > 0
+      ? targetFormat.toLowerCase()
+      : 'unknown'
+  return createFailureResult({
+    conversionId,
+    converter: normalizedTo === 'html' ? 'html-plain' : 'text2markdown',
+    pipeline: [`txt->${normalizedTo}`],
+    inputFormat: 'txt',
+    outputFormat: normalizedTo,
+    inputFile: {
+      originalName: 'input.txt',
+      storedPath: 'in-memory://request/body.txt',
+      size: Buffer.byteLength(inputText || '', 'utf8'),
+      mimeType: 'text/plain',
+    },
+    outputFile: null,
+    startedAt,
+    finishedAt,
+    durationMs: Date.now() - startedAtMs,
+    error: routeFailureError(code, message, details),
+    warnings: [],
+    logs: [],
+    meta: { route: '/api/from-text', transport: 'in-memory', targetFormat: normalizedTo },
+  })
+}
+
+// Endpoint: Text → HTML (local) / Markdown (text2markdown) — no confirmation token
+router.post(
+  '/from-text',
+  validate({
+    body: z.object({
+      text: z.string(),
+      to: z.string(),
+    }),
+  }),
+  async (req, res) => {
+    const conversionId = randomUUID()
+    const startedAt = new Date().toISOString()
+    const startedAtMs = Date.now()
+    try {
+      const { text, to } = req.body
+
+      if (!text.trim()) {
+        const failure = buildFromTextFailure({
+          conversionId,
+          startedAt,
+          startedAtMs,
+          inputText: '',
+          targetFormat: to,
+          code: 'EMPTY_INPUT',
+          message: 'The text to convert is empty',
+          details: { stage: 'route-precheck' },
+        })
+        return res.status(400).json({ ...failure, detail: failure.error.message })
+      }
+
+      if (isTextPayloadTooLarge(text)) {
+        const failure = buildFromTextFailure({
+          conversionId,
+          startedAt,
+          startedAtMs,
+          inputText: text,
+          targetFormat: to,
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Request payload is too large',
+          details: { stage: 'route-precheck', maxBytes: getMaxInputSizeBytes() },
+        })
+        return res.status(400).json({ ...failure, detail: failure.error.message })
+      }
+
+      const normalizedTo = String(to || '').toLowerCase().trim()
+      let result
+      let converterName
+
+      if (normalizedTo === 'html') {
+        console.log(`[INFO] Converting ${text.length} characters (Text → html) via from-text`)
+        result = plainToHtml(text)
+        converterName = 'html-plain'
+      } else if (normalizedTo === 'markdown' || normalizedTo === 'md') {
+        console.log(`[INFO] Converting ${text.length} characters (Text → markdown) via from-text`)
+        result = text2markdown(text)
+        converterName = 'text2markdown'
+      } else {
+        const failure = buildFromTextFailure({
+          conversionId,
+          startedAt,
+          startedAtMs,
+          inputText: text,
+          targetFormat: normalizedTo || '',
+          code: 'FORMAT_UNSUPPORTED',
+          message: `Unsupported text target format: ${to}`,
+          details: { stage: 'route-precheck', supported: ['html', 'markdown'] },
+        })
+        return res.status(400).json({ ...failure, detail: failure.error.message })
+      }
+
+      const outputKey = normalizedTo === 'md' ? 'markdown' : normalizedTo
+
+      if (typeof result !== 'string' || !result.trim()) {
+        const failure = buildFromTextFailure({
+          conversionId,
+          startedAt,
+          startedAtMs,
+          inputText: text,
+          targetFormat: outputKey,
+          code: 'EMPTY_OUTPUT',
+          message: 'Conversion produced an empty result',
+          details: { stage: 'post-convert', converter: converterName },
+        })
+        return res.status(500).json({ ...failure, detail: failure.error.message })
+      }
+
+      const finishedAt = new Date().toISOString()
+      const durationMs = Date.now() - startedAtMs
+      const conversionResult = createSuccessResult({
+        conversionId,
+        converter: converterName,
+        pipeline: [`txt->${outputKey}`],
+        inputFormat: 'txt',
+        outputFormat: outputKey,
+        inputFile: {
+          originalName: 'input.txt',
+          storedPath: 'in-memory://request/body.txt',
+          size: Buffer.byteLength(text, 'utf8'),
+          mimeType: 'text/plain',
+        },
+        outputFile: {
+          path: `in-memory://response/body.${outputKey}`,
+          size: Buffer.byteLength(result, 'utf8'),
+          mimeType: outputKey === 'html' ? 'text/html' : 'text/markdown',
+        },
+        startedAt,
+        finishedAt,
+        durationMs,
+        warnings: [],
+        logs: [],
+        meta: { route: '/api/from-text', transport: 'in-memory', targetFormat: outputKey },
+      })
+
+      console.log(`[INFO] Conversion successful: ${result.length} ${outputKey} characters generated`)
+      return res.json({ [outputKey]: result, conversionResult })
+    } catch (error) {
+      console.error(`[ERROR] Error during Text → ${req.body && req.body.to} conversion:`, error)
+      const failure = buildFromTextFailure({
+        conversionId,
+        startedAt,
+        startedAtMs,
+        inputText: req.body && req.body.text ? String(req.body.text) : '',
+        targetFormat: req.body && req.body.to ? String(req.body.to) : '',
+        code: 'CONVERSION_FAILED',
+        message: error && error.message ? String(error.message) : 'Conversion failed',
+        details: { stage: 'from-text' },
+      })
+      return res.status(500).json({ ...failure, detail: failure.error.message })
+    }
+  }
+)
 
 // Endpoint: Text → Markdown (uses text2markdown)
 router.post(

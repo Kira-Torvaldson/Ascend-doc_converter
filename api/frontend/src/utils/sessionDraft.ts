@@ -11,6 +11,8 @@ const MAX_CONTENT_CHARS = 2_000_000;
 export interface SessionDraft {
   adocInput: string;
   mdOutput: string;
+  /** Result buffer for Markdown → HTML/TXT (must not reuse mdOutput). */
+  otherOutput: string;
   sourceFormat: FormatType;
   targetFormat: FormatType;
   conversionOptions: ConversionOptions;
@@ -36,6 +38,8 @@ export function loadSessionDraft(): SessionDraft | null {
     return {
       adocInput: typeof parsed.adocInput === 'string' ? parsed.adocInput.slice(0, MAX_CONTENT_CHARS) : '',
       mdOutput: typeof parsed.mdOutput === 'string' ? parsed.mdOutput.slice(0, MAX_CONTENT_CHARS) : '',
+      otherOutput:
+        typeof parsed.otherOutput === 'string' ? parsed.otherOutput.slice(0, MAX_CONTENT_CHARS) : '',
       sourceFormat: parsed.sourceFormat,
       targetFormat: parsed.targetFormat,
       conversionOptions:
@@ -58,6 +62,7 @@ export function persistSessionDraft(draft: Omit<SessionDraft, 'savedAt'>): void 
       ...draft,
       adocInput: draft.adocInput.slice(0, MAX_CONTENT_CHARS),
       mdOutput: draft.mdOutput.slice(0, MAX_CONTENT_CHARS),
+      otherOutput: (draft.otherOutput || '').slice(0, MAX_CONTENT_CHARS),
       activeProfileIds: sanitizeActiveProfileIds(draft.activeProfileIds),
       savedAt: Date.now(),
     };

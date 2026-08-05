@@ -9,6 +9,9 @@
 |---------|-------|-------------|--------------|
 | POST | `/to-markdown` | AsciiDoc → Markdown | Non |
 | POST | `/to-asciidoc` | Markdown → AsciiDoc | Non |
+| POST | `/from-html` | HTML → Markdown / TXT / … | Non |
+| POST | `/from-markdown` | Markdown → HTML / TXT / AsciiDoc | Non |
+| POST | `/from-text` | TXT → HTML / Markdown | Non |
 | POST | `/convert` | Conversion générique déclarée | Selon format |
 | POST | `/api/proxy/convert` | Proxy conversion (UI) | Selon format |
 
