@@ -3,19 +3,25 @@
  */
 
 import React, { useState } from 'react';
+import { useT } from '../i18n/LocaleContext';
 import type { ConversionWarningItem } from '../utils/conversionWarnings';
 import { formatConversionWarning } from '../utils/conversionWarnings';
+import type { WarningsDetailLevel } from '../settings/userSettings';
 
 interface ConversionWarningsBannerProps {
   warnings: ConversionWarningItem[];
   onDismiss: () => void;
+  detailLevel?: WarningsDetailLevel;
 }
 
 export const ConversionWarningsBanner: React.FC<ConversionWarningsBannerProps> = ({
   warnings,
   onDismiss,
+  detailLevel = 'detailed',
 }) => {
-  const [expanded, setExpanded] = useState(true);
+  const t = useT();
+  const compact = detailLevel === 'compact';
+  const [expanded, setExpanded] = useState(!compact);
   const [copied, setCopied] = useState(false);
 
   if (!warnings.length) return null;
@@ -23,7 +29,7 @@ export const ConversionWarningsBanner: React.FC<ConversionWarningsBannerProps> =
   const hasEngineFallback = warnings.some((w) => w.code === 'ENGINE_FALLBACK');
   const copyLines = warnings.map((w) => {
     const base = formatConversionWarning(w);
-    return w.hint ? `${base}\n  → ${w.hint}` : base;
+    return !compact && w.hint ? `${base}\n  → ${w.hint}` : base;
   });
 
   const copyAll = async () => {
@@ -52,13 +58,13 @@ export const ConversionWarningsBanner: React.FC<ConversionWarningsBannerProps> =
           >
             <span className="conversion-warnings-banner-title">
               {hasEngineFallback
-                ? 'Conversion réussie — moteur de secours utilisé'
-                : `Conversion réussie avec ${warnings.length} avertissement${warnings.length > 1 ? 's' : ''}`}
+                ? t('warn.successFallback')
+                : t('warn.successCount', { count: warnings.length })}
             </span>
             <span aria-hidden="true">{expanded ? '▼' : '▶'}</span>
           </button>
           <button type="button" className="conversion-warnings-copy" onClick={() => void copyAll()}>
-            {copied ? 'Copié' : 'Copier'}
+            {copied ? t('warn.copied') : t('warn.copy')}
           </button>
         </div>
         {expanded && (
@@ -71,12 +77,14 @@ export const ConversionWarningsBanner: React.FC<ConversionWarningsBannerProps> =
                     {w.code ? (
                       <span className="conversion-warnings-item-code"> ({w.code})</span>
                     ) : null}
-                    <div className="conversion-warnings-item-message">{w.message}</div>
+                    {!compact ? (
+                      <div className="conversion-warnings-item-message">{w.message}</div>
+                    ) : null}
                   </>
                 ) : (
                   formatConversionWarning(w)
                 )}
-                {w.hint ? (
+                {!compact && w.hint ? (
                   <div className="conversion-warnings-item-hint">{w.hint}</div>
                 ) : null}
               </li>
@@ -88,7 +96,7 @@ export const ConversionWarningsBanner: React.FC<ConversionWarningsBannerProps> =
         type="button"
         className="conversion-warnings-dismiss"
         onClick={onDismiss}
-        aria-label="Masquer les avertissements"
+        aria-label={t('common.close')}
       >
         ×
       </button>

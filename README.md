@@ -1,18 +1,18 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.9.2-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.9.3-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.9.2)
+## Latest changes (v0.0.1.9.3)
 
-- **Ops / métriques**
-  - `GET /api/metrics` enrichi (`error.code`, routes) ; persistance `reports/conversion-metrics.json` ; panneau Paramètres + badge header.
-- **Contrats échec**
-  - Fail-contracts `/api/from-markdown`, `/api/from-text`, `/api/from-html` (dont `EMPTY_OUTPUT`).
-- **DX**
-  - Sortie propre Pandoc/tests (`exitClean`, `taskkill` Windows) ; bannière `ENGINE_FALLBACK`.
+- **i18n / Compte**
+  - Langue du compte (FR/EN/ES/DE) traduit l’interface Ascend ; langue de conversion indépendante (métadonnées).
+- **UX Compte & Interface**
+  - Profils d’identité, signature, accents métaux, prefs panneaux / sidebar / coloration.
+- **Chrome convertisseur**
+  - Source/Résultat, sidebar, modales, historique, snackbars et paramètres localisés.
 
 ## Overview
 

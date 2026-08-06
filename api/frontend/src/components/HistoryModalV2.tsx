@@ -5,6 +5,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { ConversionHistoryItem, FormatType } from "../types";
 import { useFloatingWindow } from "../hooks/useFloatingWindow";
+import { useT } from "../i18n/LocaleContext";
 
 const DEFAULT_WIDTH = 520;
 const DEFAULT_HEIGHT = 440;
@@ -168,6 +169,7 @@ export function HistoryModalV2({
   onClear,
   getFormatTitle,
 }: HistoryModalV2Props) {
+  const t = useT();
   const listRef = useRef<HTMLDivElement | null>(null);
   const savedFilters = useMemo(() => loadFilters(), []);
   const {
@@ -449,7 +451,7 @@ export function HistoryModalV2({
         >
           <div className="floating-window-title-wrap history-modal-v2-title-wrap">
             <h2 id="history-modal-v2-title" className="floating-window-title history-modal-v2-title">
-              Historique
+              {t("history.short")}
             </h2>
             {!minimized && list.length > 0 && (
               <span className="floating-window-count history-modal-v2-count">
@@ -468,7 +470,7 @@ export function HistoryModalV2({
                   e.stopPropagation();
                   setMinimized(false);
                 }}
-                aria-label="Restaurer"
+                aria-label={t("history.restore")}
               >
                 □
               </button>
@@ -494,7 +496,7 @@ export function HistoryModalV2({
                   e.stopPropagation();
                   setMaximized(!maximized);
                 }}
-                aria-label={maximized ? "Restaurer" : "Plein écran"}
+                aria-label={maximized ? t("history.restore") : t("history.fullscreen")}
               >
                 {maximized ? "⧉" : "□"}
               </button>
@@ -506,7 +508,7 @@ export function HistoryModalV2({
                 e.stopPropagation();
                 onClose();
               }}
-              aria-label="Fermer"
+              aria-label={t("common.close")}
             >
               ×
             </button>
@@ -586,7 +588,7 @@ export function HistoryModalV2({
                       setConfirmClear(true);
                     }}
                   >
-                    Effacer
+                    {t("history.clearBtn")}
                   </button>
                 )
               )}
@@ -612,7 +614,7 @@ export function HistoryModalV2({
                       />
                     </svg>
                   </span>
-                  <p className="history-modal-v2-empty-title">Aucune conversion pour l’instant</p>
+                  <p className="history-modal-v2-empty-title">{t("history.empty")}</p>
                   <p className="history-modal-v2-empty-desc">
                     Lancez une conversion : elle apparaîtra ici pour être restaurée en un clic.
                   </p>
@@ -713,7 +715,7 @@ export function HistoryModalV2({
                                 e.stopPropagation();
                                 onRestore(row.restorable);
                               }}
-                              aria-label="Restaurer"
+                              aria-label={t("history.restore")}
                             >
                               ↩
                             </button>
@@ -746,7 +748,7 @@ export function HistoryModalV2({
                 <div className="history-modal-v2-preview-col">
                   <div className="history-modal-v2-preview-head">
                     <span className="history-modal-v2-preview-label">
-                      Source · {contentStats(previewRow.restorable.sourceContent)}
+                      {t("common.source")} · {contentStats(previewRow.restorable.sourceContent)}
                     </span>
                     <button
                       type="button"
@@ -756,7 +758,7 @@ export function HistoryModalV2({
                         void copyPreview("source", previewRow.restorable.sourceContent);
                       }}
                     >
-                      {copiedPreview === "source" ? "Copié" : "Copier"}
+                      {copiedPreview === "source" ? t("common.copied") : t("common.copy")}
                     </button>
                   </div>
                   <p>{previewRow.previewSource}</p>
@@ -764,7 +766,7 @@ export function HistoryModalV2({
                 <div className="history-modal-v2-preview-col">
                   <div className="history-modal-v2-preview-head">
                     <span className="history-modal-v2-preview-label">
-                      Résultat · {contentStats(previewRow.restorable.resultContent)}
+                      {t("common.result")} · {contentStats(previewRow.restorable.resultContent)}
                     </span>
                     <button
                       type="button"
@@ -774,7 +776,7 @@ export function HistoryModalV2({
                         void copyPreview("result", previewRow.restorable.resultContent);
                       }}
                     >
-                      {copiedPreview === "result" ? "Copié" : "Copier"}
+                      {copiedPreview === "result" ? t("common.copied") : t("common.copy")}
                     </button>
                   </div>
                   <p>{previewRow.previewResult}</p>
@@ -785,7 +787,7 @@ export function HistoryModalV2({
                     className="history-modal-v2-preview-restore"
                     onClick={() => onRestore(previewRow.restorable)}
                   >
-                    Restaurer cette conversion
+                    {t("history.restoreEntry")}
                   </button>
                 </div>
               </div>

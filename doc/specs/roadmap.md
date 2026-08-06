@@ -6,15 +6,24 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.9.2 (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** Patch ops métriques + fail-contracts + sortie Pandoc propre  
-**Focus:** metrics persistées, contrats échec MD/TXT/HTML, UX warnings, exitClean
+**Version:** 0.0.1.9.3 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** UI i18n (langue du compte) + peaufinage Compte / Interface  
+**Focus:** traduction FR/EN/ES/DE, identité compte, accents, chrome convertisseur
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.9.2 (Current — Ascend)
+### 0.0.1.9.3 (Current — Ascend)
+
+**Delivered:**
+- Langue du compte → i18n UI (FR/EN/ES/DE) ; langue de conversion séparée
+- Compte : presets identité, signature, métadonnées ; Interface : accents métaux, densités, etc.
+- Chrome convertisseur / paramètres / modales / historique localisés
+
+**Docs:** `doc/releases/v0.0.1.9.3-notes.md`
+
+### 0.0.1.9.2
 
 **Delivered:**
 - Metrics `error.code` / routes + persistance `reports/conversion-metrics.json`

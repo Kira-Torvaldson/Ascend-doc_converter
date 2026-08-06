@@ -3,6 +3,7 @@
  */
 
 import React from 'react';
+import { useT } from '../i18n/LocaleContext';
 import {
   buildHeadingHierarchy,
   type FlatHeading,
@@ -71,6 +72,7 @@ export const NavigationWindow: React.FC<NavigationWindowProps> = ({
   onClose,
   onNavigate,
 }) => {
+  const t = useT();
   if (!open || minimized || headings.length === 0) return null;
 
   const hierarchy = buildHeadingHierarchy(headings);
@@ -86,9 +88,10 @@ export const NavigationWindow: React.FC<NavigationWindowProps> = ({
         onMouseDown={onDragStart}
       >
         <div className="floating-window-title-wrap navigation-window-title">
-          <span className="floating-window-title">Navigation</span>
+          <span className="floating-window-title">{t('taskbar.navigation')}</span>
           <span className="floating-window-count navigation-window-count">
-            {headings.length} {headings.length > 1 ? 'sections' : 'section'}
+            {headings.length}{' '}
+            {headings.length > 1 ? t('options.sections') : t('options.section')}
           </span>
         </div>
         <div className="floating-window-controls navigation-window-controls">
@@ -96,7 +99,7 @@ export const NavigationWindow: React.FC<NavigationWindowProps> = ({
             type="button"
             className="floating-window-btn floating-window-btn--minimize navigation-window-btn minimize-btn"
             onClick={onMinimize}
-            aria-label="Réduire"
+            aria-label={t('settings.minimize')}
           >
             −
           </button>
@@ -104,7 +107,7 @@ export const NavigationWindow: React.FC<NavigationWindowProps> = ({
             type="button"
             className="floating-window-btn floating-window-btn--maximize navigation-window-btn maximize-btn"
             onClick={onToggleMaximize}
-            aria-label={maximized ? 'Restaurer' : 'Plein écran'}
+            aria-label={maximized ? t('settings.restore') : t('history.fullscreen')}
           >
             {maximized ? '⧉' : '□'}
           </button>
@@ -112,7 +115,7 @@ export const NavigationWindow: React.FC<NavigationWindowProps> = ({
             type="button"
             className="floating-window-btn floating-window-btn--close navigation-window-btn close-btn"
             onClick={onClose}
-            aria-label="Fermer"
+            aria-label={t('common.close')}
           >
             ×
           </button>

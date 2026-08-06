@@ -3,6 +3,7 @@
  */
 
 import React from 'react';
+import { useT } from '../i18n/LocaleContext';
 import { SidebarListbox } from './SidebarListbox';
 import { ConversionProfilesSection } from './ConversionProfilesSection';
 import type { ConversionOptions, FormatType } from '../types';
@@ -41,6 +42,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
   onToggleProfile,
   onClearProfiles,
 }) => {
+  const t = useT();
   return (
     <>
       {onToggleProfile && (
@@ -52,13 +54,13 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
       )}
 
       <div className="sidebar-section">
-        <h3 className="sidebar-title">Autres options</h3>
+        <h3 className="sidebar-title">{t('options.other')}</h3>
 
         <div className="sidebar-content other-options-body">
           <div className="other-options-picker">
             <SidebarListbox
               id="other-options-category"
-              label="Catégorie"
+              label={t('options.category')}
               value={category}
               options={categories}
               onChange={onCategoryChange}
@@ -76,10 +78,11 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                       onChange={(e) => onNavigationToggle(e.target.checked)}
                       className="option-checkbox"
                     />
-                    <span>Activer la navigation</span>
+                    <span>{t('options.navEnable')}</span>
                     {headingsCount > 0 && (
                       <span className="navigation-count">
-                        {headingsCount} {headingsCount > 1 ? 'sections' : 'section'}
+                        {headingsCount}{' '}
+                        {headingsCount > 1 ? t('options.sections') : t('options.section')}
                       </span>
                     )}
                   </label>
@@ -90,7 +93,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                 <>
                   <div className="option-panel-block">
                     <div className="option-group">
-                      <label className="option-label">Mode d&apos;analyse</label>
+                      <label className="option-label">{t('options.analysisMode')}</label>
                       <select
                         value={conversionOptions.contentAnalysis?.analysisMode || 'heuristic'}
                         onChange={(e) =>
@@ -98,9 +101,9 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         }
                         className="option-select"
                       >
-                        <option value="basic">Basique</option>
-                        <option value="heuristic">Heuristique</option>
-                        <option value="strict">Strict</option>
+                        <option value="basic">{t('options.analysisMode.basic')}</option>
+                        <option value="heuristic">{t('options.analysisMode.heuristic')}</option>
+                        <option value="strict">{t('options.analysisMode.strict')}</option>
                       </select>
                     </div>
                   </div>
@@ -119,7 +122,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         }
                         className="option-checkbox"
                       />
-                      <span>Détection des titres</span>
+                      <span>{t('options.headingDetection')}</span>
                     </label>
                     <label className="option-checkbox-label">
                       <input
@@ -135,7 +138,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         }
                         className="option-checkbox"
                       />
-                      <span>Détection des listes</span>
+                      <span>{t('options.listDetection')}</span>
                     </label>
                   </div>
                 </>
@@ -146,7 +149,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                   <div className="option-panel-block">
                     <div className="option-grid-2">
                       <div className="option-group">
-                        <label className="option-label">Encodage</label>
+                        <label className="option-label">{t('options.encoding')}</label>
                         <select
                           value={conversionOptions.normalization?.encoding || 'utf-8'}
                           onChange={(e) =>
@@ -160,7 +163,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         </select>
                       </div>
                       <div className="option-group">
-                        <label className="option-label">Unicode</label>
+                        <label className="option-label">{t('options.unicode')}</label>
                         <select
                           value={
                             conversionOptions.normalization?.advanced?.unicode?.normalization ||
@@ -174,7 +177,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                           }
                           className="option-select"
                         >
-                          <option value="none">Off</option>
+                          <option value="none">{t('options.unicode.off')}</option>
                           <option value="NFC">NFC</option>
                           <option value="NFKC">NFKC</option>
                         </select>
@@ -194,7 +197,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         }
                         className="option-checkbox"
                       />
-                      <span>Tabulations → espaces</span>
+                      <span>{t('options.tabsToSpaces')}</span>
                     </label>
                     <label className="option-checkbox-label">
                       <input
@@ -211,7 +214,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         }
                         className="option-checkbox"
                       />
-                      <span>Caractères confusables</span>
+                      <span>{t('options.confusables')}</span>
                     </label>
                     <label className="option-checkbox-label">
                       <input
@@ -233,7 +236,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         }
                         className="option-checkbox"
                       />
-                      <span>Retirer contrôles</span>
+                      <span>{t('options.removeControlChars')}</span>
                     </label>
                     <label className="option-checkbox-label">
                       <input
@@ -255,7 +258,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         }
                         className="option-checkbox"
                       />
-                      <span>Retirer directionnels</span>
+                      <span>{t('options.removeDirectionalChars')}</span>
                     </label>
                     <label className="option-checkbox-label">
                       <input
@@ -277,7 +280,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         }
                         className="option-checkbox"
                       />
-                      <span>Retirer non imprimables</span>
+                      <span>{t('options.removeNonPrintable')}</span>
                     </label>
                     <label className="option-checkbox-label">
                       <input
@@ -299,7 +302,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         }
                         className="option-checkbox"
                       />
-                      <span>Rejeter séquences invalides</span>
+                      <span>{t('options.rejectInvalidSequences')}</span>
                     </label>
                   </div>
                 </>
@@ -319,7 +322,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                       }
                       className="option-checkbox"
                     />
-                    <span>Table des matières</span>
+                    <span>{t('options.toc')}</span>
                   </label>
                   <label className="option-checkbox-label">
                     <input
@@ -333,7 +336,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                       }
                       className="option-checkbox"
                     />
-                    <span>Numérotation des sections</span>
+                    <span>{t('options.sectionNumbering')}</span>
                   </label>
                   <div>
                     <label className="option-checkbox-label">
@@ -345,7 +348,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         }
                         className="option-checkbox"
                       />
-                      <span>Retour à la ligne automatique</span>
+                      <span>{t('options.autoLineWrap')}</span>
                     </label>
                     {conversionOptions.rendering?.lineWrap?.enabled && (
                       <input
@@ -360,7 +363,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                         className="option-input option-field-follow"
                         min={40}
                         max={200}
-                        placeholder="Largeur max"
+                        placeholder={t('options.maxWidth')}
                       />
                     )}
                   </div>
@@ -372,7 +375,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                   {targetFormat === 'markdown' && (
                     <div className="option-panel-block">
                       <div className="option-group">
-                        <label className="option-label">Variante Markdown</label>
+                        <label className="option-label">{t('options.markdownVariant')}</label>
                         <select
                           value={
                             conversionOptions.formatSpecific?.markdown?.parsedown
@@ -406,7 +409,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                   {targetFormat === 'asciidoc' && (
                     <div className="option-panel-block">
                       <div className="option-group">
-                        <label className="option-label">Mode de compatibilité</label>
+                        <label className="option-label">{t('options.compatMode')}</label>
                         <select
                           value={
                             conversionOptions.formatSpecific?.asciidoc?.compatMode ||
@@ -427,7 +430,7 @@ export const OtherOptionsPanel: React.FC<OtherOptionsPanelProps> = ({
                     </div>
                   )}
                   {targetFormat !== 'markdown' && targetFormat !== 'asciidoc' && (
-                    <p className="conversion-profiles-active-empty">Aucune option</p>
+                    <p className="conversion-profiles-active-empty">{t('options.none')}</p>
                   )}
                 </>
               )}

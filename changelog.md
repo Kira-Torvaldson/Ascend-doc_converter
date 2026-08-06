@@ -13,6 +13,17 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.9.3 (2026-08-06)
+
+#### Added
+- Account UI language (`profile.uiLanguage`) translates Ascend UI (FR / EN / ES / DE) via `i18n` catalogs + `LocaleProvider`.
+- Conversion language (`profile.defaultLanguage`) kept separate for document metadata only.
+- Account identity presets (Perso / Pro / Client), signature templates, metadata fill, and interface accents (including metals).
+
+#### Changed
+- Converter chrome, settings (Compte / Conversion / Interface / Données / Métriques), modals, history, find/replace, and status/snackbars wired to `useT()` / `translate()`.
+- Conversion status messages can be localized via optional labels on `convertText`.
+
 ### 0.0.1.9.2 (2026-08-05)
 
 #### Added

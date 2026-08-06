@@ -6,6 +6,7 @@
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { FormatType } from '../types';
+import { useT } from '../i18n/LocaleContext';
 import { getFormatTitle } from '../utils/formatHelpers';
 
 const COMING_SOON: FormatType[] = ['pdf', 'yaml', 'json'];
@@ -31,6 +32,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
   disabled = false,
   id,
 }) => {
+  const t = useT();
   const autoId = useId();
   const listboxId = id ?? autoId;
   const labelId = `${listboxId}-label`;
@@ -156,7 +158,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
             onKeyDown={onListKeyDown}
           >
             <div className="format-select-group-label" role="presentation">
-              Disponibles
+              {t('format.available')}
             </div>
             {formats.map((format, index) => {
               const selected = format === value;
@@ -181,17 +183,17 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
             {comingSoon.length > 0 && (
               <>
                 <div className="format-select-group-label format-select-group-label--soon" role="presentation">
-                  Bientôt
+                  {t('format.soon')}
                 </div>
                 {comingSoon.map((format) => (
                   <div
                     key={format}
                     className="format-select-option is-disabled"
                     aria-disabled="true"
-                    title="Bientôt disponible"
+                    title={t('format.soon.tooltip')}
                   >
                     <span>{getFormatTitle(format)}</span>
-                    <span className="format-select-badge">Bientôt</span>
+                    <span className="format-select-badge">{t('format.soon')}</span>
                   </div>
                 ))}
               </>

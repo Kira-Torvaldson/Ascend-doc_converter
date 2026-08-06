@@ -143,8 +143,32 @@ export async function convertText(
   /** Client timeout; should match or slightly exceed backend CONVERSION_TIMEOUT_MS. */
   timeoutMs?: number,
   /** Abort previous attempt when the user starts a new conversion. */
-  externalSignal?: AbortSignal | null
+  externalSignal?: AbortSignal | null,
+  uiLabels?: {
+    emptyInput?: string;
+    sameFormat?: string;
+    running?: string;
+    error?: string;
+    success?: string;
+    successWarnings?: (count: number) => string;
+    timeout?: string;
+  },
 ) {
+  const labels = {
+    emptyInput: uiLabels?.emptyInput ?? 'Veuillez entrer du texte à convertir',
+    sameFormat: uiLabels?.sameFormat ?? 'Les formats source et destination sont identiques',
+    running: uiLabels?.running ?? 'Conversion en cours...',
+    error: uiLabels?.error ?? 'Erreur de conversion',
+    success: uiLabels?.success ?? 'Conversion réussie ✔',
+    successWarnings:
+      uiLabels?.successWarnings ??
+      ((count: number) =>
+        `Conversion réussie ✔ (${count} avertissement${count > 1 ? 's' : ''})`),
+    timeout:
+      uiLabels?.timeout ??
+      'Erreur : Timeout - La conversion prend trop de temps. Le fichier est peut-être trop volumineux.',
+  };
+
   const isMigratedAdocToMarkdown = sourceFormat === 'asciidoc' && targetFormat === 'markdown'
   const isMigratedMarkdownToAsciidoc = sourceFormat === 'markdown' && targetFormat === 'asciidoc'
   const isMigratedMarkdownToHtmlOrTxt =
@@ -163,19 +187,19 @@ export async function convertText(
 
   if (!text.trim()) {
     setNotification(null);
-    setStatus("Veuillez entrer du texte à convertir");
+    setStatus(labels.emptyInput);
     if (setConversionUiState) setConversionUiState('idle');
     return;
   }
 
   if (sourceFormat === targetFormat) {
     setNotification(null);
-    setStatus("Les formats source et destination sont identiques");
+    setStatus(labels.sameFormat);
     if (setConversionUiState) setConversionUiState('idle');
     return;
   }
 
-  setStatus("Conversion en cours...");
+  setStatus(labels.running);
   setLoading(true);
   if (setConversionUiState) setConversionUiState('loading');
   // New attempt starts: clear transient stale indicators.
@@ -433,7 +457,7 @@ export async function convertText(
         'EMPTY_OUTPUT',
         emptyMessage
       );
-      setStatus('Erreur de conversion');
+      setStatus(labels.error);
       setNotification({
         message: uiErrorMessage,
         type: 'error',
@@ -451,9 +475,7 @@ export async function convertText(
       ? conversionResult.warnings.length
       : 0;
     const successMessage =
-      warningCount > 0
-        ? `Conversion réussie ✔ (${warningCount} avertissement${warningCount > 1 ? 's' : ''})`
-        : 'Conversion réussie ✔';
+      warningCount > 0 ? labels.successWarnings(warningCount) : labels.success;
     setStatus(successMessage);
     setNotification({
       message: successMessage,
@@ -472,7 +494,7 @@ export async function convertText(
       if (externalSignal?.aborted) {
         return;
       }
-      const timeoutMessage = "Erreur : Timeout - La conversion prend trop de temps. Le fichier est peut-être trop volumineux.";
+      const timeoutMessage = labels.timeout;
       setStatus(timeoutMessage);
       setNotification({
         message: timeoutMessage,

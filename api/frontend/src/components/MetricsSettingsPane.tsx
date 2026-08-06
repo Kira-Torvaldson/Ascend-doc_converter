@@ -3,6 +3,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { useT } from '../i18n/LocaleContext';
 import {
   fetchConversionMetrics,
   type ConversionMetricsSnapshot,
@@ -11,6 +12,7 @@ import {
 const AUTO_REFRESH_MS = 10_000;
 
 export const MetricsSettingsPane: React.FC = () => {
+  const t = useT();
   const [metrics, setMetrics] = useState<ConversionMetricsSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,13 +22,13 @@ export const MetricsSettingsPane: React.FC = () => {
     setError(null);
     const next = await fetchConversionMetrics();
     if (!next) {
-      setError('Impossible de charger /api/metrics (serveur arrêté ou accès refusé).');
+      setError(t('metrics.loadError'));
       setMetrics(null);
     } else {
       setMetrics(next);
     }
     if (!opts?.silent) setLoading(false);
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void refresh();
@@ -47,12 +49,11 @@ export const MetricsSettingsPane: React.FC = () => {
   const routeEntries = Object.entries(metrics?.failures_by_route || {}).slice(0, 6);
 
   return (
-    <div className="settings-param-body settings-param-body--pane settings-metrics-pane">
+    <div className="settings-metrics-live">
       <p className="settings-metrics-intro">
-        Compteurs backend (rafraîchis toutes les {AUTO_REFRESH_MS / 1000}s)
-        {metrics?.persisted
-          ? ' — persistés sous reports/conversion-metrics.json (survivent au redémarrage).'
-          : ' — en mémoire uniquement pour cette session.'}
+        {t('metrics.intro', { sec: AUTO_REFRESH_MS / 1000 })}
+        {metrics?.persisted ? t('metrics.intro.persisted') : t('metrics.intro.memory')}
+        {t('metrics.intro.badge')}
       </p>
       <div className="settings-bg-actions">
         <button
@@ -61,7 +62,7 @@ export const MetricsSettingsPane: React.FC = () => {
           onClick={() => void refresh()}
           disabled={loading}
         >
-          {loading ? 'Chargement…' : 'Actualiser'}
+          {loading ? t('common.loading') : t('common.refresh')}
         </button>
       </div>
       {error ? <p className="settings-metrics-error">{error}</p> : null}
@@ -69,25 +70,25 @@ export const MetricsSettingsPane: React.FC = () => {
         <>
           <dl className="settings-metrics-stats">
             <div>
-              <dt>Succès</dt>
+              <dt>{t('metrics.success')}</dt>
               <dd>{metrics.conversion_success_total}</dd>
             </div>
             <div>
-              <dt>Échecs</dt>
+              <dt>{t('metrics.failures')}</dt>
               <dd>{metrics.conversion_failures_total}</dd>
             </div>
             <div>
-              <dt>Durée p50</dt>
+              <dt>{t('metrics.p50')}</dt>
               <dd>{Math.round(metrics.conversion_duration_ms.p50)} ms</dd>
             </div>
             <div>
-              <dt>Durée p95</dt>
+              <dt>{t('metrics.p95')}</dt>
               <dd>{Math.round(metrics.conversion_duration_ms.p95)} ms</dd>
             </div>
           </dl>
           <h3 className="settings-metrics-heading">Top error.code</h3>
           {topErrors.length === 0 ? (
-            <p className="settings-metrics-empty">Aucun échec enregistré.</p>
+            <p className="settings-metrics-empty">{t('metrics.emptyFailures')}</p>
           ) : (
             <ul className="settings-metrics-list">
               {topErrors.map((row) => (
@@ -98,9 +99,9 @@ export const MetricsSettingsPane: React.FC = () => {
               ))}
             </ul>
           )}
-          <h3 className="settings-metrics-heading">Échecs par route</h3>
+          <h3 className="settings-metrics-heading">{t('metrics.byRoute')}</h3>
           {routeEntries.length === 0 ? (
-            <p className="settings-metrics-empty">Aucune répartition par route.</p>
+            <p className="settings-metrics-empty">{t('metrics.emptyRoutes')}</p>
           ) : (
             <ul className="settings-metrics-list settings-metrics-list--routes">
               {routeEntries.map(([route, codes]) => (

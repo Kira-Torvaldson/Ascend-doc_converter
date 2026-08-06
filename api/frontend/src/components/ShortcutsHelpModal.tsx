@@ -3,79 +3,79 @@
  */
 
 import React, { useEffect } from 'react';
+import { useT } from '../i18n/LocaleContext';
+import type { MessageKey } from '../i18n/messages';
 
 export interface ShortcutHelpItem {
   label: string;
   keys: string;
 }
 
-const DEFAULT_SHORTCUTS: ShortcutHelpItem[] = [
-  { label: 'Convertir', keys: 'Ctrl + Entrée' },
-  { label: 'Télécharger / Sauvegarder', keys: 'Ctrl + S' },
-  { label: 'Rechercher / Remplacer', keys: 'Ctrl + F' },
-  { label: 'Diff source ↔ résultat', keys: 'Ctrl + Maj + D' },
-  { label: 'Historique', keys: 'Ctrl + H' },
-  { label: 'Paramètres', keys: 'Ctrl + ,' },
-  { label: 'Effacer la source', keys: 'Ctrl + K' },
-  { label: 'Aide (cette fenêtre)', keys: 'Ctrl + /' },
+const SHORTCUT_DEFS: Array<{ key: MessageKey; keys: string }> = [
+  { key: 'shortcuts.convert', keys: 'Ctrl + Entrée' },
+  { key: 'shortcuts.download', keys: 'Ctrl + S' },
+  { key: 'shortcuts.find', keys: 'Ctrl + F' },
+  { key: 'shortcuts.diff', keys: 'Ctrl + Maj + D' },
+  { key: 'shortcuts.history', keys: 'Ctrl + H' },
+  { key: 'shortcuts.settings', keys: 'Ctrl + ,' },
+  { key: 'shortcuts.clearSource', keys: 'Ctrl + K' },
+  { key: 'shortcuts.help', keys: 'Ctrl + /' },
 ];
 
 interface ShortcutsHelpModalProps {
-  isOpen: boolean;
+  open: boolean;
   onClose: () => void;
-  shortcuts?: ShortcutHelpItem[];
+  items?: ShortcutHelpItem[];
 }
 
 export const ShortcutsHelpModal: React.FC<ShortcutsHelpModalProps> = ({
-  isOpen,
+  open,
   onClose,
-  shortcuts = DEFAULT_SHORTCUTS,
+  items,
 }) => {
+  const t = useT();
+  const resolved =
+    items ??
+    SHORTCUT_DEFS.map((d) => ({
+      label: t(d.key),
+      keys: d.keys,
+    }));
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
-  if (!isOpen) return null;
+  if (!open) return null;
 
   return (
-    <>
-      <div className="settings-overlay floating-window-overlay" onClick={onClose} />
+    <div className="shortcuts-help-modal-overlay" onClick={onClose}>
       <div
-        className="settings-panel shortcuts-help-panel"
+        className="shortcuts-help-modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="shortcuts-help-title"
+        aria-label={t('shortcuts.help')}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="settings-panel-header">
-          <h3 id="shortcuts-help-title">Raccourcis clavier</h3>
-          <button
-            type="button"
-            className="settings-close-btn"
-            onClick={onClose}
-            data-tooltip="Fermer"
-            aria-label="Fermer"
-          >
+        <header className="shortcuts-help-modal-header">
+          <h2>{t('shortcuts.help')}</h2>
+          <button type="button" onClick={onClose} aria-label={t('common.close')}>
             ×
           </button>
-        </div>
-        <div className="settings-panel-content">
-          <ul className="shortcuts-help-list">
-            {shortcuts.map((item) => (
-              <li key={item.keys} className="shortcuts-help-row">
-                <span className="shortcuts-help-label">{item.label}</span>
-                <kbd className="shortcuts-help-kbd">{item.keys}</kbd>
-              </li>
-            ))}
-          </ul>
-          <p className="shortcuts-help-note">Sur macOS, utilisez ⌘ à la place de Ctrl.</p>
-        </div>
+        </header>
+        <ul className="shortcuts-help-modal-list">
+          {resolved.map((item) => (
+            <li key={item.keys}>
+              <span>{item.label}</span>
+              <kbd>{item.keys}</kbd>
+            </li>
+          ))}
+        </ul>
       </div>
-    </>
+    </div>
   );
 };

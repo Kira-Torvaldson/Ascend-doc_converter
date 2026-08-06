@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useId, useRef } from 'react';
+import { useT } from '../i18n/LocaleContext';
 
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -36,8 +37,8 @@ export const Modal: React.FC<ModalProps> = ({
   onClose,
   title,
   message,
-  confirmText = 'Confirmer',
-  cancelText = 'Annuler',
+  confirmText,
+  cancelText,
   onConfirm,
   onCancel,
   type = 'info',
@@ -47,6 +48,9 @@ export const Modal: React.FC<ModalProps> = ({
   contentClassName,
   stackActions = false,
 }) => {
+  const t = useT();
+  const resolvedConfirm = confirmText ?? t('common.confirm');
+  const resolvedCancel = cancelText ?? t('common.cancel');
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -169,7 +173,7 @@ export const Modal: React.FC<ModalProps> = ({
                   className="modal-button cancel"
                   onClick={handleCancel}
                 >
-                  {cancelText}
+                  {resolvedCancel}
                 </button>
               )}
               {onConfirm && (
@@ -179,7 +183,7 @@ export const Modal: React.FC<ModalProps> = ({
                   className={`modal-button confirm ${type}`}
                   onClick={handleConfirm}
                 >
-                  {confirmText}
+                  {resolvedConfirm}
                 </button>
               )}
             </>

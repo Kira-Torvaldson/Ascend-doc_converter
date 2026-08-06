@@ -4,6 +4,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
+import { useT } from '../i18n/LocaleContext';
 import { SidebarListbox } from './SidebarListbox';
 import {
   CONVERSION_PROFILES,
@@ -21,6 +22,7 @@ export const ConversionProfilesSection: React.FC<ConversionProfilesSectionProps>
   onToggleProfile,
   onClearProfiles,
 }) => {
+  const t = useT();
   const [selectedProfileId, setSelectedProfileId] = useState(
     () => CONVERSION_PROFILES[0]?.id ?? 'bookstack'
   );
@@ -39,9 +41,11 @@ export const ConversionProfilesSection: React.FC<ConversionProfilesSectionProps>
     () =>
       CONVERSION_PROFILES.map((p) => ({
         value: p.id,
-        label: activeProfileIds.includes(p.id) ? `${p.label} · actif` : p.label,
+        label: activeProfileIds.includes(p.id)
+          ? `${p.label} · ${t('profiles.activeBadge')}`
+          : p.label,
       })),
-    [activeProfileIds]
+    [activeProfileIds, t]
   );
 
   const handleSelectProfile = (profileId: string) => {
@@ -51,14 +55,13 @@ export const ConversionProfilesSection: React.FC<ConversionProfilesSectionProps>
       return;
     }
     setSelectedProfileId(profileId);
-    // Toujours déléguer : App affiche le snackbar « max atteint » si besoin
     onToggleProfile(profileId);
   };
 
   return (
     <div className="sidebar-section">
       <h3 className="sidebar-title">
-        <span>Profils</span>
+        <span>{t('profiles.title')}</span>
         <span
           className={[
             'conversion-profiles-count',
@@ -77,7 +80,7 @@ export const ConversionProfilesSection: React.FC<ConversionProfilesSectionProps>
         <div className="other-options-picker conversion-profiles-picker">
           <SidebarListbox
             id="conversion-profile"
-            label="Profil"
+            label={t('profiles.label')}
             value={selectedProfileId}
             options={profileOptions}
             onChange={handleSelectProfile}
@@ -86,20 +89,20 @@ export const ConversionProfilesSection: React.FC<ConversionProfilesSectionProps>
 
         <div className="conversion-profiles-active-block">
           <div className="conversion-profiles-active-head">
-            <p className="option-panel-caption">Profils actifs</p>
+            <p className="option-panel-caption">{t('profiles.active')}</p>
             {onClearProfiles && activeProfiles.length > 0 && (
               <button
                 type="button"
                 className="conversion-profiles-clear"
                 onClick={onClearProfiles}
               >
-                Tout retirer
+                {t('profiles.clearAll')}
               </button>
             )}
           </div>
 
           {activeProfiles.length === 0 ? (
-            <p className="conversion-profiles-active-empty">Aucun</p>
+            <p className="conversion-profiles-active-empty">{t('profiles.none')}</p>
           ) : (
             <ul className="conversion-profiles-active-list">
               {activeProfiles.map((profile, index) => (
@@ -115,8 +118,8 @@ export const ConversionProfilesSection: React.FC<ConversionProfilesSectionProps>
                       onToggleProfile(profile.id);
                       setSelectedProfileId(profile.id);
                     }}
-                    aria-label={`Retirer ${profile.label}`}
-                    data-tooltip="Retirer"
+                    aria-label={`${t('profiles.remove')} ${profile.label}`}
+                    data-tooltip={t('profiles.remove')}
                   >
                     ×
                   </button>

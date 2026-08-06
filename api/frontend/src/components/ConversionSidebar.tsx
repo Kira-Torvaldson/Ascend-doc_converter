@@ -4,9 +4,10 @@
 
 import React from 'react';
 import type { FormatType, ConversionOptions } from '../types';
+import { useT } from '../i18n/LocaleContext';
 import { FormatSelector } from './FormatSelector';
 import { OtherOptionsPanel, type OtherOptionsCategory } from './OtherOptionsPanel';
-import { isSupportedUiConversion, SUPPORTED_CONVERSION_HINT } from '../utils/conversionPairs';
+import { isSupportedUiConversion } from '../utils/conversionPairs';
 
 export interface ConversionSidebarProps {
   sidebarCollapsed: boolean;
@@ -28,75 +29,80 @@ export interface ConversionSidebarProps {
   onClearProfiles: () => void;
 }
 
-export const ConversionSidebar: React.FC<ConversionSidebarProps> = ({
-  sidebarCollapsed,
-  onCollapse,
-  sourceFormat,
-  targetFormat,
-  onSourceFormatChange,
-  onTargetFormatChange,
-  otherOptionsCategory,
-  otherOptionsCategories,
-  onCategoryChange,
-  conversionOptions,
-  updateOption,
-  navigationEnabled,
-  onNavigationToggle,
-  headingsCount,
-  activeProfileIds,
-  onToggleProfile,
-  onClearProfiles,
-}) => (
-  <aside
-    id="ascend-sidebar"
-    className="sidebar"
-    aria-hidden={sidebarCollapsed}
-  >
-    <div className="sidebar-section">
-      <div className="sidebar-section-top">
-        <h3 className="sidebar-title">Options de conversion</h3>
-        <button
-          type="button"
-          className="sidebar-collapse-inline"
-          onClick={onCollapse}
-          aria-label="Masquer les options"
-        >
-          «
-        </button>
+export const ConversionSidebar: React.FC<ConversionSidebarProps> = (props) => {
+  const t = useT();
+  const {
+    sidebarCollapsed,
+    onCollapse,
+    sourceFormat,
+    targetFormat,
+    onSourceFormatChange,
+    onTargetFormatChange,
+    otherOptionsCategory,
+    otherOptionsCategories,
+    onCategoryChange,
+    conversionOptions,
+    updateOption,
+    navigationEnabled,
+    onNavigationToggle,
+    headingsCount,
+    activeProfileIds,
+    onToggleProfile,
+    onClearProfiles,
+  } = props;
+
+  return (
+    <aside
+      id="ascend-sidebar"
+      className="sidebar"
+      aria-hidden={sidebarCollapsed}
+    >
+      <div className="sidebar-section">
+        <div className="sidebar-section-top">
+          <h3 className="sidebar-title">{t('sidebar.title')}</h3>
+          <button
+            type="button"
+            className="sidebar-collapse-inline"
+            onClick={onCollapse}
+            aria-label={t('sidebar.hide')}
+          >
+            «
+          </button>
+        </div>
+        <div className="sidebar-content">
+          <FormatSelector
+            id="format-source"
+            label={t('sidebar.sourceFormat')}
+            value={sourceFormat}
+            onChange={onSourceFormatChange}
+          />
+          <FormatSelector
+            id="format-target"
+            label={t('sidebar.targetFormat')}
+            value={targetFormat}
+            onChange={onTargetFormatChange}
+          />
+          {!isSupportedUiConversion(sourceFormat, targetFormat) ? (
+            <div className="conversion-warning" role="status">
+              {t('conversion.supportedHint')}
+            </div>
+          ) : null}
+        </div>
       </div>
-      <div className="sidebar-content">
-        <FormatSelector
-          id="format-source"
-          label="Format source"
-          value={sourceFormat}
-          onChange={onSourceFormatChange}
-        />
-        <FormatSelector
-          id="format-target"
-          label="Format destination"
-          value={targetFormat}
-          onChange={onTargetFormatChange}
-        />
-        {!isSupportedUiConversion(sourceFormat, targetFormat) ? (
-          <div className="conversion-warning" role="status">
-            {SUPPORTED_CONVERSION_HINT}
-          </div>
-        ) : null}
-      </div>
-    </div>
-    <OtherOptionsPanel
-      category={otherOptionsCategory}
-      categories={otherOptionsCategories}
-      onCategoryChange={onCategoryChange}
-      conversionOptions={conversionOptions}
-      updateOption={updateOption}
-      targetFormat={targetFormat}
-      navigationEnabled={navigationEnabled}
-      onNavigationToggle={onNavigationToggle}
-      headingsCount={headingsCount}
-      activeProfileIds={activeProfileIds}
-      onToggleProfile={onToggleProfile}
-      onClearProfiles={onClearProfiles}
-    />
-  </aside>
-);
+      <OtherOptionsPanel
+        category={otherOptionsCategory}
+        categories={otherOptionsCategories}
+        onCategoryChange={onCategoryChange}
+        conversionOptions={conversionOptions}
+        updateOption={updateOption}
+        targetFormat={targetFormat}
+        navigationEnabled={navigationEnabled}
+        onNavigationToggle={onNavigationToggle}
+        headingsCount={headingsCount}
+        activeProfileIds={activeProfileIds}
+        onToggleProfile={onToggleProfile}
+        onClearProfiles={onClearProfiles}
+      />
+    </aside>
+  );
+};
