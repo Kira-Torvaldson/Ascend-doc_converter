@@ -5,6 +5,11 @@ import {
   areUserSettingsEqual,
   validateUserPrefs,
   applyInterfacePreset,
+  matchInterfacePreset,
+  resetInterfaceUiSettings,
+  resolveThemePreference,
+  uiScaleToCssFactor,
+  snackbarDurationToMs,
   normalizeUserSettings,
   buildUserSettingsExport,
   parseImportedUserSettings,
@@ -46,6 +51,7 @@ describe('userSettings helpers', () => {
       theme: 'dark',
       backgroundMode: 'custom',
       compactMode: false,
+      uiScale: 'comfort',
     })
     expect(applyInterfacePreset(ui, 'minimal')).toMatchObject({
       compactMode: true,
@@ -53,7 +59,130 @@ describe('userSettings helpers', () => {
       showTooltips: false,
       sidebarCollapsedByDefault: true,
       backgroundMode: 'custom',
+      uiScale: 'compact',
     })
+  })
+
+  it('matches active interface preset and detects custom UI', () => {
+    const light = applyInterfacePreset(DEFAULT_USER_SETTINGS.ui, 'light')
+    expect(matchInterfacePreset(light)).toBe('light')
+    expect(matchInterfacePreset({ ...light, theme: 'auto' })).toBeNull()
+  })
+
+  it('resolves theme preference and ui scale factors', () => {
+    expect(resolveThemePreference('dark')).toBe('dark')
+    expect(resolveThemePreference('default')).toBe('default')
+    expect(resolveThemePreference('auto', true)).toBe('dark')
+    expect(resolveThemePreference('auto', false)).toBe('default')
+    expect(uiScaleToCssFactor('compact')).toBe(0.92)
+    expect(uiScaleToCssFactor('comfort')).toBe(1)
+    expect(uiScaleToCssFactor('large')).toBe(1.1)
+    expect(snackbarDurationToMs('short')).toBe(1600)
+    expect(snackbarDurationToMs('normal')).toBe(2800)
+    expect(snackbarDurationToMs('long')).toBe(4500)
+  })
+
+  it('normalizes new interface chrome preferences', () => {
+    const normalized = normalizeUserSettings({
+      ui: {
+        panelRatio: '60-40',
+        accentColor: 'rose',
+        backgroundIntensity: 'high',
+        editorLineHeight: 'relaxed',
+        snackbarDuration: 'long',
+        showLineNumbers: false,
+        highContrast: true,
+        strongFocus: true,
+      },
+    })
+    expect(normalized.ui.panelRatio).toBe('60-40')
+    expect(normalized.ui.accentColor).toBe('rose')
+    expect(normalizeUserSettings({ ui: { accentColor: 'emerald' } }).ui.accentColor).toBe('emerald')
+    expect(normalizeUserSettings({ ui: { accentColor: 'cyan' } }).ui.accentColor).toBe('cyan')
+    expect(normalizeUserSettings({ ui: { accentColor: 'sky' } }).ui.accentColor).toBe('sky')
+    expect(normalizeUserSettings({ ui: { accentColor: 'orange' } }).ui.accentColor).toBe('orange')
+    expect(normalizeUserSettings({ ui: { accentColor: 'fuchsia' } }).ui.accentColor).toBe('fuchsia')
+    expect(normalizeUserSettings({ ui: { accentColor: 'ruby' } }).ui.accentColor).toBe('ruby')
+    expect(normalizeUserSettings({ ui: { accentColor: 'sapphire' } }).ui.accentColor).toBe('sapphire')
+    expect(normalizeUserSettings({ ui: { accentColor: 'amethyst' } }).ui.accentColor).toBe('amethyst')
+    expect(normalizeUserSettings({ ui: { accentColor: 'lapis' } }).ui.accentColor).toBe('lapis')
+    expect(normalizeUserSettings({ ui: { accentColor: 'opal' } }).ui.accentColor).toBe('opal')
+    expect(normalizeUserSettings({ ui: { accentColor: 'tanzanite' } }).ui.accentColor).toBe('tanzanite')
+    expect(normalizeUserSettings({ ui: { accentColor: 'tigereye' } }).ui.accentColor).toBe('tigereye')
+    expect(normalizeUserSettings({ ui: { accentColor: 'gold' } }).ui.accentColor).toBe('gold')
+    expect(normalizeUserSettings({ ui: { accentColor: 'copper' } }).ui.accentColor).toBe('copper')
+    expect(normalizeUserSettings({ ui: { accentColor: 'rosegold' } }).ui.accentColor).toBe('rosegold')
+    expect(normalized.ui.backgroundIntensity).toBe('high')
+    expect(normalized.ui.editorLineHeight).toBe('relaxed')
+    expect(normalized.ui.snackbarDuration).toBe('long')
+    expect(normalized.ui.showLineNumbers).toBe(false)
+    expect(normalized.ui.highContrast).toBe(true)
+    expect(normalized.ui.strongFocus).toBe(true)
+    expect(
+      normalizeUserSettings({
+        ui: {
+          panelRatio: 'nope',
+          accentColor: 'nope',
+          backgroundIntensity: 'nope',
+          editorLineHeight: 'nope',
+          snackbarDuration: 'nope',
+          panelDensity: 'nope',
+          sidebarPosition: 'nope',
+        },
+      }).ui
+    ).toMatchObject({
+      panelRatio: '50-50',
+      accentColor: 'blue',
+      backgroundIntensity: 'medium',
+      editorLineHeight: 'normal',
+      snackbarDuration: 'normal',
+      showLineNumbers: true,
+      highContrast: false,
+      strongFocus: false,
+      panelDensity: 'comfortable',
+      sidebarPosition: 'left',
+      syntaxHighlight: false,
+    })
+  })
+
+  it('normalizes panel density, sidebar position and syntax highlight', () => {
+    expect(
+      normalizeUserSettings({
+        ui: { panelDensity: 'spacious', sidebarPosition: 'right', syntaxHighlight: true },
+      }).ui
+    ).toMatchObject({
+      panelDensity: 'spacious',
+      sidebarPosition: 'right',
+      syntaxHighlight: true,
+    })
+  })
+
+  it('resets interface prefs without touching metrics/warnings', () => {
+    const base = normalizeUserSettings({
+      ui: {
+        theme: 'dark',
+        accentColor: 'gold',
+        panelDensity: 'spacious',
+        sidebarPosition: 'right',
+        syntaxHighlight: true,
+        showConversionWarnings: false,
+        warningsDetailLevel: 'compact',
+        metricsBadgeMode: 'total',
+        metricsBadgeResetOnView: false,
+        backgroundMode: 'custom',
+      },
+    }).ui
+    const reset = resetInterfaceUiSettings(base)
+    expect(reset.theme).toBe('default')
+    expect(reset.accentColor).toBe('blue')
+    expect(reset.panelDensity).toBe('comfortable')
+    expect(reset.sidebarPosition).toBe('left')
+    expect(reset.syntaxHighlight).toBe(false)
+    expect(reset.backgroundMode).toBe('custom')
+    expect(reset.showConversionWarnings).toBe(false)
+    expect(reset.warningsDetailLevel).toBe('compact')
+    expect(reset.metricsBadgeMode).toBe('total')
+    expect(reset.metricsBadgeResetOnView).toBe(false)
   })
 
   it('normalizes editor font family', () => {
@@ -64,6 +193,50 @@ describe('userSettings helpers', () => {
     expect(normalizeUserSettings({ ui: { editorFontFamily: 'nope' } }).ui.editorFontFamily).toBe(
       'jetbrains'
     )
+  })
+
+  it('defaults history on and session metrics badge for new installs', () => {
+    expect(DEFAULT_USER_SETTINGS.conversion.saveConversionHistory).toBe(true)
+    expect(DEFAULT_USER_SETTINGS.ui.metricsBadgeMode).toBe('session')
+    expect(DEFAULT_USER_SETTINGS.ui.showConversionWarnings).toBe(true)
+    expect(DEFAULT_USER_SETTINGS.ui.warningsDetailLevel).toBe('detailed')
+  })
+
+  it('preserves explicit false for saveConversionHistory while filling new UI prefs', () => {
+    const normalized = normalizeUserSettings({
+      conversion: { saveConversionHistory: false },
+      ui: { theme: 'dark' },
+    })
+    expect(normalized.conversion.saveConversionHistory).toBe(false)
+    expect(normalized.ui.theme).toBe('dark')
+    expect(normalized.ui.metricsBadgeMode).toBe('session')
+    expect(normalized.ui.showConversionWarnings).toBe(true)
+  })
+
+  it('normalizes metrics badge and warnings detail preferences', () => {
+    const normalized = normalizeUserSettings({
+      ui: {
+        metricsBadgeMode: 'total',
+        metricsBadgeResetOnView: false,
+        warningsDetailLevel: 'compact',
+        showConversionWarnings: false,
+        theme: 'auto',
+        uiScale: 'large',
+      },
+    })
+    expect(normalized.ui.metricsBadgeMode).toBe('total')
+    expect(normalized.ui.metricsBadgeResetOnView).toBe(false)
+    expect(normalized.ui.warningsDetailLevel).toBe('compact')
+    expect(normalized.ui.showConversionWarnings).toBe(false)
+    expect(normalized.ui.theme).toBe('auto')
+    expect(normalized.ui.uiScale).toBe('large')
+    expect(normalizeUserSettings({ ui: { metricsBadgeMode: 'nope' } }).ui.metricsBadgeMode).toBe(
+      'session'
+    )
+    expect(normalizeUserSettings({ ui: { theme: 'nope', uiScale: 'nope' } }).ui).toMatchObject({
+      theme: 'default',
+      uiScale: 'comfort',
+    })
   })
 
   it('exports and imports custom background with settings', () => {

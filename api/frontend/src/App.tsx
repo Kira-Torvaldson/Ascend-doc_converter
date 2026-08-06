@@ -116,7 +116,16 @@ import {
   persistUserSettings,
   buildUserSettingsExport,
   parseImportedUserSettings,
+  resolveThemePreference,
+  uiScaleToCssFactor,
+  snackbarDurationToMs,
 } from "./settings/userSettings";
+import {
+  appendDocumentSignature,
+  applyProfileToMetadata,
+} from "./settings/profileIdentity";
+import { LocaleProvider } from "./i18n/LocaleContext";
+import { translate, type MessageKey } from "./i18n/messages";
 import {
   applyPageBackgroundToDocument,
   fileToPageBackgroundDataUrl,
@@ -132,6 +141,7 @@ const SETTINGS_OPEN_SECTIONS_KEY = 'ascend_settings_open_sections';
 const SETTINGS_ACTIVE_SECTION_KEY = 'ascend_settings_active_section';
 const SETTINGS_SECTION_IDS = [
   'settingsAccount',
+  'settingsConversion',
   'settingsInterface',
   'settingsData',
   'settingsMetrics',
@@ -177,7 +187,7 @@ function complementarySourceFormat(target: FormatType): FormatType {
 }
 
 function normalizeSettingsSectionId(id: string): string | null {
-  if (id === 'settingsProfil' || id === 'settingsConversion') return 'settingsAccount';
+  if (id === 'settingsProfil') return 'settingsAccount';
   if (id === 'settingsGeneral') return null; // section retirée (P0)
   if ((SETTINGS_SECTION_IDS as readonly string[]).includes(id)) return id;
   return null;
@@ -229,25 +239,10 @@ function App() {
     });
   }, []);
 
-  /** Badge header : échecs conversion (poll /api/metrics). */
+  /** Badge header : échecs conversion (poll /api/metrics), selon préférence UI. */
   const [metricsFailureCount, setMetricsFailureCount] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      const snap = await fetchConversionMetrics();
-      if (!cancelled) {
-        setMetricsFailureCount(snap ? Math.max(0, snap.conversion_failures_total) : 0);
-      }
-    };
-    void poll();
-    const id = window.setInterval(() => {
-      void poll();
-    }, 15_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+  const [metricsFailuresTotal, setMetricsFailuresTotal] = useState(0);
+  const metricsBaselineRef = useRef<number | null>(null);
 
   /** Logo custom (api/backend/public/ascend-logo.png) si disponible. */
   useEffect(() => {
@@ -642,36 +637,7 @@ function App() {
 
   /** Onglet mobile Source / Résultat */
   const [mobilePane, setMobilePane] = useState<'source' | 'result'>('source');
-  
-  const selectSettingsSection = useCallback(
-    (section: string) => {
-      const id = normalizeSettingsSectionId(section);
-      if (!id) return;
-      setActiveSettingsSection(id);
-      persistActiveSettingsSection(id);
-    },
-    [persistActiveSettingsSection]
-  );
 
-  const otherOptionsCategories = useMemo(() => {
-    const items: Array<{ value: string; label: string }> = [];
-    if (sourceFormat === 'asciidoc' || sourceFormat === 'markdown') {
-      items.push({ value: 'navigation', label: 'Navigation' });
-    }
-    items.push(
-      { value: 'contentAnalysis', label: 'Analyse du contenu' },
-      { value: 'normalization', label: 'Normalisation' },
-      { value: 'rendering', label: 'Rendu documentaire' },
-      { value: 'formatSpecific', label: 'Options de format' },
-    );
-    return items;
-  }, [sourceFormat]);
-
-  useEffect(() => {
-    if (!otherOptionsCategories.some((c) => c.value === otherOptionsCategory)) {
-      setOtherOptionsCategory(otherOptionsCategories[0]?.value ?? 'contentAnalysis');
-    }
-  }, [otherOptionsCategories, otherOptionsCategory]);
 
   // Single localStorage read at startup for committed + draft
   const [settingsBootstrap] = useState(() => {
@@ -694,29 +660,136 @@ function App() {
       displayName: draftSettings.profile.displayName,
       organization: draftSettings.profile.organization,
       defaultLanguage: draftSettings.profile.defaultLanguage,
+      signature: draftSettings.profile.signature,
     }));
-  }, [draftSettings.profile.displayName, draftSettings.profile.organization, draftSettings.profile.defaultLanguage]);
+  }, [
+    draftSettings.profile.displayName,
+    draftSettings.profile.organization,
+    draftSettings.profile.defaultLanguage,
+    draftSettings.profile.signature,
+  ]);
   useEffect(() => {
     persistUserSettings(userSettings);
   }, [userSettings]);
 
-  const applyThemeToDocument = useCallback((theme: 'default' | 'dark') => {
+  const uiLocale = settingsOpen
+    ? draftSettings.profile.uiLanguage
+    : userSettings.profile.uiLanguage;
+  const t = useCallback(
+    (key: MessageKey, vars?: Record<string, string | number>) => translate(uiLocale, key, vars),
+    [uiLocale]
+  );
+
+  useEffect(() => {
+    const lang = settingsOpen
+      ? draftSettings.profile.uiLanguage
+      : userSettings.profile.uiLanguage;
+    document.documentElement.lang = lang;
+  }, [settingsOpen, draftSettings.profile.uiLanguage, userSettings.profile.uiLanguage]);
+
+  const otherOptionsCategories = useMemo(() => {
+    const items: Array<{ value: string; label: string }> = [];
+    if (sourceFormat === 'asciidoc' || sourceFormat === 'markdown') {
+      items.push({ value: 'navigation', label: t('sidebar.cat.navigation') });
+    }
+    items.push(
+      { value: 'contentAnalysis', label: t('sidebar.cat.contentAnalysis') },
+      { value: 'normalization', label: t('sidebar.cat.normalization') },
+      { value: 'rendering', label: t('sidebar.cat.rendering') },
+      { value: 'formatSpecific', label: t('sidebar.cat.formatSpecific') },
+    );
+    return items;
+  }, [sourceFormat, t]);
+
+  useEffect(() => {
+    if (!otherOptionsCategories.some((c) => c.value === otherOptionsCategory)) {
+      setOtherOptionsCategory(otherOptionsCategories[0]?.value ?? 'contentAnalysis');
+    }
+  }, [otherOptionsCategories, otherOptionsCategory]);
+
+  const acknowledgeMetricsBadge = useCallback(() => {
+    metricsBaselineRef.current = metricsFailuresTotal;
+    setMetricsFailureCount(0);
+  }, [metricsFailuresTotal]);
+
+  const selectSettingsSection = useCallback(
+    (section: string) => {
+      const id = normalizeSettingsSectionId(section);
+      if (!id) return;
+      setActiveSettingsSection(id);
+      persistActiveSettingsSection(id);
+      if (
+        id === 'settingsMetrics' &&
+        userSettings.ui.metricsBadgeMode === 'session' &&
+        userSettings.ui.metricsBadgeResetOnView
+      ) {
+        acknowledgeMetricsBadge();
+      }
+    },
+    [
+      persistActiveSettingsSection,
+      userSettings.ui.metricsBadgeMode,
+      userSettings.ui.metricsBadgeResetOnView,
+      acknowledgeMetricsBadge,
+    ]
+  );
+
+  useEffect(() => {
+    metricsBaselineRef.current = null;
+    let cancelled = false;
+    const poll = async () => {
+      const snap = await fetchConversionMetrics();
+      if (cancelled) return;
+      if (!snap) {
+        setMetricsFailureCount(0);
+        setMetricsFailuresTotal(0);
+        return;
+      }
+      const total = Math.max(0, snap.conversion_failures_total);
+      setMetricsFailuresTotal(total);
+      const mode = userSettings.ui.metricsBadgeMode;
+      if (mode === 'off') {
+        setMetricsFailureCount(0);
+        return;
+      }
+      if (mode === 'total') {
+        setMetricsFailureCount(total);
+        return;
+      }
+      if (metricsBaselineRef.current === null) {
+        metricsBaselineRef.current = total;
+      }
+      setMetricsFailureCount(Math.max(0, total - metricsBaselineRef.current));
+    };
+    void poll();
+    const id = window.setInterval(() => {
+      void poll();
+    }, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [userSettings.ui.metricsBadgeMode]);
+
+  const applyThemeToDocument = useCallback((theme: UserSettings['ui']['theme']) => {
     const root = document.documentElement;
-    if (theme === 'dark') {
+    const resolved = resolveThemePreference(theme);
+    if (resolved === 'dark') {
       root.setAttribute('data-theme', 'dark');
       root.style.colorScheme = 'dark';
       return;
     }
-    // Default theme should not keep dark-only attribute.
     root.removeAttribute('data-theme');
     root.style.colorScheme = 'light';
   }, []);
 
-  const applyUiPreferencesToDocument = useCallback((
-    ui: UserSettings['ui'],
-    customBg: string | null = pageBgImage
-  ) => {
-    applyThemeToDocument(ui.theme);
+  const applyUiScaleToDocument = useCallback((scale: UserSettings['ui']['uiScale']) => {
+    const root = document.documentElement;
+    root.setAttribute('data-ui-scale', scale);
+    root.style.setProperty('--ui-scale', String(uiScaleToCssFactor(scale)));
+  }, []);
+
+  const applyDocumentUiChrome = useCallback((ui: UserSettings['ui']) => {
     const root = document.documentElement;
     root.setAttribute('data-editor-word-wrap', ui.editorWordWrap ? 'true' : 'false');
     root.setAttribute('data-reduce-motion', ui.reduceMotion ? 'true' : 'false');
@@ -724,22 +797,34 @@ function App() {
     root.setAttribute('data-tab-size', String(ui.tabSize));
     root.setAttribute('data-show-tooltips', ui.showTooltips ? 'true' : 'false');
     root.setAttribute('data-editor-font', ui.editorFontFamily || 'jetbrains');
+    root.setAttribute('data-accent', ui.accentColor);
+    root.setAttribute('data-bg-intensity', ui.backgroundIntensity);
+    root.setAttribute('data-editor-line-height', ui.editorLineHeight);
+    root.setAttribute('data-show-line-numbers', ui.showLineNumbers ? 'true' : 'false');
+    root.setAttribute('data-high-contrast', ui.highContrast ? 'true' : 'false');
+    root.setAttribute('data-strong-focus', ui.strongFocus ? 'true' : 'false');
+    root.setAttribute('data-panel-density', ui.panelDensity);
+    root.setAttribute('data-sidebar-position', ui.sidebarPosition);
+    root.setAttribute('data-syntax-highlight', ui.syntaxHighlight ? 'true' : 'false');
     root.style.setProperty('--editor-font-size', `${ui.editorFontSize}px`);
-    applyPageBackgroundToDocument(ui.backgroundMode, customBg);
-  }, [applyThemeToDocument, pageBgImage]);
+  }, []);
 
-  // UI prefs apply from committed settings — fond en aperçu live si Paramètres ouverts
+  const applyUiPreferencesToDocument = useCallback((
+    ui: UserSettings['ui'],
+    customBg: string | null = pageBgImage
+  ) => {
+    applyThemeToDocument(ui.theme);
+    applyUiScaleToDocument(ui.uiScale);
+    applyDocumentUiChrome(ui);
+    applyPageBackgroundToDocument(ui.backgroundMode, customBg);
+  }, [applyThemeToDocument, applyUiScaleToDocument, applyDocumentUiChrome, pageBgImage]);
+
+  // UI prefs apply from committed settings — aperçu live si Paramètres ouverts
   useEffect(() => {
     if (settingsOpen) {
       applyThemeToDocument(draftSettings.ui.theme);
-      const root = document.documentElement;
-      root.setAttribute('data-editor-word-wrap', draftSettings.ui.editorWordWrap ? 'true' : 'false');
-      root.setAttribute('data-reduce-motion', draftSettings.ui.reduceMotion ? 'true' : 'false');
-      root.setAttribute('data-compact-mode', draftSettings.ui.compactMode ? 'true' : 'false');
-      root.setAttribute('data-tab-size', String(draftSettings.ui.tabSize));
-      root.setAttribute('data-show-tooltips', draftSettings.ui.showTooltips ? 'true' : 'false');
-      root.setAttribute('data-editor-font', draftSettings.ui.editorFontFamily || 'jetbrains');
-      root.style.setProperty('--editor-font-size', `${draftSettings.ui.editorFontSize}px`);
+      applyUiScaleToDocument(draftSettings.ui.uiScale);
+      applyDocumentUiChrome(draftSettings.ui);
       applyPageBackgroundToDocument(draftSettings.ui.backgroundMode, draftPageBgImage);
       return;
     }
@@ -751,6 +836,29 @@ function App() {
     draftSettings.ui,
     draftPageBgImage,
     applyUiPreferencesToDocument,
+    applyThemeToDocument,
+    applyUiScaleToDocument,
+    applyDocumentUiChrome,
+  ]);
+
+  // Thème auto : suivre prefers-color-scheme
+  useEffect(() => {
+    const theme = settingsOpen ? draftSettings.ui.theme : userSettings.ui.theme;
+    if (theme !== 'auto') return;
+    if (typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => applyThemeToDocument('auto');
+    applyThemeToDocument('auto');
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    }
+    mq.addListener(onChange);
+    return () => mq.removeListener(onChange);
+  }, [
+    settingsOpen,
+    draftSettings.ui.theme,
+    userSettings.ui.theme,
     applyThemeToDocument,
   ]);
 
@@ -877,7 +985,7 @@ function App() {
     setActiveProfileIds((prev) => {
       if (prev.length > 0) {
         Promise.resolve().then(() =>
-          showSnackbar('Options personnalisées — profils désactivés')
+          showSnackbar(t('snack.profilesOff'))
         );
       }
       return [];
@@ -899,6 +1007,7 @@ function App() {
       displayName: draftSettings.profile.displayName,
       organization: draftSettings.profile.organization,
       defaultLanguage: draftSettings.profile.defaultLanguage,
+      signature: draftSettings.profile.signature,
     });
     if (Object.keys(errors).length > 0) {
       setSettingsErrors(errors);
@@ -920,12 +1029,7 @@ function App() {
     applyUiPreferencesToDocument(committed.ui, draftPageBgImage);
     setConversionOptions((prev) => ({
       ...prev,
-      metadata: {
-        ...prev.metadata,
-        author: committed.profile.displayName || null,
-        organization: committed.profile.organization || null,
-        language: committed.profile.defaultLanguage || null,
-      },
+      metadata: applyProfileToMetadata(prev.metadata, committed.profile, 'overwrite'),
     }));
     if (
       committed.conversion.defaultSourceFormat &&
@@ -957,12 +1061,7 @@ function App() {
       setActiveProfileIds(nextIds);
       setConversionOptions((prev) => ({
         ...rebuildOptionsFromProfiles(nextIds),
-        metadata: {
-          ...prev.metadata,
-          author: committed.profile.displayName || null,
-          organization: committed.profile.organization || null,
-          language: committed.profile.defaultLanguage || null,
-        },
+        metadata: applyProfileToMetadata(prev.metadata, committed.profile, 'overwrite'),
       }));
     }
 
@@ -997,8 +1096,8 @@ function App() {
     setPageBgError(null);
     setSettingsErrors({});
     if (opts?.notify) {
-      setStatus('Paramètres appliqués');
-      showSnackbar('Paramètres appliqués');
+      setStatus(t('status.settingsApplied'));
+      showSnackbar(t('snack.settingsApplied'));
     }
     if (opts?.close) {
       setSettingsMinimized(false);
@@ -1025,6 +1124,26 @@ function App() {
     commitSettings({ close: false, notify: true });
   }, [commitSettings]);
 
+  /** Recopie l’identité du brouillon Compte dans les métadonnées de conversion. */
+  const fillMetadataFromProfile = useCallback(() => {
+    const errors = validateUserPrefs({
+      displayName: draftSettings.profile.displayName,
+      organization: draftSettings.profile.organization,
+      defaultLanguage: draftSettings.profile.defaultLanguage,
+      signature: draftSettings.profile.signature,
+    });
+    if (Object.keys(errors).length > 0) {
+      setSettingsErrors(errors);
+      showSnackbar(t('snack.metadataFixAccount'));
+      return;
+    }
+    setConversionOptions((prev) => ({
+      ...prev,
+      metadata: applyProfileToMetadata(prev.metadata, draftSettings.profile, 'overwrite'),
+    }));
+    showSnackbar(t('snack.metadataFilled'));
+  }, [draftSettings.profile, showSnackbar]);
+
   /** Remet le brouillon aux défauts (rien coché) — valider avec Appliquer. */
   const resetSettingsToDefaults = useCallback(() => {
     setDraftSettings(cloneUserSettings(DEFAULT_USER_SETTINGS));
@@ -1032,7 +1151,7 @@ function App() {
     setPageBgError(null);
     setSettingsErrors({});
     setShowResetSettingsModal(false);
-    setStatus('Brouillon réinitialisé — cliquez Appliquer pour enregistrer');
+    setStatus(t('snack.draftReset'));
   }, []);
 
   const requestResetSettings = useCallback(() => {
@@ -1052,12 +1171,8 @@ function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showSnackbar(
-      bundle.customPageBackground
-        ? 'Préférences exportées (fond inclus)'
-        : 'Préférences exportées'
-    );
-  }, [userSettings, pageBgImage, showSnackbar]);
+    showSnackbar(t('snack.prefsExported'));
+  }, [userSettings, pageBgImage, showSnackbar, t]);
 
   const importUserSettingsFile = useCallback(
     async (file: File) => {
@@ -1066,7 +1181,7 @@ function App() {
         const parsed = JSON.parse(text);
         const imported = parseImportedUserSettings(parsed);
         if (!imported) {
-          showSnackbar('Fichier de préférences invalide');
+          showSnackbar(t('snack.prefsInvalid'));
           return;
         }
         setDraftSettings(imported.settings);
@@ -1075,13 +1190,9 @@ function App() {
         }
         setPageBgError(null);
         setSettingsErrors({});
-        showSnackbar(
-          imported.customPageBackground
-            ? 'Préférences + fond importés — cliquez Appliquer'
-            : 'Préférences importées dans le brouillon — cliquez Appliquer'
-        );
+        showSnackbar(t('snack.prefsImported'));
       } catch {
-        showSnackbar('Import impossible (JSON invalide)');
+        showSnackbar(t('snack.prefsImportFail'));
       }
     },
     [showSnackbar]
@@ -1122,8 +1233,8 @@ function App() {
     setActiveSettingsSection(DEFAULT_SETTINGS_SECTION);
     applyUiPreferencesToDocument(defaults.ui, null);
     setShowClearLocalDataModal(false);
-    setStatus('Données locales effacées');
-    showSnackbar('Données locales effacées');
+    setStatus(t('status.localCleared'));
+    showSnackbar(t('snack.localCleared'));
   }, [applyUiPreferencesToDocument, showSnackbar]);
   
   // ==========================================================================
@@ -1444,7 +1555,7 @@ function App() {
   
   const loadSourceFile = useCallback(async (file: File, options?: { alignFormat?: boolean }) => {
     if (!isAcceptedSourceFile(file)) {
-      setStatus('Formats acceptés : .adoc, .asciidoc, .md, .txt, .html');
+      setStatus(t('snack.formatsAccepted'));
       setNotification({
         message: 'Formats acceptés : .adoc, .asciidoc, .md, .txt, .html',
         type: 'error',
@@ -1482,10 +1593,10 @@ function App() {
       setCurrentFileName(file.name);
       setImportedFiles([file]);
       setSourceModified(true);
-      setStatus(`Fichier chargé : ${file.name}`);
-      showSnackbar(`Fichier chargé : ${file.name}`);
+      setStatus(t('snack.fileLoaded', { name: file.name }));
+      showSnackbar(t('snack.fileLoaded', { name: file.name }));
     } catch {
-      setStatus('Impossible de lire le fichier');
+      setStatus(t('snack.fileReadError'));
       setNotification({
         message: 'Impossible de lire le fichier',
         type: 'error',
@@ -1527,7 +1638,7 @@ function App() {
     });
 
     if (textFiles.length === 0) {
-      setStatus("Aucun fichier texte trouvé dans le dossier");
+      setStatus(t('snack.folderEmpty'));
       return;
     }
 
@@ -1536,7 +1647,7 @@ function App() {
     setSelectedFileIndex(-1);
     setImportedFiles([]);
     setCurrentFileName(null);
-    setStatus(`✅ Folder loaded: ${textFiles.length} file${textFiles.length > 1 ? 's' : ''} found`);
+    setStatus(t('snack.folderLoaded', { count: textFiles.length }));
   };
 
   /**
@@ -1572,10 +1683,10 @@ function App() {
         } else {
           setAdocInput(text);
         }
-        setStatus(`Fichier chargé : ${selectedFile.name}`);
+        setStatus(t('snack.fileLoaded', { name: selectedFile.name }));
       };
       reader.onerror = () => {
-        setStatus(`Erreur lors de la lecture du fichier : ${selectedFile.name}`);
+        setStatus(t('snack.fileReadNamedError', { name: selectedFile.name }));
       };
       reader.readAsText(selectedFile, "utf-8");
     } catch (e: any) {
@@ -1640,15 +1751,15 @@ function App() {
       otherOutput,
     });
     if (!textToCopy || !textToCopy.trim()) {
-      setStatus("Aucun texte à copier");
+      setStatus(t('snack.nothingToCopy'));
       return;
     }
     
     try {
       await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
-      setStatus(`Texte copié (${textToCopy.length} caractères)`);
-      showSnackbar(`Texte copié (${textToCopy.length} caractères)`);
+      setStatus(t('snack.copiedChars', { count: textToCopy.length }));
+      showSnackbar(t('snack.copiedChars', { count: textToCopy.length }));
       setTimeout(() => {
         setCopied(false);
         if (status.includes("copié")) {
@@ -1667,8 +1778,8 @@ function App() {
       try {
         document.execCommand("copy");
         setCopied(true);
-        setStatus(`Texte copié (${textToCopy.length} caractères)`);
-        showSnackbar(`Texte copié (${textToCopy.length} caractères)`);
+        setStatus(t('snack.copiedChars', { count: textToCopy.length }));
+        showSnackbar(t('snack.copiedChars', { count: textToCopy.length }));
         setTimeout(() => {
           setCopied(false);
           if (status.includes("copié")) {
@@ -1676,7 +1787,7 @@ function App() {
           }
         }, 2000);
       } catch (err) {
-        setStatus("Erreur lors de la copie");
+        setStatus(t('snack.copyError'));
       }
       document.body.removeChild(textArea);
     }
@@ -1696,7 +1807,7 @@ function App() {
       otherOutput,
     });
     if (!textToExport || !textToExport.trim()) {
-      setStatus("Aucun contenu à exporter");
+      setStatus(t('snack.nothingToExport'));
       return;
     }
 
@@ -1728,7 +1839,7 @@ function App() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    setStatus(`Fichier exporté: ${fileName}`);
+    setStatus(t('snack.exported', { name: fileName }));
   }, [sourceFormat, targetFormat, adocInput, mdOutput, otherOutput]);
 
   /**
@@ -1825,8 +1936,8 @@ function App() {
     setIsEditingResult(false);
     setSourceModified(false);
     setResultModified(false);
-    setStatus(`Conversion restaurée depuis l'historique`);
-    showSnackbar('Conversion restaurée');
+    setStatus(t('status.historyRestored'));
+    showSnackbar(t('snack.historyRestored'));
   }, [showSnackbar]);
 
   /**
@@ -1844,8 +1955,8 @@ function App() {
     } catch (e) {
       console.error('Error clearing conversion history:', e);
     }
-    setStatus('Historique effacé');
-    showSnackbar('Historique effacé');
+    setStatus(t('status.historyCleared'));
+    showSnackbar(t('snack.historyCleared'));
   }, [showSnackbar]);
 
   /** Removes one history entry by id (HistoryModalV2). */
@@ -1859,8 +1970,8 @@ function App() {
       }
       return next;
     });
-    setStatus('Entrée retirée de l’historique');
-    showSnackbar('Entrée retirée');
+    setStatus(t('status.historyEntryRemoved'));
+    showSnackbar(t('snack.historyEntryRemoved'));
   }, [showSnackbar]);
 
   /**
@@ -1884,7 +1995,7 @@ function App() {
     });
     setIsEditingResult(false);
     setResultModified(false);
-    setStatus("Résultat effacé");
+    setStatus(t('snack.resultCleared'));
     setShowClearResultModal(false);
   };
 
@@ -1900,7 +2011,7 @@ function App() {
     setImportedFiles([]);
     setFolderFiles([]);
     setSelectedFileIndex(-1);
-    setStatus("Contenu AsciiDoc effacé");
+    setStatus(t('snack.contentCleared', { title: 'AsciiDoc' }));
   };
 
   /**
@@ -1942,10 +2053,10 @@ function App() {
     const formatTitle = getFormatTitle(sourceFormat);
     if (sourceFormat === 'asciidoc' || sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
       setAdocInput("");
-      setStatus(`Contenu ${formatTitle} effacé`);
+      setStatus(t('snack.contentCleared', { title: formatTitle }));
     } else if (sourceFormat === 'markdown') {
       setMdOutput("");
-      setStatus(`Contenu ${formatTitle} effacé`);
+      setStatus(t('snack.contentCleared', { title: formatTitle }));
     }
     setCurrentFileName(null);
     setImportedFiles([]);
@@ -1990,7 +2101,7 @@ function App() {
     setIsEditingResult(false);
     setSourceModified(false);
     setResultModified(false);
-    setStatus(`Source ${formatTitle} et résultat effacés`);
+    setStatus(t('snack.sourceAndResultCleared', { title: formatTitle }));
     setShowClearSourceModal(false);
   }, [sourceFormat, targetFormat, getFormatTitle]);
 
@@ -2007,7 +2118,7 @@ function App() {
    */
   const handleSaveAdoc = () => {
     if (!adocInput || !adocInput.trim()) {
-      setStatus("No content to save");
+      setStatus(t('snack.noContentToSave'));
       return;
     }
 
@@ -2028,10 +2139,10 @@ function App() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
-      setStatus(`Fichier sauvegardé : ${fileName}`);
+      setStatus(t('snack.fileSaved', { name: fileName }));
       setTimeout(() => setStatus(""), 3000);
     } catch (error) {
-      setStatus("Erreur lors de la sauvegarde");
+      setStatus(t('snack.saveError'));
     }
   };
 
@@ -2061,7 +2172,7 @@ function App() {
     }
 
     if (!sourceText.trim()) {
-      setStatus("Veuillez entrer du texte à convertir");
+      setStatus(t('convert.emptyInput'));
       setNotification({
         message: "Veuillez entrer du texte à convertir",
         type: 'error',
@@ -2072,7 +2183,7 @@ function App() {
 
     const sourceSizeBytes = new Blob([sourceText]).size;
     if (sourceSizeBytes > maxSourceSizeMb * 1024 * 1024) {
-      setStatus(`Document trop volumineux (max ${maxSourceSizeMb} Mo sur cette machine)`);
+      setStatus(t('snack.tooLarge', { mb: maxSourceSizeMb }));
       setNotification({
         message: `Le document dépasse la capacité de cette machine (${maxSourceSizeMb} Mo). Réduisez le contenu ou divisez le fichier.`,
         type: 'error',
@@ -2082,7 +2193,7 @@ function App() {
     }
 
     if (sourceFormat === targetFormat) {
-      setStatus("Les formats source et destination sont identiques");
+      setStatus(t('convert.sameFormat'));
       setNotification({
         message: "Les formats source et destination sont identiques",
         type: 'error',
@@ -2121,7 +2232,7 @@ function App() {
 
     } catch (error: any) {
       setLoading(false);
-      setStatus(`Erreur: ${error.message}`);
+      setStatus(t('snack.convertError', { message: error.message }));
       setNotification({
         message: `Erreur lors de la demande de confirmation: ${error.message}`,
         type: 'error',
@@ -2166,10 +2277,7 @@ function App() {
       opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
     }
     if (userSettings.conversion.autoApplyUserToMetadata) {
-      const metadata = { ...(opts.metadata || {}) };
-      if (!metadata.author && userSettings.profile.displayName.trim()) metadata.author = userSettings.profile.displayName.trim();
-      if (!metadata.organization && userSettings.profile.organization.trim()) metadata.organization = userSettings.profile.organization.trim();
-      if (!metadata.language) metadata.language = userSettings.profile.defaultLanguage;
+      const metadata = applyProfileToMetadata(opts.metadata, userSettings.profile, 'fillEmpty');
       opts = { ...opts, metadata };
     }
     conversionAbortRef.current?.abort();
@@ -2180,7 +2288,10 @@ function App() {
     setLastAttemptId(attemptId);
     const isActiveAttempt = () => activeAttemptIdRef.current === attemptId;
     const guardedSetStatus = (value: string) => { if (isActiveAttempt()) setStatus(value); };
-    const guardedSetOutput = (value: string) => { if (isActiveAttempt()) setOutputByFormat(value); };
+    const guardedSetOutput = (value: string) => {
+      if (!isActiveAttempt()) return;
+      setOutputByFormat(appendDocumentSignature(value, userSettings.profile));
+    };
     const guardedSetLoading = (value: boolean) => { if (isActiveAttempt()) setLoading(value); };
     const guardedSetNotification = (value: { message: string; type: 'success' | 'error'; visible: boolean } | null) => { if (isActiveAttempt()) setNotification(value); };
     const guardedSetShowConversionErrorModal = (value: boolean) => { if (isActiveAttempt()) setShowConversionErrorModal(value); };
@@ -2203,14 +2314,23 @@ function App() {
       guardedSetLastBackendConversionResult,
       guardedSetConversionUiState,
       conversionTimeoutMs,
-      abortController.signal
+      abortController.signal,
+      {
+        emptyInput: t('convert.emptyInput'),
+        sameFormat: t('convert.sameFormat'),
+        running: t('convert.running'),
+        error: t('convert.error'),
+        success: t('convert.successMark'),
+        successWarnings: (count: number) => t('convert.successWarnings', { count }),
+        timeout: t('convert.timeout'),
+      }
     );
     setTimeout(() => {
       setJustConverted(false);
       setConfirmationToken(null);
       setPendingConversion(null);
     }, 2000);
-  }, [confirmationToken, pendingConversion, conversionOptions, userSettings, adocInput, mdOutput, conversionTimeoutMs]);
+  }, [confirmationToken, pendingConversion, conversionOptions, userSettings, adocInput, mdOutput, conversionTimeoutMs, t]);
 
   // ==========================================================================
   // EFFECT: SAVE TO HISTORY AFTER SUCCESSFUL CONVERSION
@@ -2351,7 +2471,7 @@ function App() {
       return;
     }
     if (isEditingResult) {
-      setStatus("Sauvegardez ou annulez l'édition du résultat avant de convertir");
+      setStatus(t('snack.saveEditFirst'));
       setNotification({
         message: "Sauvegardez ou annulez l'édition du résultat avant de convertir",
         type: 'error',
@@ -2361,7 +2481,7 @@ function App() {
     }
 
     if (!isSupportedUiConversion(sourceFormat, targetFormat)) {
-      setStatus("Ce couple de formats n'est pas disponible pour le moment");
+      setStatus(t('snack.pairUnavailable'));
       setNotification({
         message: SUPPORTED_CONVERSION_HINT,
         type: 'error',
@@ -2395,7 +2515,7 @@ function App() {
       }
 
       if (!sourceText.trim()) {
-        setStatus("Veuillez entrer du texte à convertir");
+        setStatus(t('convert.emptyInput'));
         setNotification({
           message: "Veuillez entrer du texte à convertir",
           type: 'error',
@@ -2406,7 +2526,7 @@ function App() {
 
       const sourceSizeBytes = new Blob([sourceText]).size;
       if (sourceSizeBytes > maxSourceSizeMb * 1024 * 1024) {
-        setStatus(`Document trop volumineux (max ${maxSourceSizeMb} Mo sur cette machine)`);
+        setStatus(t('snack.tooLarge', { mb: maxSourceSizeMb }));
       setNotification({
           message: `Le document dépasse la capacité de cette machine (${maxSourceSizeMb} Mo). Réduisez le contenu ou divisez le fichier.`,
           type: 'error',
@@ -2416,7 +2536,7 @@ function App() {
       }
 
       if (sourceFormat === targetFormat) {
-        setStatus("Les formats source et destination sont identiques");
+        setStatus(t('convert.sameFormat'));
         setNotification({
           message: "Les formats source et destination sont identiques",
           type: 'error',
@@ -2440,10 +2560,7 @@ function App() {
         opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
       }
       if (userSettings.conversion.autoApplyUserToMetadata) {
-        const metadata = { ...(opts.metadata || {}) };
-        if (!metadata.author && userSettings.profile.displayName.trim()) metadata.author = userSettings.profile.displayName.trim();
-        if (!metadata.organization && userSettings.profile.organization.trim()) metadata.organization = userSettings.profile.organization.trim();
-        if (!metadata.language) metadata.language = userSettings.profile.defaultLanguage;
+        const metadata = applyProfileToMetadata(opts.metadata, userSettings.profile, 'fillEmpty');
         opts = { ...opts, metadata };
       }
       conversionAbortRef.current?.abort();
@@ -2454,7 +2571,10 @@ function App() {
       setLastAttemptId(attemptId);
       const isActiveAttempt = () => activeAttemptIdRef.current === attemptId;
       const guardedSetStatus = (value: string) => { if (isActiveAttempt()) setStatus(value); };
-      const guardedSetOutput = (value: string) => { if (isActiveAttempt()) setOutputByFormat(value); };
+      const guardedSetOutput = (value: string) => {
+        if (!isActiveAttempt()) return;
+        setOutputByFormat(appendDocumentSignature(value, userSettings.profile));
+      };
       const guardedSetLoading = (value: boolean) => { if (isActiveAttempt()) setLoading(value); };
       const guardedSetNotification = (value: { message: string; type: 'success' | 'error'; visible: boolean } | null) => { if (isActiveAttempt()) setNotification(value); };
       const guardedSetShowConversionErrorModal = (value: boolean) => { if (isActiveAttempt()) setShowConversionErrorModal(value); };
@@ -2477,7 +2597,16 @@ function App() {
         guardedSetLastBackendConversionResult,
         guardedSetConversionUiState,
         conversionTimeoutMs,
-        abortController.signal
+        abortController.signal,
+        {
+          emptyInput: t('convert.emptyInput'),
+          sameFormat: t('convert.sameFormat'),
+          running: t('convert.running'),
+          error: t('convert.error'),
+          success: t('convert.successMark'),
+          successWarnings: (count: number) => t('convert.successWarnings', { count }),
+          timeout: t('convert.timeout'),
+        }
       );
     }
   }, [loading, requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, isEditingResult, conversionTimeoutMs]);
@@ -2508,11 +2637,11 @@ function App() {
       activeProfileIdsRef.current = nextIds;
       setActiveProfileIds(nextIds);
       syncOptionsFromActiveProfiles(nextIds);
-      showSnackbar(`Profil « ${profile.label} » retiré`);
+      showSnackbar(t('profiles.removed', { name: profile.label }));
       return;
     }
     if (prev.length >= MAX_ACTIVE_PROFILES) {
-      showSnackbar(`Maximum ${MAX_ACTIVE_PROFILES} profils actifs`);
+      showSnackbar(t('profiles.max', { count: MAX_ACTIVE_PROFILES }));
       return;
     }
     const nextIds = [...prev, profileId];
@@ -2521,15 +2650,15 @@ function App() {
     syncOptionsFromActiveProfiles(nextIds);
     showSnackbar(
       nextIds.length === 1
-        ? `Profil « ${profile.label} » appliqué`
-        : `Profils combinés (${nextIds.length}/${MAX_ACTIVE_PROFILES})`
+        ? t('snack.profileApplied', { name: profile.label })
+        : t('profiles.combined', { count: nextIds.length, max: MAX_ACTIVE_PROFILES })
     );
-  }, [showSnackbar, syncOptionsFromActiveProfiles]);
+  }, [showSnackbar, syncOptionsFromActiveProfiles, t]);
 
   const clearConversionProfiles = useCallback(() => {
     setActiveProfileIds([]);
     syncOptionsFromActiveProfiles([]);
-    showSnackbar('Profils retirés');
+    showSnackbar(t('snack.profilesCleared'));
   }, [showSnackbar, syncOptionsFromActiveProfiles]);
 
   const handleExportZip = useCallback(() => {
@@ -2580,7 +2709,7 @@ function App() {
     a.download = `${base}-ascend.zip`;
     a.click();
     URL.revokeObjectURL(url);
-    showSnackbar('Export ZIP téléchargé');
+    showSnackbar(t('snack.zipDownloaded'));
   }, [
     sourceFormat,
     targetFormat,
@@ -2840,7 +2969,7 @@ function App() {
       ? [
           {
             id: 'edit',
-            label: isEditingResult ? "Annuler l'édition" : "Éditer",
+            label: isEditingResult ? t('panel.actions.cancelEdit') : t('panel.actions.edit'),
             onClick: () => {
               if (isEditingResult) setShowCancelModal(true);
               else setShowEditModal(true);
@@ -2850,30 +2979,30 @@ function App() {
           ...(isEditingResult
             ? [{
                 id: 'save',
-                label: 'Sauvegarder',
+                label: t('panel.actions.save'),
                 onClick: () => setShowSaveModal(true),
               }]
             : [
                 {
                   id: 'copy',
-                  label: copied ? 'Copié' : 'Copier',
+                  label: copied ? t('common.copied') : t('common.copy'),
                   onClick: () => { void handleCopy(); },
                 },
                 {
                   id: 'export',
-                  label: 'Télécharger',
+                  label: t('panel.actions.download'),
                   onClick: handleExport,
                   disabled: !resultTextForUi.trim(),
                 },
                 {
                   id: 'zip',
-                  label: 'Export ZIP',
+                  label: t('panel.actions.zip'),
                   onClick: handleExportZip,
                   disabled: !resultTextForUi.trim() && !sourceHasContent,
                 },
                 {
                   id: 'diff',
-                  label: 'Diff source ↔ résultat',
+                  label: t('panel.actions.diff'),
                   onClick: openDiffPanel,
                   disabled: !resultTextForUi.trim() || !sourceHasContent,
                 },
@@ -2904,12 +3033,14 @@ function App() {
         previewAsHtmlDocument={targetFormat === 'html'}
         showPreviewToggle={richPreview}
         textAreaRef={resultTextAreaRef}
+        format={targetFormat}
       />
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceFormat, targetFormat, resultTextForUi, deferredSourceForResultMeta, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear, handleExportZip, resultViewMode, openDiffPanel]);
+  }, [sourceFormat, targetFormat, resultTextForUi, deferredSourceForResultMeta, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear, handleExportZip, resultViewMode, openDiffPanel, t]);
 
   return (
+    <LocaleProvider locale={uiLocale}>
     <div className="page">
       {/* 
         ========================================================================
@@ -2990,16 +3121,19 @@ function App() {
           if (settingsOpen) closeSettingsPanel();
           else {
             if (metricsFailureCount > 0) {
-              setActiveSettingsSection('settingsMetrics');
+              selectSettingsSection('settingsMetrics');
             }
             openSettingsPanel();
           }
         }}
       />
 
-      {!warningsDismissed && conversionWarnings.length > 0 && (
+      {!warningsDismissed &&
+        userSettings.ui.showConversionWarnings &&
+        conversionWarnings.length > 0 && (
         <ConversionWarningsBanner
           warnings={conversionWarnings}
+          detailLevel={userSettings.ui.warningsDetailLevel}
           onDismiss={() => setWarningsDismissed(true)}
         />
       )}
@@ -3048,6 +3182,8 @@ function App() {
           onExportSettings={exportUserSettingsFile}
           onImportSettingsFile={importUserSettingsFile}
           onClearLocalData={() => setShowClearLocalDataModal(true)}
+          onFillMetadataFromProfile={fillMetadataFromProfile}
+          sessionMetadata={conversionOptions.metadata}
           setSettingsMinimized={setSettingsMinimized}
           setSettingsMaximized={setSettingsMaximized}
           handleSettingsDragStart={handleSettingsDragStart}
@@ -3063,7 +3199,7 @@ function App() {
           <div className="settings-overlay" onClick={() => setShowHistoryPanel(false)} />
           <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "600px" }}>
             <div className="settings-panel-header">
-              <h3>Historique des conversions</h3>
+              <h3>{t("history.title")}</h3>
               <button
                 type="button"
                 className="settings-close-btn"
@@ -3105,7 +3241,7 @@ function App() {
                         fontSize: "0.875rem"
                       }}
                     >
-                      Effacer l'historique
+                      {t("history.clear")}
                     </button>
                   </div>
                   {/* 
@@ -3239,7 +3375,12 @@ function App() {
         1. Sidebar (left): conversion options and settings
         2. Main content (right): source and result panels
       */}
-      <div className={`main-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+      <div
+        className={`main-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}
+        data-sidebar-position={
+          settingsOpen ? draftSettings.ui.sidebarPosition : userSettings.ui.sidebarPosition
+        }
+      >
         {/* 
           ====================================================================
           SIDEBAR: OPTIONS AND SETTINGS
@@ -3313,7 +3454,7 @@ function App() {
           - Center column for the swap button
         */}
         <div className="main-content">
-          <div className="mobile-pane-tabs" role="tablist" aria-label="Panneaux">
+          <div className="mobile-pane-tabs" role="tablist" aria-label={t("mobile.panes")}>
             <button
               type="button"
               role="tab"
@@ -3321,7 +3462,7 @@ function App() {
               aria-selected={mobilePane === 'source'}
               onClick={() => setMobilePane('source')}
             >
-              Source
+              {t("common.source")}
             </button>
             <button
               type="button"
@@ -3330,10 +3471,16 @@ function App() {
               aria-selected={mobilePane === 'result'}
               onClick={() => setMobilePane('result')}
             >
-              Résultat
+              {t("common.result")}
             </button>
           </div>
-          <main className="grid" data-mobile-pane={mobilePane}>
+          <main
+            className="grid"
+            data-mobile-pane={mobilePane}
+            data-panel-ratio={
+              settingsOpen ? draftSettings.ui.panelRatio : userSettings.ui.panelRatio
+            }
+          >
             {/* 
               Source panel: shows content according to sourceFormat
               Built dynamically by sourceCard (useMemo)
@@ -3398,30 +3545,30 @@ function App() {
                 setNavigationWindowMinimized(false);
                 setNavigationWindowOpen(true);
               }}
-              data-tooltip="Navigation – Cliquer pour restaurer"
+              data-tooltip={t("taskbar.navigation")}
             >
               <span className="taskbar-icon" aria-hidden>🔍</span>
-              <span className="taskbar-label">Navigation</span>
+              <span className="taskbar-label">{t("taskbar.navigation")}</span>
             </div>
           )}
           {historyWindowMinimized && (
             <div
               className="taskbar-item"
               onClick={() => setHistoryWindowMinimized(false)}
-              data-tooltip="Historique – Cliquer pour restaurer"
+              data-tooltip={t("history.restoreTip")}
             >
               <span className="taskbar-icon" aria-hidden>🕐</span>
-              <span className="taskbar-label">Historique</span>
+              <span className="taskbar-label">{t("taskbar.history")}</span>
             </div>
           )}
           {settingsMinimized && (
             <div
               className="taskbar-item"
               onClick={() => setSettingsMinimized(false)}
-              data-tooltip="Paramètres – Cliquer pour restaurer"
+              data-tooltip={t("taskbar.settings")}
             >
               <span className="taskbar-icon" aria-hidden>⚙</span>
-              <span className="taskbar-label">Paramètres</span>
+              <span className="taskbar-label">{t("taskbar.settings")}</span>
             </div>
           )}
         </div>
@@ -3487,7 +3634,7 @@ function App() {
         onCloseSaveModal={() => setShowSaveModal(false)}
         onConfirmSave={() => {
           setIsEditingResult(false);
-          setStatus('Modifications sauvegardées');
+          setStatus(t('snack.modsSaved'));
           setTimeout(() => setStatus(''), 3000);
         }}
         showCancelModal={showCancelModal}
@@ -3501,7 +3648,7 @@ function App() {
             setMdOutput(originalMdOutput);
           }
           setIsEditingResult(false);
-          setStatus('Édition annulée — modifications non sauvegardées');
+          setStatus(t('snack.editCancelled'));
         }}
         showClearResultModal={showClearResultModal}
         onCloseClearResult={() => setShowClearResultModal(false)}
@@ -3529,8 +3676,13 @@ function App() {
         conversionErrorDetails={conversionErrorDetails}
       />
 
-      <Snackbar message={snackbarMessage} onDismiss={dismissSnackbar} />
+      <Snackbar
+        message={snackbarMessage}
+        onDismiss={dismissSnackbar}
+        durationMs={snackbarDurationToMs(userSettings.ui.snackbarDuration)}
+      />
     </div>
+    </LocaleProvider>
   );
 }
 

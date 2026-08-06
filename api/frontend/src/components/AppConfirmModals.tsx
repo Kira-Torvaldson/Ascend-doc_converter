@@ -4,6 +4,7 @@
 
 import React from 'react';
 import type { FormatType } from '../types';
+import { useT } from '../i18n/LocaleContext';
 import { Modal } from './Modal';
 
 export interface ConversionErrorDetails {
@@ -75,228 +76,235 @@ export interface AppConfirmModalsProps {
   conversionErrorDetails: ConversionErrorDetails;
 }
 
-export const AppConfirmModals: React.FC<AppConfirmModalsProps> = ({
-  showDiscardSettingsModal,
-  onCloseDiscardSettings,
-  onConfirmDiscardSettings,
-  showResetSettingsModal,
-  onCloseResetSettings,
-  onConfirmResetSettings,
-  showConfirmConvertModal,
-  onCloseConfirmConvert,
-  onConfirmConvert,
-  sourceFormat,
-  targetFormat,
-  showClearLocalDataModal,
-  onCloseClearLocalData,
-  onConfirmClearLocalData,
-  showClearHistoryModal,
-  onCloseClearHistory,
-  onConfirmClearHistory,
-  showEditModal,
-  onCloseEditModal,
-  onConfirmEdit,
-  showSaveModal,
-  onCloseSaveModal,
-  onConfirmSave,
-  showCancelModal,
-  onCloseCancelModal,
-  onConfirmCancelEdit,
-  showClearResultModal,
-  onCloseClearResult,
-  onConfirmClearResult,
-  showClearSourceModal,
-  onCloseClearSource,
-  onConfirmClearSourceOnly,
-  onConfirmClearSourceAndResult,
-  showConversionModal,
-  confirmationToken,
-  pendingConversion,
-  onCloseConversionConfirm,
-  onConfirmAndConvert,
-  onCancelConversionConfirm,
-  getFormatTitle,
-  showConversionErrorModal,
-  onCloseConversionError,
-  conversionErrorDetails,
-}) => (
-  <>
-    <Modal
-      isOpen={showDiscardSettingsModal}
-      onClose={onCloseDiscardSettings}
-      title="Modifications non enregistrées"
-      message="Des modifications n’ont pas été appliquées. Quitter sans enregistrer ?"
-      confirmText="Quitter sans enregistrer"
-      cancelText="Continuer l’édition"
-      type="warning"
-      onConfirm={onConfirmDiscardSettings}
-    />
+export const AppConfirmModals: React.FC<AppConfirmModalsProps> = (props) => {
+  const t = useT();
+  const {
+    showDiscardSettingsModal,
+    onCloseDiscardSettings,
+    onConfirmDiscardSettings,
+    showResetSettingsModal,
+    onCloseResetSettings,
+    onConfirmResetSettings,
+    showConfirmConvertModal,
+    onCloseConfirmConvert,
+    onConfirmConvert,
+    sourceFormat,
+    targetFormat,
+    showClearLocalDataModal,
+    onCloseClearLocalData,
+    onConfirmClearLocalData,
+    showClearHistoryModal,
+    onCloseClearHistory,
+    onConfirmClearHistory,
+    showEditModal,
+    onCloseEditModal,
+    onConfirmEdit,
+    showSaveModal,
+    onCloseSaveModal,
+    onConfirmSave,
+    showCancelModal,
+    onCloseCancelModal,
+    onConfirmCancelEdit,
+    showClearResultModal,
+    onCloseClearResult,
+    onConfirmClearResult,
+    showClearSourceModal,
+    onCloseClearSource,
+    onConfirmClearSourceOnly,
+    onConfirmClearSourceAndResult,
+    showConversionModal,
+    confirmationToken,
+    pendingConversion,
+    onCloseConversionConfirm,
+    onConfirmAndConvert,
+    onCancelConversionConfirm,
+    getFormatTitle,
+    showConversionErrorModal,
+    onCloseConversionError,
+    conversionErrorDetails,
+  } = props;
 
-    <Modal
-      isOpen={showResetSettingsModal}
-      onClose={onCloseResetSettings}
-      title="Réinitialiser les paramètres"
-      message="Remettre le brouillon aux valeurs par défaut ? Vous devrez ensuite cliquer Appliquer pour enregistrer."
-      confirmText="Réinitialiser"
-      cancelText="Annuler"
-      type="warning"
-      onConfirm={onConfirmResetSettings}
-    />
+  return (
+    <>
+      <Modal
+        isOpen={showDiscardSettingsModal}
+        onClose={onCloseDiscardSettings}
+        title={t('modal.discard.title')}
+        message={t('modal.discard.message')}
+        confirmText={t('modal.discard.confirm')}
+        cancelText={t('modal.discard.cancel')}
+        type="warning"
+        onConfirm={onConfirmDiscardSettings}
+      />
 
-    <Modal
-      isOpen={showConfirmConvertModal}
-      onClose={onCloseConfirmConvert}
-      title="Confirmer la conversion"
-      message={`Convertir ${sourceFormat} → ${targetFormat} ?`}
-      confirmText="Convertir"
-      cancelText="Annuler"
-      type="info"
-      onConfirm={onConfirmConvert}
-    />
+      <Modal
+        isOpen={showResetSettingsModal}
+        onClose={onCloseResetSettings}
+        title={t('modal.resetSettings.title')}
+        message={t('modal.resetSettings.message')}
+        confirmText={t('modal.resetSettings.confirm')}
+        cancelText={t('common.cancel')}
+        type="warning"
+        onConfirm={onConfirmResetSettings}
+      />
 
-    <Modal
-      isOpen={showClearLocalDataModal}
-      onClose={onCloseClearLocalData}
-      title="Effacer les données locales"
-      message="Historique, brouillon de session, fond personnalisé et préférences Ascend seront effacés sur cet appareil. Continuer ?"
-      confirmText="Tout effacer"
-      cancelText="Annuler"
-      type="danger"
-      autoFocusConfirm
-      onConfirm={onConfirmClearLocalData}
-    />
+      <Modal
+        isOpen={showConfirmConvertModal}
+        onClose={onCloseConfirmConvert}
+        title={t('modal.convert.title')}
+        message={t('modal.convert.message', { from: sourceFormat, to: targetFormat })}
+        confirmText={t('convert.cta')}
+        cancelText={t('common.cancel')}
+        type="info"
+        onConfirm={onConfirmConvert}
+      />
 
-    <Modal
-      isOpen={showClearHistoryModal}
-      onClose={onCloseClearHistory}
-      title="Effacer l’historique"
-      message="Êtes-vous sûr de vouloir effacer tout l’historique ? Cette action est irréversible."
-      confirmText="Effacer tout"
-      cancelText="Annuler"
-      type="danger"
-      autoFocusConfirm
-      onConfirm={onConfirmClearHistory}
-    />
+      <Modal
+        isOpen={showClearLocalDataModal}
+        onClose={onCloseClearLocalData}
+        title={t('modal.clearLocal.title')}
+        message={t('modal.clearLocal.message')}
+        confirmText={t('modal.clearLocal.confirm')}
+        cancelText={t('common.cancel')}
+        type="danger"
+        autoFocusConfirm
+        onConfirm={onConfirmClearLocalData}
+      />
 
-    <Modal
-      isOpen={showEditModal}
-      onClose={onCloseEditModal}
-      title="Activer l’édition"
-      message="Voulez-vous activer le mode édition pour modifier le contenu ?"
-      confirmText="Activer"
-      cancelText="Annuler"
-      type="info"
-      onConfirm={onConfirmEdit}
-    />
+      <Modal
+        isOpen={showClearHistoryModal}
+        onClose={onCloseClearHistory}
+        title={t('modal.clearHistory.title')}
+        message={t('modal.clearHistory.message')}
+        confirmText={t('modal.clearHistory.confirm')}
+        cancelText={t('common.cancel')}
+        type="danger"
+        autoFocusConfirm
+        onConfirm={onConfirmClearHistory}
+      />
 
-    <Modal
-      isOpen={showSaveModal}
-      onClose={onCloseSaveModal}
-      title="Sauvegarder les modifications"
-      message="Enregistrer les modifications et quitter le mode édition ?"
-      confirmText="Sauvegarder"
-      cancelText="Continuer l’édition"
-      type="info"
-      onConfirm={onConfirmSave}
-    />
+      <Modal
+        isOpen={showEditModal}
+        onClose={onCloseEditModal}
+        title={t('modal.edit.title')}
+        message={t('modal.edit.message')}
+        confirmText={t('modal.edit.confirm')}
+        cancelText={t('common.cancel')}
+        type="info"
+        onConfirm={onConfirmEdit}
+      />
 
-    <Modal
-      isOpen={showCancelModal}
-      onClose={onCloseCancelModal}
-      title="Annuler l’édition"
-      message="Les modifications non sauvegardées seront perdues."
-      confirmText="Abandonner"
-      cancelText="Continuer l’édition"
-      type="warning"
-      onConfirm={onConfirmCancelEdit}
-    />
+      <Modal
+        isOpen={showSaveModal}
+        onClose={onCloseSaveModal}
+        title={t('modal.saveEdits.title')}
+        message={t('modal.saveEdits.message')}
+        confirmText={t('modal.saveEdits.confirm')}
+        cancelText={t('modal.continueEdit')}
+        type="info"
+        onConfirm={onConfirmSave}
+      />
 
-    <Modal
-      isOpen={showClearResultModal}
-      onClose={onCloseClearResult}
-      title="Effacer le résultat"
-      message="Voulez-vous effacer le résultat ? Cette action est irréversible."
-      confirmText="Effacer"
-      cancelText="Annuler"
-      type="danger"
-      autoFocusConfirm
-      onConfirm={onConfirmClearResult}
-    />
+      <Modal
+        isOpen={showCancelModal}
+        onClose={onCloseCancelModal}
+        title={t('modal.cancelEdit.title')}
+        message={t('modal.cancelEdit.message')}
+        confirmText={t('modal.cancelEdit.confirm')}
+        cancelText={t('modal.continueEdit')}
+        type="warning"
+        onConfirm={onConfirmCancelEdit}
+      />
 
-    <Modal
-      isOpen={showClearSourceModal}
-      onClose={onCloseClearSource}
-      title="Effacer la source"
-      message="Que souhaitez-vous effacer ?"
-      type="danger"
-      stackActions
-      footer={
-        <>
-          <button type="button" className="modal-button confirm info" onClick={onConfirmClearSourceOnly}>
-            Source uniquement
-          </button>
-          <button type="button" className="modal-button confirm warning" onClick={onConfirmClearSourceAndResult}>
-            Source et résultat
-          </button>
-          <button type="button" className="modal-button cancel" onClick={onCloseClearSource}>
-            Annuler
-          </button>
-        </>
-      }
-    />
+      <Modal
+        isOpen={showClearResultModal}
+        onClose={onCloseClearResult}
+        title={t('modal.clearResult.title')}
+        message={t('modal.clearResult.message')}
+        confirmText={t('common.clear')}
+        cancelText={t('common.cancel')}
+        type="danger"
+        autoFocusConfirm
+        onConfirm={onConfirmClearResult}
+      />
 
-    <Modal
-      isOpen={Boolean(showConversionModal && confirmationToken && pendingConversion)}
-      onClose={onCloseConversionConfirm}
-      title="Confirmer la conversion"
-      message={
-        pendingConversion ? (
+      <Modal
+        isOpen={showClearSourceModal}
+        onClose={onCloseClearSource}
+        title={t('modal.clearSource.title')}
+        message={t('modal.clearSource.message')}
+        type="danger"
+        stackActions
+        footer={
           <>
-            <p>
-              Convertir de <strong>{getFormatTitle(pendingConversion.fromFormat)}</strong> vers{' '}
-              <strong>{getFormatTitle(pendingConversion.toFormat)}</strong> ?
-            </p>
-            <p className="modal-body-note">Cette action nécessite une confirmation explicite.</p>
+            <button type="button" className="modal-button confirm info" onClick={onConfirmClearSourceOnly}>
+              {t('modal.sourceOnly')}
+            </button>
+            <button type="button" className="modal-button confirm warning" onClick={onConfirmClearSourceAndResult}>
+              {t('modal.sourceAndResult')}
+            </button>
+            <button type="button" className="modal-button cancel" onClick={onCloseClearSource}>
+              {t('common.cancel')}
+            </button>
           </>
-        ) : null
-      }
-      confirmText="Convertir"
-      cancelText="Annuler"
-      type="warning"
-      onConfirm={onConfirmAndConvert}
-      onCancel={onCancelConversionConfirm}
-    />
+        }
+      />
 
-    <Modal
-      isOpen={showConversionErrorModal}
-      onClose={onCloseConversionError}
-      title="Erreur de conversion"
-      type="danger"
-      showCancel={false}
-      confirmText="Compris"
-      autoFocusConfirm
-      contentClassName="conversion-error-modal"
-      onConfirm={onCloseConversionError}
-      message={
-        <>
-          {conversionErrorDetails.code && (
-            <p className="conversion-error-code">
-              Code : <code>{conversionErrorDetails.code}</code>
-            </p>
-          )}
-          <p className="conversion-error-message">{conversionErrorDetails.message}</p>
-          {conversionErrorDetails.hint && (
-            <div className="conversion-error-hint-box">
-              <p className="conversion-error-hint">{conversionErrorDetails.hint}</p>
-            </div>
-          )}
-          {conversionErrorDetails.requestId && (
-            <p className="conversion-error-request-id">
-              Identifiant : <code>{conversionErrorDetails.requestId}</code>
-            </p>
-          )}
-        </>
-      }
-    />
-  </>
-);
+      <Modal
+        isOpen={Boolean(showConversionModal && confirmationToken && pendingConversion)}
+        onClose={onCloseConversionConfirm}
+        title={t('modal.convert.title')}
+        message={
+          pendingConversion ? (
+            <>
+              <p>
+                {t('modal.convert.fromTo', {
+                  from: getFormatTitle(pendingConversion.fromFormat),
+                  to: getFormatTitle(pendingConversion.toFormat),
+                })}
+              </p>
+              <p className="modal-body-note">{t('modal.convert.explicitNote')}</p>
+            </>
+          ) : null
+        }
+        confirmText={t('convert.cta')}
+        cancelText={t('common.cancel')}
+        type="warning"
+        onConfirm={onConfirmAndConvert}
+        onCancel={onCancelConversionConfirm}
+      />
+
+      <Modal
+        isOpen={showConversionErrorModal}
+        onClose={onCloseConversionError}
+        title={t('modal.error.title')}
+        type="danger"
+        showCancel={false}
+        confirmText={t('modal.error.understood')}
+        autoFocusConfirm
+        contentClassName="conversion-error-modal"
+        onConfirm={onCloseConversionError}
+        message={
+          <>
+            {conversionErrorDetails.code && (
+              <p className="conversion-error-code">
+                {t('modal.error.code')} : <code>{conversionErrorDetails.code}</code>
+              </p>
+            )}
+            <p className="conversion-error-message">{conversionErrorDetails.message}</p>
+            {conversionErrorDetails.hint && (
+              <div className="conversion-error-hint-box">
+                <p className="conversion-error-hint">{conversionErrorDetails.hint}</p>
+              </div>
+            )}
+            {conversionErrorDetails.requestId && (
+              <p className="conversion-error-request-id">
+                {t('modal.error.id')} : <code>{conversionErrorDetails.requestId}</code>
+              </p>
+            )}
+          </>
+        }
+      />
+    </>
+  );
+};

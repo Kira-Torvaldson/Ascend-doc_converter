@@ -3,16 +3,17 @@
  */
 
 import React, { useEffect, useId, useRef } from 'react';
+import { useT } from '../i18n/LocaleContext';
 
-const SHORTCUTS = [
-  { label: 'Convertir', keys: 'Ctrl + Entrée' },
-  { label: 'Télécharger', keys: 'Ctrl + S' },
-  { label: 'Rechercher', keys: 'Ctrl + F' },
-  { label: 'Diff source ↔ résultat', keys: 'Ctrl + Maj + D' },
-  { label: 'Historique', keys: 'Ctrl + H' },
-  { label: 'Paramètres', keys: 'Ctrl + ,' },
-  { label: 'Effacer source', keys: 'Ctrl + K' },
-  { label: 'Aide', keys: 'Ctrl + /' },
+const SHORTCUT_KEYS = [
+  { key: 'shortcuts.convert' as const, keys: 'Ctrl + Entrée' },
+  { key: 'shortcuts.download' as const, keys: 'Ctrl + S' },
+  { key: 'shortcuts.find' as const, keys: 'Ctrl + F' },
+  { key: 'shortcuts.diff' as const, keys: 'Ctrl + Maj + D' },
+  { key: 'shortcuts.history' as const, keys: 'Ctrl + H' },
+  { key: 'shortcuts.settings' as const, keys: 'Ctrl + ,' },
+  { key: 'shortcuts.clearSource' as const, keys: 'Ctrl + K' },
+  { key: 'shortcuts.help' as const, keys: 'Ctrl + /' },
 ] as const;
 
 interface ShortcutsHelpPopoverProps {
@@ -26,6 +27,7 @@ export const ShortcutsHelpPopover: React.FC<ShortcutsHelpPopoverProps> = ({
   onToggle,
   onClose,
 }) => {
+  const t = useT();
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -51,10 +53,10 @@ export const ShortcutsHelpPopover: React.FC<ShortcutsHelpPopoverProps> = ({
         type="button"
         className={`settings-button header-icon-btn shortcuts-help-chip${open ? ' is-open' : ''}`}
         onClick={onToggle}
-        aria-label="Raccourcis clavier"
+        aria-label={t('shortcuts.title')}
         aria-expanded={open}
         aria-controls={panelId}
-        data-tooltip="Raccourcis"
+        data-tooltip={t('shortcuts.short')}
       >
         <span className="shortcuts-help-chip-glyph" aria-hidden="true">
           ?
@@ -65,21 +67,21 @@ export const ShortcutsHelpPopover: React.FC<ShortcutsHelpPopoverProps> = ({
           id={panelId}
           className="shortcuts-help-popover"
           role="dialog"
-          aria-label="Raccourcis clavier"
+          aria-label={t('shortcuts.title')}
         >
           <div className="shortcuts-help-popover-head">
-            <span>Raccourcis</span>
+            <span>{t('shortcuts.short')}</span>
             <kbd className="shortcuts-help-kbd">Ctrl + /</kbd>
           </div>
           <ul className="shortcuts-help-popover-list">
-            {SHORTCUTS.map((item) => (
+            {SHORTCUT_KEYS.map((item) => (
               <li key={item.keys}>
-                <span>{item.label}</span>
+                <span>{t(item.key)}</span>
                 <kbd className="shortcuts-help-kbd">{item.keys}</kbd>
               </li>
             ))}
           </ul>
-          <p className="shortcuts-help-popover-note">macOS : ⌘ à la place de Ctrl</p>
+          <p className="shortcuts-help-popover-note">{t('shortcuts.macNote')}</p>
         </div>
       )}
     </div>

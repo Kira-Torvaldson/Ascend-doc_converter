@@ -3,6 +3,7 @@
  */
 
 import React, { useEffect, useId, useRef, useState } from 'react';
+import { useT } from '../i18n/LocaleContext';
 
 export interface PanelActionItem {
   id: string;
@@ -19,8 +20,10 @@ interface PanelActionsMenuProps {
 
 export const PanelActionsMenu: React.FC<PanelActionsMenuProps> = ({
   items,
-  label = 'Actions',
+  label,
 }) => {
+  const t = useT();
+  const resolvedLabel = label ?? t('panel.actions.menu');
   const id = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -51,11 +54,11 @@ export const PanelActionsMenu: React.FC<PanelActionsMenuProps> = ({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={`${id}-menu`}
-        data-tooltip={label}
+        data-tooltip={resolvedLabel}
         onClick={() => setOpen((v) => !v)}
       >
         <span aria-hidden="true">⋯</span>
-        <span className="sr-only">{label}</span>
+        <span className="sr-only">{resolvedLabel}</span>
       </button>
       {open && (
         <div className="panel-actions-dropdown" id={`${id}-menu`} role="menu">

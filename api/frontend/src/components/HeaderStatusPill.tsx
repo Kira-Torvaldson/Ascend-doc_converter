@@ -3,6 +3,7 @@
  */
 
 import React from 'react';
+import { useT } from '../i18n/LocaleContext';
 
 export type ConversionUiState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -11,19 +12,20 @@ export interface HeaderStatusPillProps {
   status?: string;
 }
 
-const DEFAULT_LABELS: Record<Exclude<ConversionUiState, 'idle'>, string> = {
-  loading: 'Conversion en cours…',
-  success: 'Conversion réussie',
-  error: 'Échec de conversion',
-};
-
 export const HeaderStatusPill: React.FC<HeaderStatusPillProps> = ({ state, status }) => {
+  const t = useT();
   if (state === 'idle') return null;
+
+  const defaultLabels = {
+    loading: t('convert.running'),
+    success: t('convert.success'),
+    error: t('convert.failed'),
+  } as const;
 
   const label =
     state === 'loading' && status?.trim()
       ? status
-      : DEFAULT_LABELS[state];
+      : defaultLabels[state];
 
   return (
     <div

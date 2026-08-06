@@ -3,6 +3,7 @@
  */
 
 import React from 'react';
+import { useT } from '../i18n/LocaleContext';
 
 export interface ConversionLoadingBannerProps {
   status?: string;
@@ -12,27 +13,30 @@ export interface ConversionLoadingBannerProps {
 export const ConversionLoadingBanner: React.FC<ConversionLoadingBannerProps> = ({
   status,
   compact = false,
-}) => (
-  <div
-    className={`conversion-loading-banner${compact ? ' conversion-loading-banner--compact' : ''}`}
-    role="status"
-    aria-live="polite"
-    aria-busy="true"
-  >
-    <div className="conversion-loading-banner-row">
-      <div className="conversion-loading-banner-main">
-        <div
-          className={`conversion-loading-spinner${compact ? ' conversion-loading-spinner--sm' : ''}`}
-          aria-hidden="true"
-        />
-        <span className="conversion-loading-label">Conversion en cours…</span>
+}) => {
+  const t = useT();
+  return (
+    <div
+      className={`conversion-loading-banner${compact ? ' conversion-loading-banner--compact' : ''}`}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="conversion-loading-banner-row">
+        <div className="conversion-loading-banner-main">
+          <div
+            className={`conversion-loading-spinner${compact ? ' conversion-loading-spinner--sm' : ''}`}
+            aria-hidden="true"
+          />
+          <span className="conversion-loading-label">{t('convert.running')}</span>
+        </div>
+        {!compact && (
+          <span className="conversion-loading-status">{status || t('convert.processing')}</span>
+        )}
       </div>
-      {!compact && (
-        <span className="conversion-loading-status">{status || 'Traitement…'}</span>
-      )}
+      <div className="conversion-loading-track">
+        <div className="conversion-loading-bar progress-bar" />
+      </div>
     </div>
-    <div className="conversion-loading-track">
-      <div className="conversion-loading-bar progress-bar" />
-    </div>
-  </div>
-);
+  );
+};

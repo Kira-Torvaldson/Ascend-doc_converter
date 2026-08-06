@@ -3,6 +3,7 @@
  */
 
 import React, { memo } from 'react';
+import { useT } from '../i18n/LocaleContext';
 import { ConversionLoadingBanner } from './ConversionLoadingBanner';
 import { EmptyEditorState } from './EmptyEditorState';
 import { PanelActionsMenu, type PanelActionItem } from './PanelActionsMenu';
@@ -29,6 +30,8 @@ interface ResultPanelProps {
   /** Hide Texte/Aperçu for formats without useful rich preview (e.g. txt). */
   showPreviewToggle?: boolean;
   textAreaRef?: React.RefObject<HTMLTextAreaElement | null> | null;
+  /** Format du résultat (pour coloration syntaxique). */
+  format?: string | null;
 }
 
 export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel({
@@ -49,10 +52,13 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
   previewAsHtmlDocument = false,
   showPreviewToggle = true,
   textAreaRef = null,
+  format = null,
 }) {
+  const t = useT();
   const isLocked = !!value && !isEditingResult;
   const isEditing = !!value && isEditingResult;
   const showPreview = showPreviewToggle && viewMode === 'preview' && !isEditingResult;
+  const previewEmptyHtml = `<p><em>${t('panel.previewEmpty')}</em></p>`;
 
   return (
     <section
@@ -64,9 +70,9 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
           {resultModified && (
             <span
               className="panel-modified-badge"
-              data-tooltip="Résultat modifié depuis la dernière conversion"
+              data-tooltip={t('panel.modified.resultTooltip')}
             >
-              modifié
+              {t('panel.modified')}
             </span>
           )}
         </h2>
@@ -74,20 +80,20 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
           {value ? (
             <>
               {showPreviewToggle && onViewModeChange && !isEditingResult && (
-                <div className="result-view-toggle" role="group" aria-label="Mode d'affichage">
+                <div className="result-view-toggle" role="group" aria-label={t('panel.viewMode')}>
                   <button
                     type="button"
                     className={`result-view-btn${viewMode === 'text' ? ' is-active' : ''}`}
                     onClick={() => onViewModeChange('text')}
                   >
-                    Texte
+                    {t('panel.text')}
                   </button>
                   <button
                     type="button"
                     className={`result-view-btn${viewMode === 'preview' ? ' is-active' : ''}`}
                     onClick={() => onViewModeChange('preview')}
                   >
-                    Aperçu
+                    {t('panel.preview')}
                   </button>
                 </div>
               )}
@@ -96,9 +102,9 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
                   className="result-zone-state result-zone-locked"
                   role="status"
                   aria-live="polite"
-                  data-tooltip="Lecture seule — activez l'édition pour modifier"
+                  data-tooltip={t('panel.locked.tooltip')}
                 >
-                  Verrouillé
+                  {t('panel.locked')}
                 </span>
               )}
               {isEditing && (
@@ -106,9 +112,9 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
                   className="result-zone-state result-zone-editing"
                   role="status"
                   aria-live="polite"
-                  data-tooltip="Mode édition actif"
+                  data-tooltip={t('panel.editing.tooltip')}
                 >
-                  Édition
+                  {t('panel.editing')}
                 </span>
               )}
               <PanelActionsMenu items={actions} />
@@ -117,8 +123,8 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
                   type="button"
                   onClick={onClear}
                   className="panel-header-btn panel-header-btn--danger"
-                  data-tooltip="Effacer le résultat"
-                  aria-label="Effacer le résultat"
+                  data-tooltip={t('panel.clearResult')}
+                  aria-label={t('panel.clearResult')}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path
@@ -145,11 +151,11 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
         {!value.trim() && !loading && (
           <EmptyEditorState
             variant="result"
-            title={`Résultat ${title}`}
+            title={t('panel.result.emptyTitle', { title })}
             description={
               !sourceHasContent
-                ? 'Ajoutez du contenu à gauche, puis cliquez sur Convertir.'
-                : 'Prêt — cliquez sur Convertir pour générer le résultat.'
+                ? t('panel.result.emptyNoSource')
+                : t('panel.result.emptyReady')
             }
           />
         )}
@@ -157,14 +163,14 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
           previewAsHtmlDocument ? (
             <iframe
               className="result-preview result-preview-frame"
-              title="Aperçu HTML"
+              title={t('panel.previewHtml')}
               sandbox=""
-              srcDoc={previewHtml || '<p><em>Aperçu vide</em></p>'}
+              srcDoc={previewHtml || previewEmptyHtml}
             />
           ) : (
             <div
               className="result-preview"
-              dangerouslySetInnerHTML={{ __html: previewHtml || '<p><em>Aperçu vide</em></p>' }}
+              dangerouslySetInnerHTML={{ __html: previewHtml || previewEmptyHtml }}
             />
           )
         ) : (
@@ -179,15 +185,16 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
             readOnly={!isEditingResult}
             placeholder={
               loading
-                ? 'Conversion en cours...'
+                ? t('panel.result.placeholderLoading')
                 : !value.trim()
                   ? ''
-                  : `Résultat ${title}...`
+                  : t('panel.result.placeholder', { title })
             }
             style={{
               opacity: loading ? 0.6 : 1,
               transition: 'opacity 0.2s',
             }}
+            highlightFormat={format}
           />
         )}
       </div>

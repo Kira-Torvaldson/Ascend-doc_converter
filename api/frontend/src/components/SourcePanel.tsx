@@ -4,6 +4,7 @@
 
 import React, { memo, useCallback, useRef, useState } from 'react';
 import type { FormatType } from '../types';
+import { useT } from '../i18n/LocaleContext';
 import { ConversionLoadingBanner } from './ConversionLoadingBanner';
 import { EmptyEditorState } from './EmptyEditorState';
 import { TextStats } from './TextStats';
@@ -53,6 +54,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
   onMarkModified,
   onDropFile,
 }) {
+  const t = useT();
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const dragDepthRef = useRef(0);
   const panelRef = useRef<HTMLElement | null>(null);
@@ -130,9 +132,9 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
           {sourceModified && (
             <span
               className="panel-modified-badge"
-              data-tooltip="Document modifié depuis la dernière conversion"
+              data-tooltip={t('panel.modified.sourceTooltip')}
             >
-              modifié
+              {t('panel.modified')}
             </span>
           )}
         </h2>
@@ -156,8 +158,8 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
               onClick={onClear}
               disabled={!value.trim()}
               className="panel-header-btn panel-header-btn--danger"
-              data-tooltip={`Effacer le contenu ${title}`}
-              aria-label={`Effacer le contenu ${title}`}
+              data-tooltip={t('panel.clearSource', { title })}
+              aria-label={t('panel.clearSource', { title })}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path
@@ -175,17 +177,15 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
             onClick={onConvert}
             disabled={loading || !value.trim() || !canConvert}
             className={`panel-header-btn panel-header-btn--convert panel-header-btn--convert-primary${loading ? ' is-loading' : ''}`}
-            aria-label="Convertir le document"
+            aria-label={t('convert.cta.aria')}
             data-tooltip={
-              !canConvert
-                ? 'Les formats source et destination doivent être différents'
-                : 'Convertir le document'
+              !canConvert ? t('convert.cta.sameFormat') : t('convert.cta.tooltip')
             }
           >
             {loading ? (
               <span className="panel-header-btn-convert-label">
                 <span className="panel-header-btn-convert-spinner" aria-hidden="true" />
-                Conversion…
+                {t('convert.cta.running')}
               </span>
             ) : (
               <>
@@ -198,7 +198,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
                     strokeLinejoin="round"
                   />
                 </svg>
-                Convertir
+                {t('convert.cta')}
               </>
             )}
           </button>
@@ -213,14 +213,14 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
         <div className="file-selector">
           <label className="file-selector-label">
             <span>📂</span>
-            <span>Sélectionner un fichier à convertir</span>
+            <span>{t('panel.selectFile')}</span>
           </label>
           <select
             className="file-selector-select"
             value={selectedFileIndex}
             onChange={(e) => onFileSelect(parseInt(e.target.value, 10))}
           >
-            <option value={-1}>-- Choisir un fichier --</option>
+            <option value={-1}>{t('panel.chooseFile')}</option>
             {folderFiles.map((file, index) => (
               <option key={`${file.name}-${index}`} value={index}>
                 {file.name} ({(file.size / 1024).toFixed(1)} KB)
@@ -229,30 +229,27 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
           </select>
           <div className="file-selector-info">
             <span>📁</span>
-            <span>
-              {folderFiles.length} fichier{folderFiles.length > 1 ? 's' : ''} disponible
-              {folderFiles.length > 1 ? 's' : ''}
-            </span>
+            <span>{t('options.filesAvailable', { count: folderFiles.length })}</span>
           </div>
         </div>
       )}
       <div className={`editor-shell${isEmpty ? ' is-empty' : ''}`}>
         {isDraggingFile && (
           <div className="source-drop-overlay" aria-hidden="true">
-            <span className="source-drop-overlay-title">Déposer le fichier</span>
+            <span className="source-drop-overlay-title">{t('panel.dropFile')}</span>
             <span className="source-drop-overlay-hint">.adoc · .md · .txt · .html</span>
           </div>
         )}
         {isEmpty && !isDraggingFile && (
           <EmptyEditorState
             variant="source"
-            title={`Collez votre ${title} ici`}
+            title={t('panel.source.emptyTitle', { title })}
             description={
               canInsertSample
-                ? 'Glissez un fichier, chargez-en un, ou essayez un exemple.'
-                : 'Glissez un fichier, chargez-en un ou collez votre contenu.'
+                ? t('panel.source.emptyDesc')
+                : t('panel.source.emptyDescNoSample')
             }
-            actionLabel={canInsertSample ? 'Insérer un exemple' : undefined}
+            actionLabel={canInsertSample ? t('panel.source.insertSample') : undefined}
             onAction={
               canInsertSample
                 ? () => {
@@ -270,6 +267,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
           value={value}
           onChange={handleChange}
           placeholder={isEmpty ? '' : placeholder}
+          highlightFormat={format}
         />
       </div>
     </section>

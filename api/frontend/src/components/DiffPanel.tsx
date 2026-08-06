@@ -3,6 +3,7 @@
  */
 
 import React, { useEffect, useMemo } from 'react';
+import { useT } from '../i18n/LocaleContext';
 import { DIFF_RENDER_LIMIT, diffLines } from '../utils/simpleDiff';
 
 interface DiffPanelProps {
@@ -19,9 +20,12 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
   onClose,
   left,
   right,
-  leftLabel = 'Source',
-  rightLabel = 'Résultat',
+  leftLabel,
+  rightLabel,
 }) => {
+  const t = useT();
+  const resolvedLeft = leftLabel ?? t('diff.source');
+  const resolvedRight = rightLabel ?? t('diff.result');
   const result = useMemo(
     () => (open ? diffLines(left, right) : null),
     [open, left, right]
@@ -51,7 +55,7 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
       <div className="settings-panel diff-panel" role="dialog" aria-modal="true" aria-labelledby="diff-title">
         <div className="settings-panel-header">
           <h3 id="diff-title">
-            Diff {leftLabel} ↔ {rightLabel}
+            Diff {resolvedLeft} ↔ {resolvedRight}
           </h3>
           <button type="button" className="settings-close-btn" onClick={onClose} aria-label="Fermer">
             ×

@@ -3,6 +3,7 @@
  */
 
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from '../i18n/LocaleContext';
 
 export type FindReplaceTarget = 'source' | 'result';
 
@@ -73,6 +74,7 @@ export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
   onTargetChange,
   targetRef,
 }) => {
+  const t = useT();
   const [query, setQuery] = useState('');
   const [replacement, setReplacement] = useState('');
   const [index, setIndex] = useState(0);
@@ -170,20 +172,20 @@ export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
 
   return (
     <div className="find-replace-bar" role="search" ref={barRef}>
-      <div className="find-replace-target" role="group" aria-label="Cible">
+      <div className="find-replace-target" role="group" aria-label={t('find.target')}>
         <button
           type="button"
           className={`find-replace-target-btn${target === 'source' ? ' is-active' : ''}`}
           onClick={() => onTargetChange('source')}
         >
-          Source
+          {t('find.source')}
         </button>
         <button
           type="button"
           className={`find-replace-target-btn${target === 'result' ? ' is-active' : ''}`}
           onClick={() => onTargetChange('result')}
         >
-          Résultat
+          {t('find.result')}
         </button>
       </div>
       <input
@@ -191,8 +193,8 @@ export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
         className="find-replace-input"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Rechercher…"
-        aria-label="Rechercher"
+        placeholder={t('find.search')}
+        aria-label={t('find.search.aria')}
         onKeyDown={(e) => {
           if (e.key === 'Escape') onClose();
           if (e.key === 'Enter') {
@@ -206,8 +208,8 @@ export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
           className="find-replace-input"
           value={replacement}
           onChange={(e) => setReplacement(e.target.value)}
-          placeholder="Remplacer par…"
-          aria-label="Remplacer par"
+          placeholder={t('find.replacePlaceholder')}
+          aria-label={t('find.replaceAria')}
           onKeyDown={(e) => {
             if (e.key === 'Escape') onClose();
             if (e.key === 'Enter') {
@@ -229,14 +231,14 @@ export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
       {!readOnly && (
         <>
           <button type="button" className="find-replace-btn" onClick={replaceOne} disabled={!matches.length}>
-            Remplacer
+            {t('find.replace')}
           </button>
           <button type="button" className="find-replace-btn" onClick={replaceAll} disabled={!query}>
-            Tout
+            {t('find.replaceAll')}
           </button>
         </>
       )}
-      <button type="button" className="find-replace-btn find-replace-btn--close" onClick={onClose} aria-label="Fermer">
+      <button type="button" className="find-replace-btn find-replace-btn--close" onClick={onClose} aria-label={t('common.close')}>
         ×
       </button>
     </div>
