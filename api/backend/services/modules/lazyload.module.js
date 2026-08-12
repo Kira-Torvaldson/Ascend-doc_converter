@@ -63,15 +63,8 @@ const AVAILABLE_MODULES = {
   'html-plain': {
     path: path.join(MODULES_DIR, 'html-plain.module.js'),
     name: 'html-plain'
-  },
-  'panwriter': {
-    path: path.join(MODULES_DIR, 'panwriter.module.js'),
-    name: 'panwriter'
-  },
-  'docverter': {
-    path: path.join(MODULES_DIR, 'docverter.module.js'),
-    name: 'docverter'
   }
+  // panwriter / docverter: stub modules exist but are offline until Office path ships
   // Note: pandoc is executed via command-line, not as a lazy-loaded module
 }
 

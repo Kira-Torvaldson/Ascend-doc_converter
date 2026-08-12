@@ -2,13 +2,14 @@
  * Panneau Résultat (sortie de conversion).
  */
 
-import React, { memo } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import { useT } from '../i18n/LocaleContext';
 import { ConversionLoadingBanner } from './ConversionLoadingBanner';
 import { EmptyEditorState } from './EmptyEditorState';
 import { PanelActionsMenu, type PanelActionItem } from './PanelActionsMenu';
 import { TextStats } from './TextStats';
 import { EditorWithLines } from './EditorWithLines';
+import type { ConversionUiState } from './HeaderStatusPill';
 
 interface ResultPanelProps {
   title: string;
@@ -17,6 +18,8 @@ interface ResultPanelProps {
   sourceHasContent: boolean;
   loading: boolean;
   status: string;
+  /** Caractères du document source (feedback conversion). */
+  sourceChars?: number;
   isEditingResult: boolean;
   resultModified: boolean;
   actions: PanelActionItem[];
@@ -29,9 +32,16 @@ interface ResultPanelProps {
   previewAsHtmlDocument?: boolean;
   /** Hide Texte/Aperçu for formats without useful rich preview (e.g. txt). */
   showPreviewToggle?: boolean;
+  /** Ouvre l’aperçu dans une fenêtre flottante. */
+  onDetachPreview?: () => void;
+  /** True si la fenêtre d’aperçu détachée est déjà ouverte. */
+  previewDetached?: boolean;
   textAreaRef?: React.RefObject<HTMLTextAreaElement | null> | null;
   /** Format du résultat (pour coloration syntaxique). */
   format?: string | null;
+  /** Teinte visuelle liée au dernier état de conversion. */
+  statusTone?: ConversionUiState;
+  onTextAreaScroll?: (textarea: HTMLTextAreaElement) => void;
 }
 
 export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel({
@@ -41,6 +51,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
   sourceHasContent,
   loading,
   status,
+  sourceChars = 0,
   isEditingResult,
   resultModified,
   actions,
@@ -51,18 +62,36 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
   previewHtml = '',
   previewAsHtmlDocument = false,
   showPreviewToggle = true,
+  onDetachPreview,
+  previewDetached = false,
   textAreaRef = null,
   format = null,
+  statusTone = 'idle',
+  onTextAreaScroll,
 }) {
   const t = useT();
   const isLocked = !!value && !isEditingResult;
   const isEditing = !!value && isEditingResult;
   const showPreview = showPreviewToggle && viewMode === 'preview' && !isEditingResult;
   const previewEmptyHtml = `<p><em>${t('panel.previewEmpty')}</em></p>`;
+  const prevLoadingRef = useRef(loading);
+  const [revealToken, setRevealToken] = useState(0);
+  const toneClass =
+    statusTone === 'success' || statusTone === 'error' || statusTone === 'loading'
+      ? ` status-tone-${statusTone}`
+      : '';
+
+  useEffect(() => {
+    if (prevLoadingRef.current && !loading && value.trim()) {
+      setRevealToken((n) => n + 1);
+    }
+    prevLoadingRef.current = loading;
+  }, [loading, value]);
 
   return (
     <section
-      className={`panel panel--result${isLocked ? ' result-locked' : isEditing ? ' result-editing' : ''}`}
+      className={`panel panel--result${isLocked ? ' result-locked' : isEditing ? ' result-editing' : ''}${loading ? ' is-converting' : ''}${toneClass}`}
+      data-status-tone={statusTone !== 'idle' ? statusTone : undefined}
     >
       <div className="panel-header">
         <h2>
@@ -95,6 +124,20 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
                   >
                     {t('panel.preview')}
                   </button>
+                  {onDetachPreview ? (
+                    <button
+                      type="button"
+                      className={`result-view-btn result-view-btn--detach${previewDetached ? ' is-active' : ''}`}
+                      onClick={onDetachPreview}
+                      aria-pressed={previewDetached}
+                      aria-label={previewDetached ? t('panel.previewDock') : t('panel.previewDetach')}
+                      data-tooltip={
+                        previewDetached ? t('panel.previewDock') : t('panel.previewDetach')
+                      }
+                    >
+                      ⧉
+                    </button>
+                  ) : null}
                 </div>
               )}
               {isLocked && (
@@ -141,16 +184,30 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
           ) : null}
         </div>
       </div>
-      {loading && <ConversionLoadingBanner status={status} />}
+      {loading && <ConversionLoadingBanner status={status} sourceChars={sourceChars} />}
       {value ? (
         <div className="panel-toolbar panel-toolbar--end">
           <TextStats text={value} />
         </div>
       ) : null}
-      <div className={`editor-shell${!value.trim() && !loading ? ' is-empty' : ''}`}>
+      <div
+        className={`editor-shell${!value.trim() && !loading ? ' is-empty' : ''}${loading ? ' is-converting' : ''}${revealToken > 0 && !loading ? ' is-result-reveal' : ''}`}
+        key={revealToken > 0 ? `result-reveal-${revealToken}` : 'result-shell'}
+      >
+        {loading && (
+          <div className="result-convert-skeleton" aria-hidden="true">
+            <span className="result-skeleton-line" style={{ width: '78%' }} />
+            <span className="result-skeleton-line" style={{ width: '92%' }} />
+            <span className="result-skeleton-line" style={{ width: '64%' }} />
+            <span className="result-skeleton-line" style={{ width: '86%' }} />
+            <span className="result-skeleton-line" style={{ width: '71%' }} />
+            <span className="result-skeleton-line result-skeleton-line--short" style={{ width: '44%' }} />
+          </div>
+        )}
         {!value.trim() && !loading && (
           <EmptyEditorState
             variant="result"
+            resultMode={!sourceHasContent ? 'waiting' : 'ready'}
             title={t('panel.result.emptyTitle', { title })}
             description={
               !sourceHasContent
@@ -190,11 +247,8 @@ export const ResultPanel: React.FC<ResultPanelProps> = memo(function ResultPanel
                   ? ''
                   : t('panel.result.placeholder', { title })
             }
-            style={{
-              opacity: loading ? 0.6 : 1,
-              transition: 'opacity 0.2s',
-            }}
             highlightFormat={format}
+            onTextAreaScroll={onTextAreaScroll}
           />
         )}
       </div>

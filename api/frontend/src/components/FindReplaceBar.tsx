@@ -1,14 +1,12 @@
 /**
- * Barre Recherche / Remplacer (Ctrl+F).
+ * Barre Recherche / Remplacer (Ctrl+F) — options Aa / mot / regex.
  */
 
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useT } from '../i18n/LocaleContext';
+import { findTextMatches, replaceTextMatches, type FindTextOptions } from '../utils/findText';
 
 export type FindReplaceTarget = 'source' | 'result';
-
-/** Au-delà, on arrête le scan pour garder la UI fluide. */
-const MATCH_CAP = 4_000;
 
 interface FindReplaceBarProps {
   open: boolean;
@@ -19,6 +17,7 @@ interface FindReplaceBarProps {
   target: FindReplaceTarget;
   onTargetChange: (target: FindReplaceTarget) => void;
   targetRef?: React.RefObject<HTMLTextAreaElement | null> | null;
+  onRequestEditResult?: () => void;
 }
 
 function revealMatch(
@@ -49,21 +48,6 @@ function revealMatch(
   }
 }
 
-function findMatches(haystack: string, query: string): { positions: number[]; capped: boolean } {
-  if (!query) return { positions: [], capped: false };
-  const positions: number[] = [];
-  const step = Math.max(1, query.length);
-  let from = 0;
-  while (from <= haystack.length) {
-    const at = haystack.indexOf(query, from);
-    if (at < 0) break;
-    positions.push(at);
-    if (positions.length >= MATCH_CAP) return { positions, capped: true };
-    from = at + step;
-  }
-  return { positions, capped: false };
-}
-
 export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
   open,
   onClose,
@@ -73,23 +57,46 @@ export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
   target,
   onTargetChange,
   targetRef,
+  onRequestEditResult,
 }) => {
   const t = useT();
   const [query, setQuery] = useState('');
   const [replacement, setReplacement] = useState('');
   const [index, setIndex] = useState(0);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
+  const [regex, setRegex] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const seededOpenRef = useRef(false);
 
+  const opts: FindTextOptions = useMemo(
+    () => ({ caseSensitive, wholeWord, regex }),
+    [caseSensitive, wholeWord, regex]
+  );
+
   const deferredQuery = useDeferredValue(query);
   const deferredHaystack = useDeferredValue(haystack);
-  const searching = open && (deferredQuery !== query || deferredHaystack !== haystack);
+  const deferredOpts = useDeferredValue(opts);
+  const searching =
+    open &&
+    (deferredQuery !== query ||
+      deferredHaystack !== haystack ||
+      deferredOpts.caseSensitive !== opts.caseSensitive ||
+      deferredOpts.wholeWord !== opts.wholeWord ||
+      deferredOpts.regex !== opts.regex);
 
-  const { positions: matches, capped } = useMemo(
-    () => (open ? findMatches(deferredHaystack, deferredQuery) : { positions: [], capped: false }),
-    [open, deferredHaystack, deferredQuery]
+  const matchResult = useMemo(
+    () =>
+      open
+        ? findTextMatches(deferredHaystack, deferredQuery, deferredOpts)
+        : { positions: [] as number[], lengths: [] as number[], capped: false, invalidRegex: false },
+    [open, deferredHaystack, deferredQuery, deferredOpts]
   );
+  const matches = matchResult.positions;
+  const lengths = matchResult.lengths;
+  const capped = matchResult.capped;
+  const invalidRegex = matchResult.invalidRegex;
 
   useEffect(() => {
     if (!open) {
@@ -115,18 +122,18 @@ export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
 
   useEffect(() => {
     setIndex(0);
-  }, [deferredQuery, target]);
+  }, [deferredQuery, target, deferredOpts]);
 
   useEffect(() => {
-    if (!open || !deferredQuery || !matches.length) return;
+    if (!open || !deferredQuery || !matches.length || invalidRegex) return;
     const safeIndex = ((index % matches.length) + matches.length) % matches.length;
     const active = document.activeElement;
     const keepFind = !!(barRef.current && active && barRef.current.contains(active));
-    revealMatch(targetRef?.current, matches[safeIndex], deferredQuery.length);
+    revealMatch(targetRef?.current, matches[safeIndex], lengths[safeIndex] ?? 0);
     if (keepFind && active instanceof HTMLElement) {
       active.focus({ preventScroll: true });
     }
-  }, [open, deferredQuery, index, matches, targetRef, target]);
+  }, [open, deferredQuery, index, matches, lengths, targetRef, target, invalidRegex]);
 
   useEffect(() => {
     if (!open) return;
@@ -149,26 +156,22 @@ export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
   };
 
   const replaceOne = () => {
-    if (readOnly || !query || !matches.length) return;
-    const live = findMatches(haystack, query);
-    if (!live.positions.length) return;
-    const safeIndex = ((index % live.positions.length) + live.positions.length) % live.positions.length;
-    const at = live.positions[safeIndex];
-    const next = haystack.slice(0, at) + replacement + haystack.slice(at + query.length);
-    onReplaceInTarget(next);
-    // Rester sur le même index = occurrence suivante après recalcul
+    if (readOnly || !query || !matches.length || invalidRegex) return;
+    onReplaceInTarget(replaceTextMatches(haystack, query, replacement, opts, 'one', index));
   };
 
   const replaceAll = () => {
-    if (readOnly || !query) return;
-    onReplaceInTarget(haystack.split(query).join(replacement));
+    if (readOnly || !query || invalidRegex) return;
+    onReplaceInTarget(replaceTextMatches(haystack, query, replacement, opts, 'all'));
   };
 
   const countLabel = !query
     ? '—'
-    : searching
-      ? '…'
-      : `${matches.length ? Math.min(index, matches.length - 1) + 1 : 0}/${matches.length}${capped ? '+' : ''}`;
+    : invalidRegex
+      ? t('find.regexInvalid')
+      : searching
+        ? '…'
+        : `${matches.length ? Math.min(index, matches.length - 1) + 1 : 0}/${matches.length}${capped ? '+' : ''}`;
 
   return (
     <div className="find-replace-bar" role="search" ref={barRef}>
@@ -184,17 +187,29 @@ export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
           type="button"
           className={`find-replace-target-btn${target === 'result' ? ' is-active' : ''}`}
           onClick={() => onTargetChange('result')}
+          data-tooltip={readOnly ? t('panel.locked.tooltip') : undefined}
         >
           {t('find.result')}
         </button>
       </div>
+      {readOnly && target === 'result' ? (
+        <div className="find-replace-locked" role="note">
+          <span>{t('find.resultLocked')}</span>
+          {onRequestEditResult ? (
+            <button type="button" className="find-replace-unlock-btn" onClick={onRequestEditResult}>
+              {t('panel.actions.edit')}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <input
         ref={inputRef}
-        className="find-replace-input"
+        className={`find-replace-input${invalidRegex ? ' is-invalid' : ''}`}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={t('find.search')}
         aria-label={t('find.search.aria')}
+        aria-invalid={invalidRegex || undefined}
         onKeyDown={(e) => {
           if (e.key === 'Escape') onClose();
           if (e.key === 'Enter') {
@@ -219,6 +234,38 @@ export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
           }}
         />
       )}
+      <div className="find-replace-opts" role="group" aria-label={t('find.options')}>
+        <button
+          type="button"
+          className={`find-replace-btn find-replace-opt${caseSensitive ? ' is-active' : ''}`}
+          aria-pressed={caseSensitive}
+          data-tooltip={t('find.case')}
+          aria-label={t('find.case')}
+          onClick={() => setCaseSensitive((v) => !v)}
+        >
+          Aa
+        </button>
+        <button
+          type="button"
+          className={`find-replace-btn find-replace-opt${wholeWord ? ' is-active' : ''}`}
+          aria-pressed={wholeWord}
+          data-tooltip={t('find.wholeWord')}
+          aria-label={t('find.wholeWord')}
+          onClick={() => setWholeWord((v) => !v)}
+        >
+          W
+        </button>
+        <button
+          type="button"
+          className={`find-replace-btn find-replace-opt${regex ? ' is-active' : ''}`}
+          aria-pressed={regex}
+          data-tooltip={t('find.regex')}
+          aria-label={t('find.regex')}
+          onClick={() => setRegex((v) => !v)}
+        >
+          .*
+        </button>
+      </div>
       <span className="find-replace-count" aria-live="polite">
         {countLabel}
       </span>
@@ -230,10 +277,20 @@ export const FindReplaceBar: React.FC<FindReplaceBarProps> = ({
       </button>
       {!readOnly && (
         <>
-          <button type="button" className="find-replace-btn" onClick={replaceOne} disabled={!matches.length}>
+          <button
+            type="button"
+            className="find-replace-btn"
+            onClick={replaceOne}
+            disabled={!matches.length || invalidRegex}
+          >
             {t('find.replace')}
           </button>
-          <button type="button" className="find-replace-btn" onClick={replaceAll} disabled={!query}>
+          <button
+            type="button"
+            className="find-replace-btn"
+            onClick={replaceAll}
+            disabled={!query || invalidRegex}
+          >
             {t('find.replaceAll')}
           </button>
         </>

@@ -4,15 +4,19 @@
 
 import React, { useEffect, useId, useRef } from 'react';
 import { useT } from '../i18n/LocaleContext';
+import { withShortcutId } from '../utils/shortcutTips';
 
 const SHORTCUT_KEYS = [
+  { key: 'shortcuts.commandPalette' as const, keys: 'Ctrl + K' },
   { key: 'shortcuts.convert' as const, keys: 'Ctrl + Entrée' },
   { key: 'shortcuts.download' as const, keys: 'Ctrl + S' },
   { key: 'shortcuts.find' as const, keys: 'Ctrl + F' },
+  { key: 'shortcuts.goto' as const, keys: 'Ctrl + G' },
   { key: 'shortcuts.diff' as const, keys: 'Ctrl + Maj + D' },
+  { key: 'shortcuts.focus' as const, keys: 'Ctrl + Maj + F' },
   { key: 'shortcuts.history' as const, keys: 'Ctrl + H' },
   { key: 'shortcuts.settings' as const, keys: 'Ctrl + ,' },
-  { key: 'shortcuts.clearSource' as const, keys: 'Ctrl + K' },
+  { key: 'shortcuts.clearSource' as const, keys: 'Ctrl + Maj + K' },
   { key: 'shortcuts.help' as const, keys: 'Ctrl + /' },
 ] as const;
 
@@ -53,10 +57,10 @@ export const ShortcutsHelpPopover: React.FC<ShortcutsHelpPopoverProps> = ({
         type="button"
         className={`settings-button header-icon-btn shortcuts-help-chip${open ? ' is-open' : ''}`}
         onClick={onToggle}
-        aria-label={t('shortcuts.title')}
+        aria-label={withShortcutId(t('shortcuts.title'), 'help')}
         aria-expanded={open}
         aria-controls={panelId}
-        data-tooltip={t('shortcuts.short')}
+        data-tooltip={withShortcutId(t('shortcuts.short'), 'help')}
       >
         <span className="shortcuts-help-chip-glyph" aria-hidden="true">
           ?

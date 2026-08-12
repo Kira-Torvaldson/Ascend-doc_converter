@@ -18,6 +18,8 @@ import type {
   UiScale,
   PanelRatio,
   PanelDensity,
+  PanelOrientation,
+  EditorThemePreference,
   SidebarPosition,
   BackgroundIntensity,
   EditorLineHeight,
@@ -61,9 +63,14 @@ import {
   SERVER_BG_URL,
 } from '../settings/pageBackground';
 import { CONVERSION_PROFILES } from '../utils/conversionProfiles';
+import {
+  WORKSPACE_PRESETS,
+  type WorkspacePresetId,
+} from '../utils/workspacePresets';
 import { useT } from '../i18n/LocaleContext';
 import { languageOptionLabel } from '../i18n/messages';
 import type { MessageKey } from '../i18n/messages';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import packageJson from '../../package.json';
 
 const SETTINGS_NAV_SECTIONS = [
@@ -126,6 +133,9 @@ export interface SettingsPanelProps {
   onFillMetadataFromProfile: () => void;
   /** Métadonnées de conversion de la session courante (aperçu sync). */
   sessionMetadata?: MetadataSlice;
+  /** Applique immédiatement un preset de workspace (split / orientation / focus). */
+  onApplyWorkspacePreset?: (id: WorkspacePresetId) => void;
+  activeWorkspacePresetId?: WorkspacePresetId | null;
   setSettingsMinimized: React.Dispatch<React.SetStateAction<boolean>>;
   setSettingsMaximized: React.Dispatch<React.SetStateAction<boolean>>;
   handleSettingsDragStart: (e: React.MouseEvent) => void;
@@ -160,6 +170,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onClearLocalData,
   onFillMetadataFromProfile,
   sessionMetadata,
+  onApplyWorkspacePreset,
+  activeWorkspacePresetId = null,
   setSettingsMinimized,
   setSettingsMaximized,
   handleSettingsDragStart,
@@ -168,6 +180,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   SETTINGS_MIN_H,
 }) => {
   const t = useT();
+  useFocusTrap(settingsPanelRef, true);
   const importInputRef = useRef<HTMLInputElement>(null);
   const signatureInputRef = useRef<HTMLTextAreaElement>(null);
   const [savedPresetFlash, setSavedPresetFlash] = useState<string | null>(null);
@@ -498,7 +511,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                 }))
                               }
                               className={`option-input${settingsErrors.displayName ? ' settings-input-invalid' : ''}`}
-                              placeholder="Ex. Ada Lovelace"
+                              placeholder={t('account.name.placeholder')}
                               autoComplete="name"
                             />
                             {settingsErrors.displayName && (
@@ -526,7 +539,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                 }))
                               }
                               className={`option-input${settingsErrors.organization ? ' settings-input-invalid' : ''}`}
-                              placeholder="Ex. Ascend Docs"
+                              placeholder={t('account.org.placeholder')}
                               autoComplete="organization"
                             />
                             {settingsErrors.organization && (
@@ -1005,6 +1018,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             data-accent={draftSettings.ui.accentColor}
                             data-bg-intensity={draftSettings.ui.backgroundIntensity}
                             data-panel-ratio={draftSettings.ui.panelRatio}
+                            data-panel-orientation={draftSettings.ui.panelOrientation}
+                            style={{
+                              ['--preview-split' as string]: `${draftSettings.ui.panelSplitPercent ?? 50}%`,
+                            }}
                             aria-hidden="true"
                           >
                             <div className="settings-interface-live-preview-bar">
@@ -1082,9 +1099,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                   <button
                                     key={accent.id}
                                     type="button"
-                                    title={accent.label}
+                                    title={t(`accent.${accent.id}` as 'accent.blue')}
                                     className={`settings-accent-btn settings-accent-btn--${accent.id}${draftSettings.ui.accentColor === accent.id ? ' is-active' : ''}`}
-                                    aria-label={accent.label}
+                                    aria-label={t(`accent.${accent.id}` as 'accent.blue')}
                                     aria-pressed={draftSettings.ui.accentColor === accent.id}
                                     onClick={() =>
                                       setDraftSettings((s) => ({
@@ -1094,12 +1111,49 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                     }
                                   >
                                     <span className="settings-accent-dot" aria-hidden="true" />
-                                    <span className="settings-accent-label">{accent.label}</span>
+                                    <span className="settings-accent-label">{t(`accent.${accent.id}` as 'accent.blue')}</span>
                                   </button>
                                 ))}
                               </div>
                             </div>
                           ))}
+                        </div>
+                        <div className="option-group">
+                          <div className="option-label">{t('workspace.presets')}</div>
+                          <p className="settings-muted workspace-presets-hint">{t('workspace.presets.hint')}</p>
+                          <div className="workspace-presets" role="group" aria-label={t('workspace.presets')}>
+                            {WORKSPACE_PRESETS.map((preset) => (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                className={`workspace-preset-chip${activeWorkspacePresetId === preset.id ? ' is-active' : ''}`}
+                                aria-pressed={activeWorkspacePresetId === preset.id}
+                                onClick={() => onApplyWorkspacePreset?.(preset.id)}
+                                disabled={!onApplyWorkspacePreset}
+                                data-tooltip={t(`workspace.preset.${preset.id}.tip` as MessageKey)}
+                              >
+                                {t(`workspace.preset.${preset.id}` as MessageKey)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="option-group">
+                          <SidebarListbox
+                            className="settings-listbox"
+                            id="settings-panel-orientation"
+                            label={t("iface.panelOrientation")}
+                            value={draftSettings.ui.panelOrientation}
+                            options={[
+                              { value: 'side', label: t('iface.panelOrientation.side') },
+                              { value: 'stacked', label: t('iface.panelOrientation.stacked') },
+                            ]}
+                            onChange={(next) =>
+                              setDraftSettings((s) => ({
+                                ...s,
+                                ui: { ...s.ui, panelOrientation: next as PanelOrientation },
+                              }))
+                            }
+                          />
                         </div>
                         <div className="option-group">
                           <SidebarListbox
@@ -1115,7 +1169,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             onChange={(next) =>
                               setDraftSettings((s) => ({
                                 ...s,
-                                ui: { ...s.ui, panelRatio: next as PanelRatio },
+                                ui: {
+                                  ...s.ui,
+                                  panelRatio: next as PanelRatio,
+                                  panelSplitPercent:
+                                    next === '40-60' ? 40 : next === '60-40' ? 60 : 50,
+                                },
                               }))
                             }
                           />
@@ -1184,7 +1243,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             <div
                               className="settings-bg-live-preview settings-bg-live-preview--default"
                               role="img"
-                              aria-label="Aperçu du fond décoratif"
+                              aria-label={t('iface.bgPreview.decorative')}
                             />
                           )}
                           {draftSettings.ui.backgroundMode === 'server' && (
@@ -1192,7 +1251,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                               className="settings-bg-live-preview"
                               style={{ backgroundImage: `url("${SERVER_BG_URL}")` }}
                               role="img"
-                              aria-label="Aperçu du fond serveur"
+                              aria-label={t('iface.bgPreview.server')}
                             />
                           )}
                           {draftSettings.ui.backgroundMode === 'custom' && (
@@ -1202,7 +1261,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                   className="settings-bg-preview"
                                   style={{ backgroundImage: `url("${draftPageBgImage}")` }}
                                   role="img"
-                                  aria-label="Aperçu du fond personnalisé"
+                                  aria-label={t('iface.bgPreview.custom')}
                                 />
                               ) : (
                                 <div className="settings-bg-preview settings-bg-preview--empty">
@@ -1277,6 +1336,26 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
                       <section className="settings-iface-group">
                         <h5 className="settings-iface-heading">{t('iface.editor')}</h5>
+                        <div className="option-group">
+                          <SidebarListbox
+                            className="settings-listbox"
+                            id="settings-editor-theme"
+                            label={t("iface.editorTheme")}
+                            value={draftSettings.ui.editorTheme}
+                            options={[
+                              { value: 'inherit', label: t('iface.editorTheme.inherit') },
+                              { value: 'light', label: t('iface.editorTheme.light') },
+                              { value: 'dark', label: t('iface.editorTheme.dark') },
+                            ]}
+                            onChange={(next) =>
+                              setDraftSettings((s) => ({
+                                ...s,
+                                ui: { ...s.ui, editorTheme: next as EditorThemePreference },
+                              }))
+                            }
+                          />
+                          <p className="option-hint">{t('iface.editorTheme.hint')}</p>
+                        </div>
                         <div className="settings-fields-grid">
                           <div className="option-group">
                             <SidebarListbox
@@ -1376,6 +1455,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                               <input type="checkbox" checked={draftSettings.ui.syntaxHighlight} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, syntaxHighlight: e.target.checked } }))} className="option-checkbox" />
                               <span>{t("iface.syntax")}</span>
                             </label>
+                            <label className="settings-check-card">
+                              <input type="checkbox" checked={draftSettings.ui.linkedScroll} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, linkedScroll: e.target.checked } }))} className="option-checkbox" />
+                              <span>{t("iface.linkedScroll")}</span>
+                            </label>
                           </div>
                       </section>
 
@@ -1442,7 +1525,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                               ui: resetInterfaceUiSettings(s.ui),
                             }))
                           }
-                          data-tooltip="Remet apparence, fond, éditeur et confort aux valeurs par défaut"
+                          data-tooltip={t('iface.reset.tooltip')}
                         >
                           {t('iface.reset')}
                         </button>
@@ -1456,7 +1539,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                           type="button"
                           className="settings-param-reset-btn"
                           onClick={onExportSettings}
-                          data-tooltip="Télécharger les préférences (et le fond perso s’il existe)"
+                          data-tooltip={t('data.export.tooltip')}
                         >
                           {t("data.export")}
                         </button>
@@ -1464,7 +1547,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                           type="button"
                           className="settings-param-reset-btn"
                           onClick={() => importInputRef.current?.click()}
-                          data-tooltip="Importer un JSON de préférences (+ fond si inclus)"
+                          data-tooltip={t('data.import.tooltip')}
                         >
                           {t("data.import")}
                         </button>
@@ -1484,7 +1567,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         type="button"
                         className="settings-param-reset-btn"
                         onClick={onClearLocalData}
-                        data-tooltip="Effacer historique, brouillon, fond et préférences locales"
+                        data-tooltip={t('data.clear.tooltip')}
                       >
                         {t("data.clearLocal")}
                       </button>

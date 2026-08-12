@@ -206,25 +206,8 @@ const CONVERTER_REGISTRY = {
       }
       return process.platform === 'win32' ? 'pandoc.exe' : 'pandoc'
     })()
-  },
-  'panwriter': {
-    name: 'panwriter',
-    supportedFormats: {
-      from: ['markdown', 'asciidoc', 'html', 'docx', 'odt', 'rtf', 'latex', 'tex'],
-      to: ['markdown', 'asciidoc', 'html', 'docx', 'odt', 'rtf', 'latex', 'tex']
-    },
-    executionType: 'lazy-load', // Uses lazy loading (to be created)
-    modulePath: path.join(MODULES_DIR, 'panwriter.module.js')
-  },
-  'docverter': {
-    name: 'docverter',
-    supportedFormats: {
-      from: ['rtf', 'pdf', 'html', 'txt', 'markdown', 'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp', 'png', 'jpg', 'jpeg', 'gif'],
-      to: ['rtf', 'pdf', 'html', 'txt', 'markdown', 'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp', 'png', 'jpg', 'jpeg', 'gif']
-    },
-    executionType: 'lazy-load', // Uses lazy loading (to be created)
-    modulePath: path.join(MODULES_DIR, 'docverter.module.js')
   }
+  // panwriter / docverter stubs kept on disk but not registered until implemented
 }
 
 // ============================================================================

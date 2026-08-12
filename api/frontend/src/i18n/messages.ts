@@ -1,8 +1,9 @@
 import type { AppLanguage } from '../settings/profileIdentity';
 import { APP_DE, APP_EN, APP_ES, APP_FR, type AppMessageKey } from './appMessages';
 import { EXTRA_DE, EXTRA_EN, EXTRA_ES, EXTRA_FR, type ExtraMessageKey } from './extraUiMessages';
+import { POLISH_DE, POLISH_EN, POLISH_ES, POLISH_FR, type PolishMessageKey } from './polishMessages';
 
-export type MessageKey = keyof typeof FR_MESSAGES | AppMessageKey | ExtraMessageKey;
+export type MessageKey = keyof typeof FR_MESSAGES | AppMessageKey | ExtraMessageKey | PolishMessageKey;
 
 const FR_MESSAGES = {
   'header.nav': 'Outils Ascend',
@@ -501,6 +502,13 @@ const EXTRA_TABLES: Record<AppLanguage, Record<ExtraMessageKey, string>> = {
   de: EXTRA_DE,
 };
 
+const POLISH_TABLES: Record<AppLanguage, Record<PolishMessageKey, string>> = {
+  fr: POLISH_FR,
+  en: POLISH_EN,
+  es: POLISH_ES,
+  de: POLISH_DE,
+};
+
 export function translate(
   lang: AppLanguage,
   key: MessageKey,
@@ -509,13 +517,16 @@ export function translate(
   const core = CORE_TABLES[lang] || FR_MESSAGES;
   const app = APP_TABLES[lang] || APP_FR;
   const extra = EXTRA_TABLES[lang] || EXTRA_FR;
+  const polish = POLISH_TABLES[lang] || POLISH_FR;
   let text =
     (core as Record<string, string>)[key] ??
     (app as Record<string, string>)[key] ??
     (extra as Record<string, string>)[key] ??
+    (polish as Record<string, string>)[key] ??
     (FR_MESSAGES as Record<string, string>)[key] ??
     (APP_FR as Record<string, string>)[key] ??
     (EXTRA_FR as Record<string, string>)[key] ??
+    (POLISH_FR as Record<string, string>)[key] ??
     key;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {

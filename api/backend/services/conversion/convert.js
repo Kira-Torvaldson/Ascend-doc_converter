@@ -20,6 +20,7 @@ const {
   normalizeMarkSpans,
   collectAsciiDocWarnings,
   normalizeCallouts,
+  normalizeSpanHtmlTables,
   normalizeSimpleHtmlTables,
 } = require('./conversion-precision.js')
 const { safeSpawn } = require('../../../../lib/security/safe-spawn.js')
@@ -192,6 +193,7 @@ async function convertAsciiDoc(asciidoc, mode = 'default') {
   markdown = basicCleanup(markdown)
   markdown = normalizeDefinitionLists(markdown)
   markdown = normalizeCallouts(markdown)
+  markdown = normalizeSpanHtmlTables(markdown)
   markdown = normalizeSimpleHtmlTables(markdown)
   markdown = normalizeMarkSpans(markdown, mode)
   // Toujours normaliser les notes/admonitions (évite le HTML <dl> brut dans l'UI)

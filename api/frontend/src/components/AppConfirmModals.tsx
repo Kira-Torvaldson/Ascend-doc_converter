@@ -58,6 +58,10 @@ export interface AppConfirmModalsProps {
   onCloseClearResult: () => void;
   onConfirmClearResult: () => void;
 
+  showCloseSessionTabModal: boolean;
+  onCloseCloseSessionTab: () => void;
+  onConfirmCloseSessionTab: () => void;
+
   showClearSourceModal: boolean;
   onCloseClearSource: () => void;
   onConfirmClearSourceOnly: () => void;
@@ -108,6 +112,9 @@ export const AppConfirmModals: React.FC<AppConfirmModalsProps> = (props) => {
     showClearResultModal,
     onCloseClearResult,
     onConfirmClearResult,
+    showCloseSessionTabModal,
+    onCloseCloseSessionTab,
+    onConfirmCloseSessionTab,
     showClearSourceModal,
     onCloseClearSource,
     onConfirmClearSourceOnly,
@@ -226,6 +233,17 @@ export const AppConfirmModals: React.FC<AppConfirmModalsProps> = (props) => {
         type="danger"
         autoFocusConfirm
         onConfirm={onConfirmClearResult}
+      />
+
+      <Modal
+        isOpen={showCloseSessionTabModal}
+        onClose={onCloseCloseSessionTab}
+        title={t('modal.closeSessionTab.title')}
+        message={t('modal.closeSessionTab.message')}
+        confirmText={t('modal.closeSessionTab.confirm')}
+        cancelText={t('common.cancel')}
+        type="warning"
+        onConfirm={onConfirmCloseSessionTab}
       />
 
       <Modal

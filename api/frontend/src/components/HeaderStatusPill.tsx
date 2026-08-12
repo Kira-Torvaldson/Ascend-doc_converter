@@ -30,8 +30,9 @@ export const HeaderStatusPill: React.FC<HeaderStatusPillProps> = ({ state, statu
   return (
     <div
       className={`header-status-pill header-status-pill--${state}`}
-      role="status"
-      aria-live="polite"
+      role={state === 'error' ? 'alert' : 'status'}
+      aria-live={state === 'error' ? 'assertive' : 'polite'}
+      aria-atomic="true"
     >
       {state === 'loading' && <span className="header-status-spinner" aria-hidden="true" />}
       {state === 'success' && <span className="header-status-icon" aria-hidden="true">✓</span>}

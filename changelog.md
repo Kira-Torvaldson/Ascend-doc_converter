@@ -13,6 +13,23 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.9.4 (2026-08-12)
+
+#### Added
+- Session tabs (rename, duplicate, reorder, dirty indicator) with close confirmation when modified.
+- Command palette (Ctrl+K) with disabled-reason hints; folder batch convert + ZIP download.
+- Workspace presets, detachable preview window, result zen mode, format pair shortcuts.
+- Find/replace options (case / whole word / regex), goto line, clickable conversion warnings → line.
+- History A/B compare into DiffPanel; panel split handle; focus trap on floating windows.
+
+#### Changed
+- Header decluttered (profile chips / pinned actions removed; profiles stay in sidebar).
+- History row click previews only (restore via button / Enter); batch errors show skip/error detail.
+- UX polish: workspace preset active state, profile max hint, SourcePanel file/folder a11y, zen copy feedback.
+
+#### Fixed
+- Safer close of dirty session tabs; clipboard copy failure feedback on warnings banner.
+
 ### 0.0.1.9.3 (2026-08-06)
 
 #### Added

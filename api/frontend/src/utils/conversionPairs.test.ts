@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  formatPairShortLabel,
+  formatPairShortParts,
+  isFavoritePair,
   isSupportedUiConversion,
+  normalizeFormatPairs,
   readResultBuffer,
+  recordRecentPair,
   resultUsesOtherBuffer,
   supportsRichPreview,
+  toggleFavoritePair,
   writeResultBuffer,
 } from './conversionPairs';
 
@@ -40,5 +46,35 @@ describe('conversionPairs', () => {
   it('keeps rich preview only for html/md/adoc', () => {
     expect(supportsRichPreview('html')).toBe(true);
     expect(supportsRichPreview('txt')).toBe(false);
+  });
+
+  it('records recent pairs MRU and dedupes', () => {
+    let recent = recordRecentPair([], 'asciidoc', 'markdown');
+    recent = recordRecentPair(recent, 'markdown', 'html');
+    recent = recordRecentPair(recent, 'asciidoc', 'markdown');
+    expect(recent).toEqual([
+      { source: 'asciidoc', target: 'markdown' },
+      { source: 'markdown', target: 'html' },
+    ]);
+  });
+
+  it('toggles favorites and normalizes junk', () => {
+    let fav = toggleFavoritePair([], 'markdown', 'html');
+    expect(isFavoritePair(fav, 'markdown', 'html')).toBe(true);
+    fav = toggleFavoritePair(fav, 'markdown', 'html');
+    expect(fav).toEqual([]);
+    expect(
+      normalizeFormatPairs([
+        { source: 'markdown', target: 'html' },
+        { source: 'nope', target: 'html' },
+        { source: 'markdown', target: 'markdown' },
+        { source: 'markdown', target: 'html' },
+      ])
+    ).toEqual([{ source: 'markdown', target: 'html' }]);
+    expect(formatPairShortLabel({ source: 'asciidoc', target: 'markdown' })).toBe('Adoc → MD');
+    expect(formatPairShortParts({ source: 'markdown', target: 'html' })).toEqual({
+      from: 'MD',
+      to: 'HTML',
+    });
   });
 });

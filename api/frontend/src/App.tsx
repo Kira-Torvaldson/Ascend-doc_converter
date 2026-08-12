@@ -68,21 +68,32 @@ import {
   AppHeader,
   SettingsPanel,
   NavigationWindow,
+  PreviewWindow,
+  ResultZenOverlay,
+  FolderBatchPanel,
   ConversionWarningsBanner,
   FindReplaceBar,
+  GotoLineBar,
+  CommandPalette,
   DiffPanel,
+  PanelSplitHandle,
   ConversionSidebar,
   AppConfirmModals,
+  SessionTabsBar,
+  AppTaskbar,
 } from "./components";
-import type { PanelActionItem } from "./components";
+import type { PanelActionItem, CommandPaletteItem } from "./components";
 import { removeExperimentalTag } from "./utils/asciidocHelpers";
-import { extractConversionWarnings } from "./utils/conversionWarnings";
+import {
+  extractConversionWarnings,
+  type WarningLocation,
+} from "./utils/conversionWarnings";
 import {
   inferSourceFormatFromFile,
   isAcceptedSourceFile,
   readFileAsUtf8,
 } from "./utils/sourceFile";
-import { loadSessionDraft, persistSessionDraft, clearSessionDraft } from "./utils/sessionDraft";
+import { clearSessionDraft, loadSessionWorkspace, persistSessionWorkspace, createEmptyTab, snapshotFromBuffers, reorderSessionTabs, MAX_SESSION_TABS, type SessionTabSnapshot } from "./utils/sessionDraft";
 import {
   CONVERSION_PROFILES,
   MAX_ACTIVE_PROFILES,
@@ -97,8 +108,25 @@ import {
   writeResultBuffer,
   supportsRichPreview,
   resultUsesOtherBuffer,
+  recordRecentPair,
+  toggleFavoritePair,
 } from "./utils/conversionPairs";
+import { clampPanelSplitPercent, nearestPanelRatio } from "./utils/panelSplit";
+import {
+  WORKSPACE_PRESETS,
+  getWorkspacePreset,
+  matchWorkspacePreset,
+  type WorkspacePresetId,
+} from "./utils/workspacePresets";
+import { withShortcutId, SHORTCUT_TIP } from "./utils/shortcutTips";
+import { scrollTextareaToLine, syncScrollRatio, countTextLines } from "./utils/editorNavigate";
 import { createZipBlob } from "./utils/simpleZip";
+import {
+  filterBatchableFolderFiles,
+  readAndConvertFolderFile,
+  withOutputExtension,
+  type FolderBatchItem,
+} from "./utils/folderBatchConvert";
 import packageJson from "../package.json";
 import { fetchConversionLimits, fetchConversionMetrics } from "./converters/api";
 import { formatConversionErrorForUi, getHintForCode } from "./converters/error-code-messages";
@@ -257,19 +285,24 @@ function App() {
   // These states store the content displayed in source and destination panels
   // IMPORTANT: Source content can be in adocInput OR mdOutput depending on format
   
-  const [sessionBootstrap] = useState(() => loadSessionDraft());
+  const [sessionBootstrap] = useState(() => loadSessionWorkspace());
+  const [sessionTabs, setSessionTabs] = useState<SessionTabSnapshot[]>(() => sessionBootstrap.tabs);
+  const [activeSessionTabId, setActiveSessionTabId] = useState(() => sessionBootstrap.activeTabId);
+  const [dirtySessionTabIds, setDirtySessionTabIds] = useState<Set<string>>(() => new Set());
+  const activeBootstrapTab =
+    sessionBootstrap.tabs.find((t) => t.id === sessionBootstrap.activeTabId) ?? sessionBootstrap.tabs[0];
 
   /** Source panel content (AsciiDoc or other format according to sourceFormat) */
-  const [adocInput, setAdocInput] = useState<string>(() => sessionBootstrap?.adocInput ?? "");
+  const [adocInput, setAdocInput] = useState<string>(() => activeBootstrapTab?.adocInput ?? "");
   
   /** Markdown buffer (source when sourceFormat=markdown, or result when target=markdown). */
-  const [mdOutput, setMdOutput] = useState<string>(() => sessionBootstrap?.mdOutput ?? "");
+  const [mdOutput, setMdOutput] = useState<string>(() => activeBootstrapTab?.mdOutput ?? "");
 
   /**
    * Dedicated result buffer when source is Markdown and target is HTML/TXT/…
    * Avoids clearing/overwriting the Markdown source in mdOutput.
    */
-  const [otherOutput, setOtherOutput] = useState<string>(() => sessionBootstrap?.otherOutput ?? "");
+  const [otherOutput, setOtherOutput] = useState<string>(() => activeBootstrapTab?.otherOutput ?? "");
 
   // ==========================================================================
   // STATES: CONVERSION AND STATUS
@@ -307,7 +340,7 @@ function App() {
   
   /** Currently loaded file name (for display) */
   const [currentFileName, setCurrentFileName] = useState<string | null>(
-    () => sessionBootstrap?.currentFileName ?? null
+    () => activeBootstrapTab?.currentFileName ?? null
   );
   
   /** List of individually imported files */
@@ -315,6 +348,11 @@ function App() {
   
   /** List of files from selected folder */
   const [folderFiles, setFolderFiles] = useState<File[]>([]);
+  const [folderBatchOpen, setFolderBatchOpen] = useState(false);
+  const [folderBatchRunning, setFolderBatchRunning] = useState(false);
+  const [folderBatchItems, setFolderBatchItems] = useState<FolderBatchItem[]>([]);
+  const [folderBatchIndex, setFolderBatchIndex] = useState(0);
+  const folderBatchAbortRef = useRef<AbortController | null>(null);
   
   /** Index of currently selected file in list (-1 = none) */
   const [selectedFileIndex, setSelectedFileIndex] = useState<number>(-1);
@@ -360,6 +398,10 @@ function App() {
 
   /** Clear entire conversion history */
   const [showClearHistoryModal, setShowClearHistoryModal] = useState<boolean>(false);
+
+  /** Confirm closing a dirty session tab */
+  const [showCloseSessionTabModal, setShowCloseSessionTabModal] = useState<boolean>(false);
+  const [pendingCloseSessionTabId, setPendingCloseSessionTabId] = useState<string | null>(null);
 
   /** Shows help modal for keyboard shortcuts */
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
@@ -443,13 +485,13 @@ function App() {
   
   /** Current source format (determines which content to display in source panel) */
   const [sourceFormat, setSourceFormat] = useState<FormatType>(() => {
-    if (sessionBootstrap?.sourceFormat) return sessionBootstrap.sourceFormat;
+    if (activeBootstrapTab?.sourceFormat) return activeBootstrapTab.sourceFormat;
     return pickFormatType(loadUserSettings().conversion.defaultSourceFormat, 'asciidoc');
   });
   
   /** Current destination format (determines which format to produce) */
   const [targetFormat, setTargetFormat] = useState<FormatType>(() => {
-    if (sessionBootstrap?.targetFormat) return sessionBootstrap.targetFormat;
+    if (activeBootstrapTab?.targetFormat) return activeBootstrapTab.targetFormat;
     const settings = loadUserSettings();
     const src = pickFormatType(settings.conversion.defaultSourceFormat, 'asciidoc');
     const out = pickFormatType(settings.conversion.defaultOutputFormat, 'markdown');
@@ -492,6 +534,39 @@ function App() {
     panelStyle: navigationPanelStyle,
   } = navWin;
 
+  const previewWin = useFloatingWindow({
+    defaultSize: {
+      width: 520,
+      height: typeof window !== 'undefined' ? Math.min(680, Math.max(420, window.innerHeight - 120)) : 560,
+    },
+    minSize: { width: 360, height: 280 },
+    maxSize: {
+      width: typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.92) : 1200,
+      height: typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.92) : 900,
+    },
+    initialPosition:
+      typeof window !== 'undefined'
+        ? {
+            x: Math.max(16, window.innerWidth - 520 - 28),
+            y: Math.max(64, Math.round(window.innerHeight * 0.07)),
+          }
+        : 'center',
+    persistKey: 'ascend-preview-window-v2',
+  });
+  const {
+    panelRef: previewWindowRef,
+    maximized: previewWindowMaximized,
+    setMaximized: setPreviewWindowMaximized,
+    minimized: previewWindowMinimized,
+    setMinimized: setPreviewWindowMinimized,
+    isDragging: isDraggingPreview,
+    isResizing: isResizingPreview,
+    handleDragStart: handlePreviewDragStart,
+    handleResizeStart: handlePreviewResizeStart,
+    panelStyle: previewPanelStyle,
+  } = previewWin;
+  const [previewWindowOpen, setPreviewWindowOpen] = useState(false);
+
   /** Indicates if settings panel is open */
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -503,6 +578,14 @@ function App() {
     }
     return loadUserSettings().ui.sidebarCollapsedByDefault || loadSidebarCollapsed();
   });
+  const [focusMode, setFocusMode] = useState(false);
+  const [resultZenMode, setResultZenMode] = useState(false);
+  const toggleFocusMode = useCallback(() => {
+    setFocusMode((v) => !v);
+  }, []);
+  const toggleResultZen = useCallback(() => {
+    setResultZenMode((v) => !v);
+  }, []);
 
   const toggleSidebarCollapsed = useCallback(() => {
     setSidebarCollapsed((prev) => {
@@ -556,7 +639,7 @@ function App() {
   
   /** Profils de conversion actifs (max 2), session puis profil par défaut */
   const [activeProfileIds, setActiveProfileIds] = useState<string[]>(() => {
-    const fromSession = sanitizeActiveProfileIds(sessionBootstrap?.activeProfileIds);
+    const fromSession = sanitizeActiveProfileIds(sessionBootstrap.activeProfileIds);
     if (fromSession.length > 0) return fromSession;
     const defaultId = loadUserSettings().conversion.defaultProfileId;
     return sanitizeActiveProfileIds(defaultId ? [defaultId] : []);
@@ -566,10 +649,10 @@ function App() {
 
   /** Currently configured conversion options */
   const [conversionOptions, setConversionOptions] = useState<ConversionOptions>(() => {
-    if (sessionBootstrap?.conversionOptions && Object.keys(sessionBootstrap.conversionOptions).length > 0) {
+    if (sessionBootstrap.conversionOptions && Object.keys(sessionBootstrap.conversionOptions).length > 0) {
       return sessionBootstrap.conversionOptions;
     }
-    const fromSession = sanitizeActiveProfileIds(sessionBootstrap?.activeProfileIds);
+    const fromSession = sanitizeActiveProfileIds(sessionBootstrap.activeProfileIds);
     const defaultId = loadUserSettings().conversion.defaultProfileId;
     const ids = fromSession.length > 0
       ? fromSession
@@ -626,7 +709,10 @@ function App() {
   const dismissSnackbar = useCallback(() => setSnackbarMessage(null), []);
   const [warningsDismissed, setWarningsDismissed] = useState(false);
   const [showFindReplace, setShowFindReplace] = useState(false);
+  const [showGotoLine, setShowGotoLine] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showDiffPanel, setShowDiffPanel] = useState(false);
+  const [diffMinimized, setDiffMinimized] = useState(false);
   const [diffSnapshot, setDiffSnapshot] = useState<{
     left: string;
     right: string;
@@ -634,6 +720,8 @@ function App() {
     rightLabel: string;
   } | null>(null);
   const [findTarget, setFindTarget] = useState<'source' | 'result'>('source');
+  const [gotoTarget, setGotoTarget] = useState<'source' | 'result'>('source');
+  const linkedScrollLockRef = useRef(false);
 
   /** Onglet mobile Source / Résultat */
   const [mobilePane, setMobilePane] = useState<'source' | 'result'>('source');
@@ -652,9 +740,37 @@ function App() {
   const [draftPageBgImage, setDraftPageBgImage] = useState<string | null>(() => loadCustomPageBackground());
   const [pageBgError, setPageBgError] = useState<string | null>(null);
   const pageBgFileInputRef = useRef<HTMLInputElement>(null);
+  const [panelSplitPercent, setPanelSplitPercent] = useState(() =>
+    clampPanelSplitPercent(settingsBootstrap.committed.ui.panelSplitPercent ?? 50)
+  );
   const settingsDirty =
     !areUserSettingsEqual(draftSettings, userSettings) ||
     draftPageBgImage !== pageBgImage;
+
+  // Sync split from settings (live draft while Paramètres ouverts)
+  useEffect(() => {
+    const next = clampPanelSplitPercent(
+      (settingsOpen ? draftSettings.ui.panelSplitPercent : userSettings.ui.panelSplitPercent) ?? 50
+    );
+    setPanelSplitPercent(next);
+  }, [settingsOpen, draftSettings.ui.panelSplitPercent, userSettings.ui.panelSplitPercent]);
+
+  const panelOrientation =
+    (settingsOpen ? draftSettings.ui.panelOrientation : userSettings.ui.panelOrientation) ?? 'side';
+
+  const commitPanelSplit = useCallback((percent: number) => {
+    const next = clampPanelSplitPercent(percent);
+    const ratio = nearestPanelRatio(next);
+    setPanelSplitPercent(next);
+    setUserSettings((prev) => ({
+      ...prev,
+      ui: { ...prev.ui, panelSplitPercent: next, panelRatio: ratio },
+    }));
+    setDraftSettings((prev) => ({
+      ...prev,
+      ui: { ...prev.ui, panelSplitPercent: next, panelRatio: ratio },
+    }));
+  }, []);
   useEffect(() => {
     setSettingsErrors(validateUserPrefs({
       displayName: draftSettings.profile.displayName,
@@ -797,6 +913,7 @@ function App() {
     root.setAttribute('data-tab-size', String(ui.tabSize));
     root.setAttribute('data-show-tooltips', ui.showTooltips ? 'true' : 'false');
     root.setAttribute('data-editor-font', ui.editorFontFamily || 'jetbrains');
+    root.setAttribute('data-editor-theme', ui.editorTheme || 'inherit');
     root.setAttribute('data-accent', ui.accentColor);
     root.setAttribute('data-bg-intensity', ui.backgroundIntensity);
     root.setAttribute('data-editor-line-height', ui.editorLineHeight);
@@ -806,6 +923,7 @@ function App() {
     root.setAttribute('data-panel-density', ui.panelDensity);
     root.setAttribute('data-sidebar-position', ui.sidebarPosition);
     root.setAttribute('data-syntax-highlight', ui.syntaxHighlight ? 'true' : 'false');
+    root.setAttribute('data-linked-scroll', ui.linkedScroll ? 'true' : 'false');
     root.style.setProperty('--editor-font-size', `${ui.editorFontSize}px`);
   }, []);
 
@@ -1229,6 +1347,21 @@ function App() {
     setConversionHistory([]);
     setActiveProfileIds([]);
     setConversionOptions({});
+    {
+      const fresh = createEmptyTab(0);
+      setSessionTabs([fresh]);
+      setActiveSessionTabId(fresh.id);
+      setDirtySessionTabIds(new Set());
+      setAdocInput('');
+      setMdOutput('');
+      setOtherOutput('');
+      setSourceFormat('asciidoc');
+      setTargetFormat('markdown');
+      setCurrentFileName(null);
+      setSourceModified(false);
+      setResultModified(false);
+      setIsEditingResult(false);
+    }
     setSidebarCollapsed(false);
     setActiveSettingsSection(DEFAULT_SETTINGS_SECTION);
     applyUiPreferencesToDocument(defaults.ui, null);
@@ -1271,10 +1404,11 @@ function App() {
     }
   }, [notification]);
 
-  /** Réinitialise l'indicateur de succès dans l'en-tête après quelques secondes. */
+  /** Réinitialise l'indicateur de succès / erreur dans l'en-tête après quelques secondes. */
   useEffect(() => {
-    if (conversionUiState !== 'success') return;
-    const timer = setTimeout(() => setConversionUiState('idle'), 4000);
+    if (conversionUiState !== 'success' && conversionUiState !== 'error') return;
+    const ms = conversionUiState === 'error' ? 6000 : 4000;
+    const timer = setTimeout(() => setConversionUiState('idle'), ms);
     return () => clearTimeout(timer);
   }, [conversionUiState]);
 
@@ -1299,16 +1433,228 @@ function App() {
   }, [lastBackendConversionResult]);
 
   useEffect(() => {
+    if (sourceModified || resultModified) {
+      setDirtySessionTabIds((prev) => {
+        if (prev.has(activeSessionTabId)) return prev;
+        const next = new Set(prev);
+        next.add(activeSessionTabId);
+        return next;
+      });
+    }
+  }, [sourceModified, resultModified, activeSessionTabId]);
+
+  const sessionBuffersRef = useRef({
+    adocInput,
+    mdOutput,
+    otherOutput,
+    sourceFormat,
+    targetFormat,
+    currentFileName,
+    activeSessionTabId,
+  });
+  sessionBuffersRef.current = {
+    adocInput,
+    mdOutput,
+    otherOutput,
+    sourceFormat,
+    targetFormat,
+    currentFileName,
+    activeSessionTabId,
+  };
+  const sessionTabsRef = useRef(sessionTabs);
+  sessionTabsRef.current = sessionTabs;
+
+  const applySessionTabToEditors = useCallback((tab: SessionTabSnapshot) => {
+    setAdocInput(tab.adocInput);
+    setMdOutput(tab.mdOutput);
+    setOtherOutput(tab.otherOutput);
+    setSourceFormat(tab.sourceFormat);
+    setTargetFormat(tab.targetFormat);
+    setCurrentFileName(tab.currentFileName);
+    setSourceModified(false);
+    setResultModified(false);
+    setIsEditingResult(false);
+    setJustConverted(false);
+    setLastBackendConversionResult(null);
+    setStatus('');
+    setConversionUiState('idle');
+  }, []);
+
+  const commitActiveTabSnapshot = useCallback((tabs: SessionTabSnapshot[]): SessionTabSnapshot[] => {
+    const b = sessionBuffersRef.current;
+    return tabs.map((tab, i) =>
+      tab.id === b.activeSessionTabId
+        ? snapshotFromBuffers({
+            id: tab.id,
+            title: tab.title,
+            titleLocked: tab.titleLocked,
+            adocInput: b.adocInput,
+            mdOutput: b.mdOutput,
+            otherOutput: b.otherOutput,
+            sourceFormat: b.sourceFormat,
+            targetFormat: b.targetFormat,
+            currentFileName: b.currentFileName,
+            index: i,
+          })
+        : tab
+    );
+  }, []);
+
+  const selectSessionTab = useCallback(
+    (nextId: string) => {
+      if (nextId === activeSessionTabId) return;
+      const committed = commitActiveTabSnapshot(sessionTabsRef.current);
+      const next = committed.find((t) => t.id === nextId);
+      if (!next) return;
+      sessionTabsRef.current = committed;
+      setSessionTabs(committed);
+      setActiveSessionTabId(nextId);
+      applySessionTabToEditors(next);
+    },
+    [activeSessionTabId, applySessionTabToEditors, commitActiveTabSnapshot]
+  );
+
+  const addSessionTab = useCallback(() => {
+    if (sessionTabsRef.current.length >= MAX_SESSION_TABS) return;
+    const committed = commitActiveTabSnapshot(sessionTabsRef.current);
+    const tab = createEmptyTab(committed.length);
+    const nextTabs = [...committed, tab];
+    sessionTabsRef.current = nextTabs;
+    setSessionTabs(nextTabs);
+    setActiveSessionTabId(tab.id);
+    applySessionTabToEditors(tab);
+  }, [applySessionTabToEditors, commitActiveTabSnapshot]);
+
+  const closeSessionTab = useCallback(
+    (id: string) => {
+      if (dirtySessionTabIds.has(id)) {
+        setPendingCloseSessionTabId(id);
+        setShowCloseSessionTabModal(true);
+        return;
+      }
+      const committed = commitActiveTabSnapshot(sessionTabsRef.current);
+      if (committed.length <= 1) {
+        const fresh = createEmptyTab(0);
+        sessionTabsRef.current = [fresh];
+        setSessionTabs([fresh]);
+        setActiveSessionTabId(fresh.id);
+        applySessionTabToEditors(fresh);
+        setDirtySessionTabIds(new Set());
+        return;
+      }
+      const idx = committed.findIndex((t) => t.id === id);
+      if (idx < 0) return;
+      const nextTabs = committed.filter((t) => t.id !== id);
+      const fallback = nextTabs[Math.max(0, idx - 1)] ?? nextTabs[0];
+      sessionTabsRef.current = nextTabs;
+      setSessionTabs(nextTabs);
+      setDirtySessionTabIds((prev) => {
+        const n = new Set(prev);
+        n.delete(id);
+        return n;
+      });
+      if (id === activeSessionTabId) {
+        setActiveSessionTabId(fallback.id);
+        applySessionTabToEditors(fallback);
+      }
+    },
+    [activeSessionTabId, applySessionTabToEditors, commitActiveTabSnapshot, dirtySessionTabIds]
+  );
+
+  const confirmCloseSessionTab = useCallback(() => {
+    const id = pendingCloseSessionTabId;
+    if (!id) {
+      setShowCloseSessionTabModal(false);
+      return;
+    }
+    setShowCloseSessionTabModal(false);
+    setPendingCloseSessionTabId(null);
+    setDirtySessionTabIds((prev) => {
+      const n = new Set(prev);
+      n.delete(id);
+      return n;
+    });
+    const committed = commitActiveTabSnapshot(sessionTabsRef.current);
+    if (committed.length <= 1) {
+      const fresh = createEmptyTab(0);
+      sessionTabsRef.current = [fresh];
+      setSessionTabs([fresh]);
+      setActiveSessionTabId(fresh.id);
+      applySessionTabToEditors(fresh);
+      setDirtySessionTabIds(new Set());
+      return;
+    }
+    const idx = committed.findIndex((t) => t.id === id);
+    if (idx < 0) return;
+    const nextTabs = committed.filter((t) => t.id !== id);
+    const fallback = nextTabs[Math.max(0, idx - 1)] ?? nextTabs[0];
+    sessionTabsRef.current = nextTabs;
+    setSessionTabs(nextTabs);
+    if (id === activeSessionTabId) {
+      setActiveSessionTabId(fallback.id);
+      applySessionTabToEditors(fallback);
+    }
+  }, [activeSessionTabId, applySessionTabToEditors, commitActiveTabSnapshot, pendingCloseSessionTabId]);
+
+  const renameSessionTab = useCallback((id: string, title: string) => {
+    const nextTitle = title.trim().slice(0, 40);
+    if (!nextTitle) return;
+    const committed = commitActiveTabSnapshot(sessionTabsRef.current);
+    const nextTabs = committed.map((tab) =>
+      tab.id === id ? { ...tab, title: nextTitle, titleLocked: true } : tab
+    );
+    sessionTabsRef.current = nextTabs;
+    setSessionTabs(nextTabs);
+  }, [commitActiveTabSnapshot]);
+
+  const duplicateSessionTab = useCallback(
+    (id: string) => {
+      if (sessionTabsRef.current.length >= MAX_SESSION_TABS) return;
+      const committed = commitActiveTabSnapshot(sessionTabsRef.current);
+      const idx = committed.findIndex((t) => t.id === id);
+      if (idx < 0) return;
+      const src = committed[idx];
+      const copy = createEmptyTab(committed.length);
+      const duplicated: SessionTabSnapshot = {
+        ...src,
+        id: copy.id,
+        title: `${src.title}`.slice(0, 34) + ' *',
+        titleLocked: true,
+      };
+      const nextTabs = [
+        ...committed.slice(0, idx + 1),
+        duplicated,
+        ...committed.slice(idx + 1),
+      ].slice(0, MAX_SESSION_TABS);
+      sessionTabsRef.current = nextTabs;
+      setSessionTabs(nextTabs);
+      setActiveSessionTabId(duplicated.id);
+      applySessionTabToEditors(duplicated);
+    },
+    [applySessionTabToEditors, commitActiveTabSnapshot]
+  );
+
+  const reorderSessionTab = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      const committed = commitActiveTabSnapshot(sessionTabsRef.current);
+      const nextTabs = reorderSessionTabs(committed, fromIndex, toIndex);
+      if (nextTabs === committed) return;
+      sessionTabsRef.current = nextTabs;
+      setSessionTabs(nextTabs);
+    },
+    [commitActiveTabSnapshot]
+  );
+
+  useEffect(() => {
     const t = window.setTimeout(() => {
-      persistSessionDraft({
-        adocInput,
-        mdOutput,
-        otherOutput,
-        sourceFormat,
-        targetFormat,
+      const tabs = commitActiveTabSnapshot(sessionTabsRef.current);
+      sessionTabsRef.current = tabs;
+      setSessionTabs(tabs);
+      persistSessionWorkspace({
+        tabs,
+        activeTabId: activeSessionTabId,
         conversionOptions,
         activeProfileIds,
-        currentFileName,
       });
     }, 400);
     return () => window.clearTimeout(t);
@@ -1321,12 +1667,29 @@ function App() {
     conversionOptions,
     activeProfileIds,
     currentFileName,
+    activeSessionTabId,
+    commitActiveTabSnapshot,
   ]);
 
-  const conversionWarnings = useMemo(
-    () => extractConversionWarnings(lastBackendConversionResult),
-    [lastBackendConversionResult]
-  );
+  const conversionWarnings = useMemo(() => {
+    const sourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
+    const resultText = readResultBuffer(sourceFormat, targetFormat, {
+      adocInput,
+      mdOutput,
+      otherOutput,
+    });
+    return extractConversionWarnings(lastBackendConversionResult, {
+      sourceText,
+      resultText,
+    });
+  }, [
+    lastBackendConversionResult,
+    sourceFormat,
+    targetFormat,
+    adocInput,
+    mdOutput,
+    otherOutput,
+  ]);
 
   const conversionErrorDetails = useMemo(() => {
     const failure = lastBackendConversionResult;
@@ -1385,12 +1748,96 @@ function App() {
     }
   }, [conversionUiState, targetFormat, resultTextForUi]);
 
+  // Mémoriser la paire source→cible après une conversion réussie.
+  useEffect(() => {
+    if (conversionUiState !== 'success') return;
+    if (!isSupportedUiConversion(sourceFormat, targetFormat)) return;
+    setUserSettings((prev) => {
+      const nextRecent = recordRecentPair(
+        prev.conversion.recentPairs,
+        sourceFormat,
+        targetFormat
+      );
+      if (
+        nextRecent.length === prev.conversion.recentPairs.length &&
+        nextRecent.every(
+          (p, i) =>
+            p.source === prev.conversion.recentPairs[i]?.source &&
+            p.target === prev.conversion.recentPairs[i]?.target
+        )
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        conversion: { ...prev.conversion, recentPairs: nextRecent },
+      };
+    });
+    setDraftSettings((prev) => ({
+      ...prev,
+      conversion: {
+        ...prev.conversion,
+        recentPairs: recordRecentPair(prev.conversion.recentPairs, sourceFormat, targetFormat),
+      },
+    }));
+  }, [conversionUiState, sourceFormat, targetFormat]);
+
+  // Snackbar résumé après conversion réussie.
+  const convertSnackShownRef = useRef(false);
+  useEffect(() => {
+    if (conversionUiState === 'loading') {
+      convertSnackShownRef.current = false;
+      return;
+    }
+    if (conversionUiState !== 'success' || convertSnackShownRef.current) return;
+    convertSnackShownRef.current = true;
+    const sourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
+    const resultText = readResultBuffer(sourceFormat, targetFormat, {
+      adocInput,
+      mdOutput,
+      otherOutput,
+    });
+    const charDelta = resultText.length - sourceText.length;
+    const lineDelta = countTextLines(resultText) - countTextLines(sourceText);
+    const formatDelta = (n: number) => (n > 0 ? `+${n}` : String(n));
+    const durationMs =
+      lastBackendConversionResult &&
+      typeof lastBackendConversionResult.durationMs === 'number'
+        ? lastBackendConversionResult.durationMs
+        : null;
+    const warnCount = conversionWarnings.length;
+    let message = t('snack.convertDone', {
+      ms: durationMs != null ? `${Math.round(durationMs)} ms` : '—',
+      chars: formatDelta(charDelta),
+      lines: formatDelta(lineDelta),
+    });
+    if (warnCount > 0) {
+      message += t('snack.convertWarningsPart', { count: warnCount });
+    }
+    showSnackbar(message);
+  }, [
+    conversionUiState,
+    sourceFormat,
+    targetFormat,
+    adocInput,
+    mdOutput,
+    otherOutput,
+    lastBackendConversionResult,
+    conversionWarnings.length,
+    showSnackbar,
+    t,
+  ]);
+
   // Quitter l’aperçu quand le format cible n’a plus de preview riche.
   useEffect(() => {
     if (!supportsRichPreview(targetFormat) && resultViewMode === 'preview') {
       setResultViewMode('text');
     }
-  }, [targetFormat, resultViewMode]);
+    if (!supportsRichPreview(targetFormat) && previewWindowOpen) {
+      setPreviewWindowOpen(false);
+      setPreviewWindowMinimized(false);
+    }
+  }, [targetFormat, resultViewMode, previewWindowOpen]);
 
   const headings = useMemo(() => {
     if (sourceFormat !== 'asciidoc' && sourceFormat !== 'markdown') {
@@ -1650,6 +2097,173 @@ function App() {
     setStatus(t('snack.folderLoaded', { count: textFiles.length }));
   };
 
+  const cancelFolderBatch = useCallback(() => {
+    folderBatchAbortRef.current?.abort();
+    folderBatchAbortRef.current = null;
+    setFolderBatchRunning(false);
+  }, []);
+
+  const downloadFolderBatchZip = useCallback(() => {
+    const entries = folderBatchItems
+      .filter((item) => item.status === 'success' && item.result)
+      .map((item) => ({
+        name: withOutputExtension(item.fileName, targetFormat),
+        content: item.result as string,
+      }));
+    if (entries.length === 0) return;
+    const blob = createZipBlob(entries);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ascend-batch-${targetFormat}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [folderBatchItems, targetFormat]);
+
+  const startFolderBatch = useCallback(async () => {
+    if (folderBatchRunning || loading || folderFiles.length === 0) return;
+    if (!isSupportedUiConversion(sourceFormat, targetFormat) && folderFiles.length === 0) return;
+    if (isEditingResult) {
+      setStatus(t('snack.saveEditFirst'));
+      return;
+    }
+
+    const { eligible, skipped } = filterBatchableFolderFiles(folderFiles, targetFormat);
+    if (eligible.length === 0) {
+      setStatus(t('batch.noneEligible'));
+      showSnackbar(t('batch.noneEligible'));
+      return;
+    }
+
+    const initial: FolderBatchItem[] = [
+      ...eligible.map((file) => ({
+        id: `${file.name}-${file.size}-${file.lastModified}`,
+        fileName: file.name,
+        status: 'pending' as const,
+      })),
+      ...skipped.map(({ file, reason }) => ({
+        id: `${file.name}-${file.size}-${file.lastModified}-skip`,
+        fileName: file.name,
+        status: 'skipped' as const,
+        message: reason,
+      })),
+    ];
+
+    folderBatchAbortRef.current?.abort();
+    const abort = new AbortController();
+    folderBatchAbortRef.current = abort;
+
+    setFolderBatchItems(initial);
+    setFolderBatchIndex(0);
+    setFolderBatchOpen(true);
+    setFolderBatchRunning(true);
+    setLoading(true);
+    setConversionUiState('loading');
+
+    let opts = conversionOptions;
+    if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
+      opts = { ...opts, rendering: { ...opts.rendering, tableOfContents: { ...opts.rendering.tableOfContents, enabled: true } } };
+    } else if (userSettings.conversion.defaultTocEnabled) {
+      opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
+    }
+    if (userSettings.conversion.autoApplyUserToMetadata) {
+      const metadata = applyProfileToMetadata(opts.metadata, userSettings.profile, 'fillEmpty');
+      opts = { ...opts, metadata };
+    }
+
+    const results: FolderBatchItem[] = [...initial];
+    let lastSuccess: FolderBatchItem | null = null;
+
+    for (let i = 0; i < eligible.length; i++) {
+      if (abort.signal.aborted) break;
+      const file = eligible[i];
+      const itemId = `${file.name}-${file.size}-${file.lastModified}`;
+      setFolderBatchIndex(i);
+      setFolderBatchItems((prev) =>
+        prev.map((item) => (item.id === itemId ? { ...item, status: 'running' } : item))
+      );
+      setStatus(t('batch.progress', { current: i + 1, total: eligible.length }));
+
+      const converted = await readAndConvertFolderFile({
+        file,
+        targetFormat,
+        conversionOptions: opts,
+        needsToken: conversionNeedsConfirmationToken,
+        signal: abort.signal,
+        timeoutMs: conversionTimeoutMs,
+      });
+
+      const nextItem: FolderBatchItem = {
+        ...converted,
+        id: itemId,
+        result: converted.result
+          ? appendDocumentSignature(converted.result, userSettings.profile)
+          : converted.result,
+      };
+      results[results.findIndex((r) => r.id === itemId)] = nextItem;
+      setFolderBatchItems((prev) => prev.map((item) => (item.id === itemId ? nextItem : item)));
+      if (nextItem.status === 'success') lastSuccess = nextItem;
+    }
+
+    setFolderBatchRunning(false);
+    setLoading(false);
+    folderBatchAbortRef.current = null;
+
+    if (abort.signal.aborted) {
+      setConversionUiState('idle');
+      setStatus(t('batch.cancelled'));
+      return;
+    }
+
+    const ok = results.filter((r) => r.status === 'success').length;
+    const err = results.filter((r) => r.status === 'error').length;
+    setStatus(t('batch.done', { ok, err, skip: results.filter((r) => r.status === 'skipped').length }));
+    setConversionUiState(ok > 0 ? 'success' : 'error');
+
+    if (lastSuccess?.result) {
+      if (lastSuccess.sourceFormat) {
+        setSourceFormat(lastSuccess.sourceFormat);
+      }
+      const lastFile = eligible.find(
+        (f) => `${f.name}-${f.size}-${f.lastModified}` === lastSuccess?.id
+      );
+      if (lastFile && lastSuccess.sourceFormat) {
+        try {
+          const text = await readFileAsUtf8(lastFile);
+          if (lastSuccess.sourceFormat === 'markdown') setMdOutput(text);
+          else setAdocInput(text);
+          setCurrentFileName(lastFile.name);
+        } catch {
+          /* ignore */
+        }
+      }
+      writeResultBuffer(
+        lastSuccess.sourceFormat || sourceFormat,
+        targetFormat,
+        lastSuccess.result,
+        {
+          setAdocInput,
+          setMdOutput,
+          setOtherOutput,
+        }
+      );
+    }
+
+    showSnackbar(t('batch.done', { ok, err, skip: results.filter((r) => r.status === 'skipped').length }));
+  }, [
+    folderBatchRunning,
+    loading,
+    folderFiles,
+    sourceFormat,
+    targetFormat,
+    isEditingResult,
+    conversionOptions,
+    userSettings,
+    conversionTimeoutMs,
+    t,
+    showSnackbar,
+  ]);
+
   /**
    * Selects and loads a file from folder files list
    * 
@@ -1711,20 +2325,68 @@ function App() {
     const textarea = sourceFormat === 'asciidoc' ? adocTextAreaRef.current :
                      sourceFormat === 'markdown' ? mdTextAreaRef.current :
                      adocTextAreaRef.current;
-    if (!textarea) return;
-
-    const text = sourceFormat === 'asciidoc' ? adocInput : (sourceFormat === 'markdown' ? mdOutput : adocInput);
-    const lines = text.split("\n");
-    const offsetBefore = lines.slice(0, lineIndex).join("\n").length + (lineIndex > 0 ? 1 : 0);
-    const lineLen = (lines[lineIndex] || '').length;
-
-    textarea.focus();
-    textarea.setSelectionRange(offsetBefore, offsetBefore + lineLen);
-
-    const style = window.getComputedStyle(textarea);
-    const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.45 || 20;
-    textarea.scrollTop = Math.max(0, (lineIndex - 2) * lineHeight);
+    scrollTextareaToLine(textarea, lineIndex + 1);
   };
+
+  const handleWarningGoto = useCallback(
+    (location: WarningLocation) => {
+      setGotoTarget(location.target);
+      const ref =
+        location.target === 'result'
+          ? resultTextAreaRef
+          : sourceFormat === 'markdown'
+            ? mdTextAreaRef
+            : adocTextAreaRef;
+      window.requestAnimationFrame(() => {
+        scrollTextareaToLine(ref.current, location.line);
+      });
+    },
+    [sourceFormat]
+  );
+
+  const resolveEditorTarget = useCallback((): 'source' | 'result' => {
+    const active = document.activeElement;
+    const inResult = !!(resultTextAreaRef.current && active === resultTextAreaRef.current);
+    const inSource = !!(
+      (adocTextAreaRef.current && active === adocTextAreaRef.current) ||
+      (mdTextAreaRef.current && active === mdTextAreaRef.current)
+    );
+    if (inResult) return 'result';
+    if (inSource) return 'source';
+    return isEditingResult ? 'result' : 'source';
+  }, [isEditingResult]);
+
+  const toggleLinkedScroll = useCallback(() => {
+    const enabled = !userSettings.ui.linkedScroll;
+    setUserSettings((prev) => ({ ...prev, ui: { ...prev.ui, linkedScroll: enabled } }));
+    setDraftSettings((prev) => ({ ...prev, ui: { ...prev.ui, linkedScroll: enabled } }));
+  }, [userSettings.ui.linkedScroll]);
+
+  const handleLinkedScrollFrom = useCallback(
+    (origin: 'source' | 'result') => {
+      if (!userSettings.ui.linkedScroll) return;
+      if (resultViewMode !== 'text') return;
+      if (linkedScrollLockRef.current) return;
+      const sourceRef = sourceFormat === 'markdown' ? mdTextAreaRef : adocTextAreaRef;
+      const from = origin === 'source' ? sourceRef.current : resultTextAreaRef.current;
+      const to = origin === 'source' ? resultTextAreaRef.current : sourceRef.current;
+      if (!from || !to) return;
+      linkedScrollLockRef.current = true;
+      syncScrollRatio(from, to);
+      requestAnimationFrame(() => {
+        linkedScrollLockRef.current = false;
+      });
+    },
+    [userSettings.ui.linkedScroll, resultViewMode, sourceFormat]
+  );
+
+  const onSourceTextAreaScroll = useCallback(() => {
+    handleLinkedScrollFrom('source');
+  }, [handleLinkedScrollFrom]);
+
+  const onResultTextAreaScroll = useCallback(() => {
+    handleLinkedScrollFrom('result');
+  }, [handleLinkedScrollFrom]);
 
   // ==========================================================================
   // HANDLERS: CONTENT ACTIONS (Copy, Clear, Save)
@@ -2573,7 +3235,12 @@ function App() {
       const guardedSetStatus = (value: string) => { if (isActiveAttempt()) setStatus(value); };
       const guardedSetOutput = (value: string) => {
         if (!isActiveAttempt()) return;
-        setOutputByFormat(appendDocumentSignature(value, userSettings.profile));
+        const next = appendDocumentSignature(value, userSettings.profile);
+        if (next.length >= 100_000) {
+          startTransition(() => setOutputByFormat(next));
+        } else {
+          setOutputByFormat(next);
+        }
       };
       const guardedSetLoading = (value: boolean) => { if (isActiveAttempt()) setLoading(value); };
       const guardedSetNotification = (value: { message: string; type: 'success' | 'error'; visible: boolean } | null) => { if (isActiveAttempt()) setNotification(value); };
@@ -2735,9 +3402,79 @@ function App() {
         leftLabel: getFormatTitle(sourceFormat),
         rightLabel: getFormatTitle(targetFormat),
       });
+      setDiffMinimized(false);
       setShowDiffPanel(true);
     });
   }, [sourceFormat, targetFormat, adocInput, mdOutput, otherOutput, getFormatTitle]);
+
+  const compareHistoryEntries = useCallback(
+    (
+      left: ConversionHistoryItem,
+      right: ConversionHistoryItem,
+      field: 'source' | 'result'
+    ) => {
+      const fmtTime = (ts: number) =>
+        new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      const labelFor = (item: ConversionHistoryItem) =>
+        `${getFormatTitle(item.fromFormat)}→${getFormatTitle(item.toFormat)} · ${fmtTime(item.timestamp)}`;
+      startTransition(() => {
+        setDiffSnapshot({
+          left: field === 'source' ? left.sourceContent : left.resultContent,
+          right: field === 'source' ? right.sourceContent : right.resultContent,
+          leftLabel: labelFor(left),
+          rightLabel: labelFor(right),
+        });
+        setDiffMinimized(false);
+        setShowDiffPanel(true);
+        setHistoryWindowMinimized(true);
+      });
+    },
+    [getFormatTitle]
+  );
+
+  const applyWorkspacePreset = useCallback(
+    (id: WorkspacePresetId) => {
+      const preset = getWorkspacePreset(id);
+      if (!preset) return;
+      const nextPercent = clampPanelSplitPercent(preset.panelSplitPercent);
+      const patch = {
+        panelSplitPercent: nextPercent,
+        panelRatio: preset.panelRatio,
+        panelOrientation: preset.panelOrientation,
+      };
+      setUserSettings((prev) => {
+        const next = { ...prev, ui: { ...prev.ui, ...patch } };
+        persistUserSettings(next);
+        return next;
+      });
+      setDraftSettings((prev) => ({ ...prev, ui: { ...prev.ui, ...patch } }));
+      setFocusMode(preset.focusMode);
+      setStatus(t('workspace.preset.applied', { name: t(`workspace.preset.${id}` as MessageKey) }));
+    },
+    [t]
+  );
+
+  const activeWorkspacePresetId = useMemo(
+    () =>
+      matchWorkspacePreset({
+        panelSplitPercent,
+        panelOrientation,
+        focusMode,
+      }),
+    [panelSplitPercent, panelOrientation, focusMode]
+  );
+
+  const togglePreviewWindow = useCallback(() => {
+    if (!supportsRichPreview(targetFormat)) return;
+    if (previewWindowOpen && !previewWindowMinimized) {
+      setPreviewWindowOpen(false);
+      return;
+    }
+    setPreviewWindowOpen(true);
+    setPreviewWindowMinimized(false);
+    // Évite le double aperçu : le panneau reste en texte.
+    setResultViewMode('text');
+  }, [targetFormat, previewWindowOpen, previewWindowMinimized]);
 
   useEffect(() => {
     document.documentElement.toggleAttribute('data-find-replace-open', showFindReplace);
@@ -2755,22 +3492,77 @@ function App() {
     },
     onToggleHistory: toggleHistoryPanel,
     onOpenFindReplace: () => {
-      const active = document.activeElement;
-      const inResult = !!(resultTextAreaRef.current && active === resultTextAreaRef.current);
-      const inSource = !!(
-        (adocTextAreaRef.current && active === adocTextAreaRef.current) ||
-        (mdTextAreaRef.current && active === mdTextAreaRef.current)
-      );
-      if (inResult) setFindTarget('result');
-      else if (inSource) setFindTarget('source');
-      else setFindTarget(isEditingResult ? 'result' : 'source');
+      setFindTarget(resolveEditorTarget());
+      setShowGotoLine(false);
       setShowFindReplace(true);
     },
+    onOpenGotoLine: () => {
+      setGotoTarget(resolveEditorTarget());
+      setShowFindReplace(false);
+      setShowGotoLine(true);
+    },
     onOpenDiff: openDiffPanel,
+    onToggleFocusMode: toggleFocusMode,
+    onOpenCommandPalette: () => setShowCommandPalette((v) => !v),
     isEditingResult,
     onOpenSaveModal: () => setShowSaveModal(true),
     loading,
   });
+
+  // Escape quitte le mode focus si aucune overlay/modale n'est ouverte
+  useEffect(() => {
+    if (!focusMode) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (
+        (settingsOpen && !settingsMinimized) ||
+        showHistoryPanel ||
+        showDiscardSettingsModal ||
+        showResetSettingsModal ||
+        showClearHistoryModal ||
+        showClearLocalDataModal ||
+        showSaveModal ||
+        showCancelModal ||
+        showClearResultModal ||
+        showClearSourceModal ||
+        showConversionModal ||
+        (showDiffPanel && !diffMinimized) ||
+        showFindReplace ||
+        showGotoLine ||
+        showCommandPalette ||
+        shortcutsHelpOpen ||
+        (navigationWindowOpen && !navigationWindowMinimized)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setFocusMode(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    focusMode,
+    settingsOpen,
+    settingsMinimized,
+    showHistoryPanel,
+    showDiscardSettingsModal,
+    showResetSettingsModal,
+    showClearHistoryModal,
+    showClearLocalDataModal,
+    showSaveModal,
+    showCancelModal,
+    showClearResultModal,
+    diffMinimized,
+    showClearSourceModal,
+    showConversionModal,
+    showDiffPanel,
+    showFindReplace,
+    showGotoLine,
+    showCommandPalette,
+    shortcutsHelpOpen,
+    navigationWindowOpen,
+    navigationWindowMinimized,
+  ]);
 
   // ==========================================================================
   // HELPERS: CONTENT MANAGEMENT BY FORMAT
@@ -2891,6 +3683,281 @@ function App() {
     });
   }, [sourceFormat, targetFormat, adocInput, mdOutput, otherOutput]);
 
+  const applyFormatPair = useCallback(
+    (source: FormatType, target: FormatType) => {
+      if (!isSupportedUiConversion(source, target)) return;
+      setSourceFormat(source);
+      setTargetFormat(target);
+      setOtherOutput('');
+    },
+    []
+  );
+
+  const toggleFavoriteFormatPair = useCallback(
+    (source: FormatType, target: FormatType) => {
+      setUserSettings((prev) => ({
+        ...prev,
+        conversion: {
+          ...prev.conversion,
+          favoritePairs: toggleFavoritePair(prev.conversion.favoritePairs, source, target),
+        },
+      }));
+      setDraftSettings((prev) => ({
+        ...prev,
+        conversion: {
+          ...prev.conversion,
+          favoritePairs: toggleFavoritePair(prev.conversion.favoritePairs, source, target),
+        },
+      }));
+    },
+    []
+  );
+
+  const commandPaletteItems = useMemo((): CommandPaletteItem[] => {
+    const sourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
+    const resultText = readResultBuffer(sourceFormat, targetFormat, {
+      adocInput,
+      mdOutput,
+      otherOutput,
+    });
+    const sourceHas = !!sourceText.trim();
+    const resultHas = !!resultText.trim();
+    const canConvertPair =
+      sourceFormat !== targetFormat && isSupportedUiConversion(sourceFormat, targetFormat);
+    const canAddTab = sessionTabs.length < MAX_SESSION_TABS;
+    const convertDisabledReason = loading
+      ? t('cmd.reason.converting')
+      : !sourceHas
+        ? t('cmd.reason.emptySource')
+        : !canConvertPair
+          ? t('cmd.reason.sameFormat')
+          : undefined;
+
+    return [
+      {
+        id: 'convert',
+        label: t('shortcuts.convert'),
+        shortcut: SHORTCUT_TIP.convert,
+        keywords: 'run go',
+        disabled: Boolean(convertDisabledReason),
+        disabledReason: convertDisabledReason,
+        run: () => handleConvert(),
+      },
+      {
+        id: 'find',
+        label: t('shortcuts.find'),
+        shortcut: SHORTCUT_TIP.find,
+        keywords: 'search rechercher',
+        run: () => {
+          setFindTarget(resolveEditorTarget());
+          setShowGotoLine(false);
+          setShowFindReplace(true);
+        },
+      },
+      {
+        id: 'goto',
+        label: t('shortcuts.goto'),
+        shortcut: SHORTCUT_TIP.goto,
+        keywords: 'line ligne',
+        run: () => {
+          setGotoTarget(resolveEditorTarget());
+          setShowFindReplace(false);
+          setShowGotoLine(true);
+        },
+      },
+      {
+        id: 'diff',
+        label: t('shortcuts.diff'),
+        shortcut: SHORTCUT_TIP.diff,
+        keywords: 'compare',
+        disabled: !sourceHas || !resultHas,
+        disabledReason:
+          !sourceHas && !resultHas
+            ? t('cmd.reason.emptyBoth')
+            : !sourceHas
+              ? t('cmd.reason.emptySource')
+              : t('cmd.reason.emptyResult'),
+        run: () => openDiffPanel(),
+      },
+      {
+        id: 'focus',
+        label: t('shortcuts.focus'),
+        shortcut: SHORTCUT_TIP.focus,
+        run: () => toggleFocusMode(),
+      },
+      {
+        id: 'history',
+        label: t('shortcuts.history'),
+        shortcut: SHORTCUT_TIP.history,
+        run: () => toggleHistoryPanel(),
+      },
+      {
+        id: 'settings',
+        label: t('shortcuts.settings'),
+        shortcut: SHORTCUT_TIP.settings,
+        run: () => {
+          if (settingsOpen && !settingsMinimized) closeSettingsPanel();
+          else openSettingsPanel();
+        },
+      },
+      {
+        id: 'navigation',
+        label: t('cmd.navigation'),
+        keywords: 'headings titres toc',
+        run: () => {
+          setNavigationEnabled(true);
+          setNavigationWindowMinimized(false);
+          setNavigationWindowOpen(true);
+        },
+      },
+      {
+        id: 'previewDetach',
+        label: t('panel.previewDetach'),
+        keywords: 'preview aperçu detach flottant window',
+        disabled: !resultHas || !supportsRichPreview(targetFormat),
+        disabledReason: !resultHas
+          ? t('cmd.reason.emptyResult')
+          : !supportsRichPreview(targetFormat)
+            ? t('cmd.reason.noPreview')
+            : undefined,
+        run: () => togglePreviewWindow(),
+      },
+      ...WORKSPACE_PRESETS.map((preset) => ({
+        id: `workspace-${preset.id}`,
+        label: t(`workspace.preset.${preset.id}` as MessageKey),
+        keywords: `layout workspace preset ${preset.id}`,
+        run: () => applyWorkspacePreset(preset.id),
+      })),
+      {
+        id: 'swap',
+        label: t('convert.swapFormats'),
+        keywords: 'échanger swap',
+        run: () => handleSwap(),
+      },
+      {
+        id: 'linkedScroll',
+        label: t('iface.linkedScroll'),
+        keywords: 'scroll sync',
+        run: () => toggleLinkedScroll(),
+      },
+      {
+        id: 'newTab',
+        label: t('sessionTabs.add'),
+        keywords: 'onglet tab',
+        disabled: !canAddTab,
+        disabledReason: !canAddTab ? t('sessionTabs.max', { max: MAX_SESSION_TABS }) : undefined,
+        run: () => addSessionTab(),
+      },
+      {
+        id: 'copy',
+        label: t('common.copy'),
+        keywords: 'clipboard',
+        disabled: !resultHas,
+        disabledReason: !resultHas ? t('cmd.reason.emptyResult') : undefined,
+        run: () => {
+          void handleCopy();
+        },
+      },
+      {
+        id: 'export',
+        label: t('shortcuts.download'),
+        shortcut: SHORTCUT_TIP.download,
+        keywords: 'export download',
+        disabled: !resultHas,
+        disabledReason: !resultHas ? t('cmd.reason.emptyResult') : undefined,
+        run: () => handleExport(),
+      },
+      {
+        id: 'exportZip',
+        label: t('panel.actions.zip'),
+        keywords: 'zip archive',
+        disabled: !resultHas && !sourceHas,
+        disabledReason:
+          !resultHas && !sourceHas ? t('cmd.reason.emptyBoth') : undefined,
+        run: () => handleExportZip(),
+      },
+      {
+        id: 'clearSource',
+        label: t('shortcuts.clearSource'),
+        shortcut: SHORTCUT_TIP.clearSource,
+        keywords: 'effacer delete',
+        disabled: !sourceHas,
+        disabledReason: !sourceHas ? t('cmd.reason.emptySource') : undefined,
+        run: () => handleClearSource(),
+      },
+      {
+        id: 'clearResult',
+        label: t('panel.clearResult'),
+        keywords: 'effacer delete',
+        disabled: !resultHas,
+        disabledReason: !resultHas ? t('cmd.reason.emptyResult') : undefined,
+        run: () => handleClear(),
+      },
+      {
+        id: 'folderBatch',
+        label: t('batch.start'),
+        keywords: 'dossier folder batch queue lot',
+        disabled: folderBatchRunning || loading || folderFiles.length < 2,
+        disabledReason: folderBatchRunning
+          ? t('cmd.reason.batchRunning')
+          : loading
+            ? t('cmd.reason.converting')
+            : folderFiles.length < 2
+              ? t('cmd.reason.needFolder')
+              : undefined,
+        run: () => {
+          void startFolderBatch();
+        },
+      },
+      {
+        id: 'resultZen',
+        label: t('zen.result.enter'),
+        keywords: 'zen lecture result fullscreen',
+        disabled: !resultHas,
+        disabledReason: !resultHas ? t('cmd.reason.emptyResult') : undefined,
+        run: () => setResultZenMode(true),
+      },
+      {
+        id: 'help',
+        label: t('shortcuts.help'),
+        shortcut: SHORTCUT_TIP.help,
+        keywords: 'raccourcis shortcuts',
+        run: () => setShortcutsHelpOpen((v) => !v),
+      },
+    ];
+  }, [
+    sourceFormat,
+    targetFormat,
+    adocInput,
+    mdOutput,
+    otherOutput,
+    loading,
+    sessionTabs.length,
+    t,
+    handleConvert,
+    resolveEditorTarget,
+    openDiffPanel,
+    togglePreviewWindow,
+    applyWorkspacePreset,
+    toggleFocusMode,
+    toggleHistoryPanel,
+    settingsOpen,
+    settingsMinimized,
+    closeSettingsPanel,
+    openSettingsPanel,
+    handleSwap,
+    toggleLinkedScroll,
+    addSessionTab,
+    handleCopy,
+    handleExport,
+    handleExportZip,
+    handleClearSource,
+    handleClear,
+    folderFiles.length,
+    folderBatchRunning,
+    startFolderBatch,
+  ]);
+
   /**
    * ============================================================================
    * UTILITY: PLACEHOLDER BY FORMAT
@@ -2949,10 +4016,15 @@ function App() {
         onFileSelect={handleFileSelect}
         onMarkModified={() => setSourceModified(true)}
         onDropFile={handleDropSourceFile}
+        linkedScroll={userSettings.ui.linkedScroll}
+        onToggleLinkedScroll={toggleLinkedScroll}
+        onTextAreaScroll={onSourceTextAreaScroll}
+        onStartFolderBatch={startFolderBatch}
+        folderBatchRunning={folderBatchRunning}
       />
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceFormat, targetFormat, sourceTextForUi, currentFileName, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, sourceModified, handleClearSource, handleDropSourceFile, handleFolderChange]);
+  }, [sourceFormat, targetFormat, sourceTextForUi, currentFileName, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, sourceModified, handleClearSource, handleDropSourceFile, handleFolderChange, userSettings.ui.linkedScroll, toggleLinkedScroll, onSourceTextAreaScroll, startFolderBatch, folderBatchRunning]);
 
   const resultCard = useMemo(() => {
     const setResultValue = (content: string) => {
@@ -2979,7 +4051,7 @@ function App() {
           ...(isEditingResult
             ? [{
                 id: 'save',
-                label: t('panel.actions.save'),
+                label: withShortcutId(t('panel.actions.save'), 'download'),
                 onClick: () => setShowSaveModal(true),
               }]
             : [
@@ -2990,7 +4062,7 @@ function App() {
                 },
                 {
                   id: 'export',
-                  label: t('panel.actions.download'),
+                  label: withShortcutId(t('panel.actions.download'), 'download'),
                   onClick: handleExport,
                   disabled: !resultTextForUi.trim(),
                 },
@@ -3002,9 +4074,15 @@ function App() {
                 },
                 {
                   id: 'diff',
-                  label: t('panel.actions.diff'),
+                  label: withShortcutId(t('panel.actions.diff'), 'diff'),
                   onClick: openDiffPanel,
                   disabled: !resultTextForUi.trim() || !sourceHasContent,
+                },
+                {
+                  id: 'zen',
+                  label: t('zen.result.enter'),
+                  onClick: () => setResultZenMode(true),
+                  disabled: !resultTextForUi.trim(),
                 },
               ]),
         ]
@@ -3018,6 +4096,7 @@ function App() {
         sourceHasContent={sourceHasContent}
         loading={loading}
         status={status}
+        sourceChars={deferredSourceForResultMeta.length}
         isEditingResult={isEditingResult}
         resultModified={resultModified}
         actions={resultActions}
@@ -3032,16 +4111,39 @@ function App() {
         }
         previewAsHtmlDocument={targetFormat === 'html'}
         showPreviewToggle={richPreview}
+        onDetachPreview={richPreview ? togglePreviewWindow : undefined}
+        previewDetached={previewWindowOpen && !previewWindowMinimized}
         textAreaRef={resultTextAreaRef}
         format={targetFormat}
+        statusTone={conversionUiState}
+        onTextAreaScroll={onResultTextAreaScroll}
       />
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceFormat, targetFormat, resultTextForUi, deferredSourceForResultMeta, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear, handleExportZip, resultViewMode, openDiffPanel, t]);
+  }, [sourceFormat, targetFormat, resultTextForUi, deferredSourceForResultMeta, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear, handleExportZip, resultViewMode, openDiffPanel, togglePreviewWindow, previewWindowOpen, previewWindowMinimized, conversionUiState, t, onResultTextAreaScroll]);
 
   return (
     <LocaleProvider locale={uiLocale}>
-    <div className="page">
+    <div
+      className="page"
+      data-focus-mode={focusMode ? 'true' : undefined}
+      data-result-zen={resultZenMode ? 'true' : undefined}
+      data-conversion-status={conversionUiState !== 'idle' ? conversionUiState : undefined}
+    >
+      <a className="skip-link" href="#main-content">
+        {t('a11y.skipToContent')}
+      </a>
+      {focusMode && (
+        <button
+          type="button"
+          className="focus-mode-exit-chip"
+          onClick={toggleFocusMode}
+          aria-label={t('focus.exit')}
+        >
+          <span className="focus-mode-exit-chip-label">{t('focus.exit')}</span>
+          <kbd className="focus-mode-exit-chip-hint">{t('focus.exitHint')}</kbd>
+        </button>
+      )}
       {/* 
         ========================================================================
         NOTIFICATION TOAST (SUCCESS/ERROR)
@@ -3064,35 +4166,30 @@ function App() {
         - Triggered on network or validation errors
       */}
       {notification && notification.visible && (
-        <div className={`notification notification-${notification.type}`}>
+        <div
+          className={`notification notification-${notification.type}`}
+          role={notification.type === 'error' ? 'alert' : 'status'}
+          aria-live={notification.type === 'error' ? 'assertive' : 'polite'}
+          aria-atomic="true"
+        >
           <div className="notification-content">
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: 1 }}>
-              {/* 
-                Icon based on notification type
-                - Success: ✓ (green check)
-                - Error: ✕ (red cross)
-              */}
               {notification.type === 'success' && (
-                <span style={{ fontSize: "1.25rem" }}>✓</span>
+                <span style={{ fontSize: "1.25rem" }} aria-hidden="true">✓</span>
               )}
               {notification.type === 'error' && (
-                <span style={{ fontSize: "1.25rem" }}>✕</span>
+                <span style={{ fontSize: "1.25rem" }} aria-hidden="true">✕</span>
               )}
-              {/* Notification message */}
               <span className="notification-message">{notification.message}</span>
             </div>
-            {/* 
-              Manual close button
-              - Reduced opacity by default (0.8)
-              - Full opacity on hover (1.0)
-              - Smooth transition on hover
-            */}
             <button
+              type="button"
               onClick={() => setNotification(null)}
               className="notification-close-btn"
-              data-tooltip="Fermer"
+              aria-label={t('common.close')}
+              data-tooltip={t('common.close')}
             >
-              ✕
+              <span aria-hidden="true">✕</span>
             </button>
           </div>
         </div>
@@ -3113,6 +4210,8 @@ function App() {
         settingsButtonRef={settingsButtonRef}
         settingsOpen={settingsOpen && !settingsMinimized}
         metricsFailureCount={metricsFailureCount}
+        focusMode={focusMode}
+        onToggleFocusMode={toggleFocusMode}
         onToggleSettings={() => {
           if (settingsMinimized) {
             setSettingsMinimized(false);
@@ -3135,6 +4234,7 @@ function App() {
           warnings={conversionWarnings}
           detailLevel={userSettings.ui.warningsDetailLevel}
           onDismiss={() => setWarningsDismissed(true)}
+          onGotoLocation={handleWarningGoto}
         />
       )}
 
@@ -3183,6 +4283,8 @@ function App() {
           onImportSettingsFile={importUserSettingsFile}
           onClearLocalData={() => setShowClearLocalDataModal(true)}
           onFillMetadataFromProfile={fillMetadataFromProfile}
+          onApplyWorkspacePreset={applyWorkspacePreset}
+          activeWorkspacePresetId={activeWorkspacePresetId}
           sessionMetadata={conversionOptions.metadata}
           setSettingsMinimized={setSettingsMinimized}
           setSettingsMaximized={setSettingsMaximized}
@@ -3315,6 +4417,7 @@ function App() {
           onDelete={removeHistoryEntry}
           onClear={() => clearHistory(true)}
           getFormatTitle={getFormatTitle}
+          onCompare={compareHistoryEntries}
         />
       )}
 
@@ -3340,6 +4443,7 @@ function App() {
             : (sourceFormat === 'markdown' ? mdOutput : adocInput)
         }
         readOnly={findTarget === 'result' && !isEditingResult}
+        onRequestEditResult={() => setShowEditModal(true)}
         onReplaceInTarget={(next) => {
           if (findTarget === 'result') {
             writeResultBuffer(sourceFormat, targetFormat, next, {
@@ -3358,9 +4462,72 @@ function App() {
         }}
       />
 
+      <GotoLineBar
+        open={showGotoLine}
+        onClose={() => setShowGotoLine(false)}
+        target={gotoTarget}
+        onTargetChange={setGotoTarget}
+        targetRef={
+          gotoTarget === 'result'
+            ? resultTextAreaRef
+            : sourceFormat === 'markdown'
+              ? mdTextAreaRef
+              : adocTextAreaRef
+        }
+        text={
+          gotoTarget === 'result'
+            ? readResultBuffer(sourceFormat, targetFormat, {
+                adocInput,
+                mdOutput,
+                otherOutput,
+              })
+            : (sourceFormat === 'markdown' ? mdOutput : adocInput)
+        }
+      />
+
+      <FolderBatchPanel
+        open={folderBatchOpen}
+        items={folderBatchItems}
+        running={folderBatchRunning}
+        currentIndex={folderBatchIndex}
+        onCancel={cancelFolderBatch}
+        onClose={() => setFolderBatchOpen(false)}
+        onDownloadZip={downloadFolderBatchZip}
+        canDownloadZip={folderBatchItems.some((i) => i.status === 'success')}
+      />
+
+      <CommandPalette
+        open={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        items={commandPaletteItems}
+      />
+
+      <ResultZenOverlay
+        open={resultZenMode}
+        title={getFormatTitle(targetFormat)}
+        text={resultTextForUi}
+        viewMode={resultViewMode}
+        onViewModeChange={setResultViewMode}
+        previewHtml={
+          resultViewMode === 'preview' && supportsRichPreview(targetFormat)
+            ? renderPreviewHtml(resultTextForUi, targetFormat)
+            : ''
+        }
+        previewAsHtmlDocument={targetFormat === 'html'}
+        showPreviewToggle={supportsRichPreview(targetFormat)}
+        onClose={() => setResultZenMode(false)}
+        onCopy={() => {
+          void handleCopy();
+        }}
+      />
+
       <DiffPanel
-        open={showDiffPanel}
-        onClose={() => setShowDiffPanel(false)}
+        open={showDiffPanel && !diffMinimized}
+        onClose={() => {
+          setShowDiffPanel(false);
+          setDiffMinimized(false);
+        }}
+        onMinimize={() => setDiffMinimized(true)}
         left={diffSnapshot?.left ?? ''}
         right={diffSnapshot?.right ?? ''}
         leftLabel={diffSnapshot?.leftLabel}
@@ -3437,6 +4604,10 @@ function App() {
           activeProfileIds={activeProfileIds}
           onToggleProfile={toggleConversionProfile}
           onClearProfiles={clearConversionProfiles}
+          recentPairs={userSettings.conversion.recentPairs}
+          favoritePairs={userSettings.conversion.favoritePairs}
+          onApplyFormatPair={applyFormatPair}
+          onToggleFavoritePair={toggleFavoriteFormatPair}
         />
 
         {/* 
@@ -3454,6 +4625,17 @@ function App() {
           - Center column for the swap button
         */}
         <div className="main-content">
+          <SessionTabsBar
+            tabs={sessionTabs}
+            activeTabId={activeSessionTabId}
+            onSelect={selectSessionTab}
+            onAdd={addSessionTab}
+            onClose={closeSessionTab}
+            onRename={renameSessionTab}
+            onDuplicate={duplicateSessionTab}
+            onReorder={reorderSessionTab}
+            dirtyTabIds={dirtySessionTabIds}
+          />
           <div className="mobile-pane-tabs" role="tablist" aria-label={t("mobile.panes")}>
             <button
               type="button"
@@ -3475,47 +4657,35 @@ function App() {
             </button>
           </div>
           <main
+            id="main-content"
             className="grid"
+            tabIndex={-1}
             data-mobile-pane={mobilePane}
-            data-panel-ratio={
-              settingsOpen ? draftSettings.ui.panelRatio : userSettings.ui.panelRatio
-            }
+            data-panel-split="true"
+            data-panel-orientation={panelOrientation}
+            style={{ ['--panel-split' as string]: `${panelSplitPercent}%` }}
           >
-            {/* 
-              Source panel: shows content according to sourceFormat
-              Built dynamically by sourceCard (useMemo)
-            */}
             {sourceCard}
 
-            {/* 
-              ================================================================
-              SWAP COLUMN: SWAP BUTTON
-              ================================================================
-              Center button that swaps source and target formats.
-              
-              BEHAVIOR:
-              - Swaps sourceFormat ↔ targetFormat
-              - Swaps content: old result → new source, etc.
-              - Panels stay in place (source left, result right)
-              
-              ICON:
-              - ⇄ (double arrow) for bidirectional swap
-            */}
-            <div className="swap-column">
+            <PanelSplitHandle
+              percent={panelSplitPercent}
+              onPercentChange={setPanelSplitPercent}
+              onPercentCommit={commitPanelSplit}
+              orientation={panelOrientation}
+            >
               <button
                 type="button"
                 className="swap-button"
                 onClick={handleSwap}
-                data-tooltip="Échanger les formats source et destination"
+                aria-label={t('convert.swapFormats')}
+                data-tooltip={t('convert.swapFormats')}
               >
-                <span className="swap-icon">⇄</span>
+                <span className="swap-icon" aria-hidden="true">
+                  {panelOrientation === 'stacked' ? '⇅' : '⇄'}
+                </span>
               </button>
-            </div>
+            </PanelSplitHandle>
 
-            {/* 
-              Result panel: shows result according to targetFormat
-              Built dynamically by resultCard (useMemo)
-            */}
             {resultCard}
           </main>
         </div>
@@ -3536,43 +4706,53 @@ function App() {
         - Position: fixed at bottom of screen
         - Shows Navigation and/or Historique when minimized
       */}
-      {(navigationWindowMinimized || historyWindowMinimized || settingsMinimized) && (
-        <div className="taskbar">
-          {navigationWindowMinimized && (
-            <div
-              className="taskbar-item"
-              onClick={() => {
-                setNavigationWindowMinimized(false);
-                setNavigationWindowOpen(true);
-              }}
-              data-tooltip={t("taskbar.navigation")}
-            >
-              <span className="taskbar-icon" aria-hidden>🔍</span>
-              <span className="taskbar-label">{t("taskbar.navigation")}</span>
-            </div>
-          )}
-          {historyWindowMinimized && (
-            <div
-              className="taskbar-item"
-              onClick={() => setHistoryWindowMinimized(false)}
-              data-tooltip={t("history.restoreTip")}
-            >
-              <span className="taskbar-icon" aria-hidden>🕐</span>
-              <span className="taskbar-label">{t("taskbar.history")}</span>
-            </div>
-          )}
-          {settingsMinimized && (
-            <div
-              className="taskbar-item"
-              onClick={() => setSettingsMinimized(false)}
-              data-tooltip={t("taskbar.settings")}
-            >
-              <span className="taskbar-icon" aria-hidden>⚙</span>
-              <span className="taskbar-label">{t("taskbar.settings")}</span>
-            </div>
-          )}
-        </div>
-      )}
+      <AppTaskbar
+        items={[
+          ...(navigationWindowMinimized
+            ? [
+                {
+                  id: 'navigation' as const,
+                  onRestore: () => {
+                    setNavigationWindowMinimized(false);
+                    setNavigationWindowOpen(true);
+                  },
+                },
+              ]
+            : []),
+          ...(historyWindowMinimized
+            ? [
+                {
+                  id: 'history' as const,
+                  onRestore: () => setHistoryWindowMinimized(false),
+                },
+              ]
+            : []),
+          ...(settingsMinimized
+            ? [
+                {
+                  id: 'settings' as const,
+                  onRestore: () => setSettingsMinimized(false),
+                },
+              ]
+            : []),
+          ...(showDiffPanel && diffMinimized
+            ? [
+                {
+                  id: 'diff' as const,
+                  onRestore: () => setDiffMinimized(false),
+                },
+              ]
+            : []),
+          ...(previewWindowOpen && previewWindowMinimized
+            ? [
+                {
+                  id: 'preview' as const,
+                  onRestore: () => setPreviewWindowMinimized(false),
+                },
+              ]
+            : []),
+        ]}
+      />
 
       <NavigationWindow
         open={navigationWindowOpen}
@@ -3595,6 +4775,32 @@ function App() {
           setNavigationEnabled(false);
         }}
         onNavigate={scrollToHeading}
+      />
+
+      <PreviewWindow
+        open={previewWindowOpen}
+        minimized={previewWindowMinimized}
+        maximized={previewWindowMaximized}
+        title={getFormatTitle(targetFormat)}
+        previewHtml={
+          previewWindowOpen && supportsRichPreview(targetFormat)
+            ? renderPreviewHtml(resultTextForUi, targetFormat)
+            : ''
+        }
+        previewAsHtmlDocument={targetFormat === 'html'}
+        empty={!resultTextForUi.trim()}
+        panelRef={previewWindowRef}
+        panelStyle={previewPanelStyle}
+        isDragging={isDraggingPreview}
+        isResizing={isResizingPreview}
+        onDragStart={handlePreviewDragStart}
+        onResizeStart={handlePreviewResizeStart}
+        onMinimize={() => setPreviewWindowMinimized(true)}
+        onToggleMaximize={() => setPreviewWindowMaximized((v) => !v)}
+        onClose={() => {
+          setPreviewWindowOpen(false);
+          setPreviewWindowMinimized(false);
+        }}
       />
 
       <AppConfirmModals
@@ -3653,6 +4859,12 @@ function App() {
         showClearResultModal={showClearResultModal}
         onCloseClearResult={() => setShowClearResultModal(false)}
         onConfirmClearResult={confirmClearResult}
+        showCloseSessionTabModal={showCloseSessionTabModal}
+        onCloseCloseSessionTab={() => {
+          setShowCloseSessionTabModal(false);
+          setPendingCloseSessionTabId(null);
+        }}
+        onConfirmCloseSessionTab={confirmCloseSessionTab}
         showClearSourceModal={showClearSourceModal}
         onCloseClearSource={() => setShowClearSourceModal(false)}
         onConfirmClearSourceOnly={confirmClearSource}

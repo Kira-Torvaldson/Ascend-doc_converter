@@ -1,0 +1,12 @@
+= Callouts Test
+
+:experimental:
+
+[source,js]
+----
+const x = 1; // <1>
+const y = x + 1; // <2>
+----
+
+<1> Initialize the counter.
+<2> Increment once.

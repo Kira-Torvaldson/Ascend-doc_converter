@@ -8,4 +8,5 @@ export { useHeadings } from './useHeadings';
 export { useFileHandling } from './useFileHandling';
 export { useFloatingWindow } from './useFloatingWindow';
 export { useAppKeyboardShortcuts } from './useAppKeyboardShortcuts';
+export { useFocusTrap } from './useFocusTrap';
 export type { AppKeyboardShortcutsHandlers } from './useAppKeyboardShortcuts';

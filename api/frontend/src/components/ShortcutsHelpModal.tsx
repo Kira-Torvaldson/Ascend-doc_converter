@@ -12,13 +12,16 @@ export interface ShortcutHelpItem {
 }
 
 const SHORTCUT_DEFS: Array<{ key: MessageKey; keys: string }> = [
+  { key: 'shortcuts.commandPalette', keys: 'Ctrl + K' },
   { key: 'shortcuts.convert', keys: 'Ctrl + Entrée' },
   { key: 'shortcuts.download', keys: 'Ctrl + S' },
   { key: 'shortcuts.find', keys: 'Ctrl + F' },
+  { key: 'shortcuts.goto', keys: 'Ctrl + G' },
   { key: 'shortcuts.diff', keys: 'Ctrl + Maj + D' },
+  { key: 'shortcuts.focus', keys: 'Ctrl + Maj + F' },
   { key: 'shortcuts.history', keys: 'Ctrl + H' },
   { key: 'shortcuts.settings', keys: 'Ctrl + ,' },
-  { key: 'shortcuts.clearSource', keys: 'Ctrl + K' },
+  { key: 'shortcuts.clearSource', keys: 'Ctrl + Maj + K' },
   { key: 'shortcuts.help', keys: 'Ctrl + /' },
 ];
 

@@ -7,6 +7,11 @@ import {
   isIdentityPresetId,
   normalizeIdentityPresets,
 } from './profileIdentity';
+import {
+  formatPairsEqual,
+  normalizeFormatPairs,
+  type FormatPair,
+} from '../utils/conversionPairs';
 
 export type {
   AppLanguage,
@@ -39,11 +44,17 @@ export type InterfacePresetId = 'light' | 'dark' | 'minimal';
 /** Clair / sombre / suivre le système. */
 export type ThemePreference = 'default' | 'dark' | 'auto';
 
+/** Thème des éditeurs Source / Résultat (indépendant de l’UI). */
+export type EditorThemePreference = 'inherit' | 'light' | 'dark';
+
 /** Échelle globale de l’interface (chrome + textes UI). */
 export type UiScale = 'compact' | 'comfort' | 'large';
 
 /** Ratio largeur source / résultat. */
 export type PanelRatio = '40-60' | '50-50' | '60-40';
+
+/** Disposition des panneaux source / résultat. */
+export type PanelOrientation = 'side' | 'stacked';
 
 /** Densité visuelle des panneaux source / résultat. */
 export type PanelDensity = 'compact' | 'comfortable' | 'spacious';
@@ -226,12 +237,18 @@ export type UserSettings = {
     saveConversionHistory: boolean;
     historyLimit: HistoryLimit;
     confirmBeforeConversion: boolean;
+    /** Dernières paires source→cible utilisées (MRU). */
+    recentPairs: FormatPair[];
+    /** Paires source→cible épinglées. */
+    favoritePairs: FormatPair[];
   };
   ui: {
     theme: ThemePreference;
     backgroundMode: BackgroundMode;
     editorFontSize: number;
     editorFontFamily: EditorFontFamily;
+    /** Thème des zones d’édition (hérite de l’UI par défaut). */
+    editorTheme: EditorThemePreference;
     compactMode: boolean;
     editorWordWrap: boolean;
     reduceMotion: boolean;
@@ -249,6 +266,10 @@ export type UserSettings = {
     /** Densité visuelle globale (indépendante du mode compact layout). */
     uiScale: UiScale;
     panelRatio: PanelRatio;
+    /** Largeur du panneau source en % (25–75), pilotée aussi par le splitter. */
+    panelSplitPercent: number;
+    /** Côte à côte ou source au-dessus / résultat en dessous. */
+    panelOrientation: PanelOrientation;
     accentColor: AccentColor;
     backgroundIntensity: BackgroundIntensity;
     editorLineHeight: EditorLineHeight;
@@ -265,6 +286,10 @@ export type UserSettings = {
     sidebarPosition: SidebarPosition;
     /** Coloration légère des balises / titres dans les éditeurs. */
     syntaxHighlight: boolean;
+    /** Synchroniser le défilement source ↔ résultat (proportionnel). */
+    linkedScroll: boolean;
+    /** Ids de commandes épinglées dans le header (à côté de Ctrl+K). */
+    pinnedCommandIds: string[];
   };
 };
 
@@ -272,6 +297,19 @@ export const USER_SETTINGS_KEY = 'ascend_user_settings';
 export const MAX_DISPLAY_NAME = 100;
 export const MAX_ORGANIZATION = 100;
 export const MAX_SIGNATURE = 500;
+/** Commandes épinglables dans le header (à côté de Ctrl+K). */
+export const PINNABLE_COMMAND_IDS = [
+  'convert',
+  'find',
+  'goto',
+  'diff',
+  'copy',
+  'export',
+  'history',
+  'focus',
+] as const;
+export const MAX_PINNED_COMMANDS = 3;
+export const DEFAULT_PINNED_COMMAND_IDS: string[] = ['convert', 'find'];
 
 const HISTORY_LIMITS: HistoryLimit[] = [20, 50, 100];
 
@@ -299,9 +337,34 @@ function normalizeBool(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 
+const PINNABLE_SET = new Set<string>(PINNABLE_COMMAND_IDS);
+
+export function normalizePinnedCommandIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [...DEFAULT_PINNED_COMMAND_IDS];
+  const out: string[] = [];
+  for (const raw of value) {
+    if (typeof raw !== 'string') continue;
+    const id = raw.trim();
+    if (!PINNABLE_SET.has(id) || out.includes(id)) continue;
+    out.push(id);
+    if (out.length >= MAX_PINNED_COMMANDS) break;
+  }
+  return out;
+}
+
+function pinnedCommandIdsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((id, i) => id === b[i]);
+}
+
 function normalizeThemePreference(value: unknown): ThemePreference {
   if (value === 'default' || value === 'dark' || value === 'auto') return value;
   return DEFAULT_USER_SETTINGS.ui.theme;
+}
+
+function normalizeEditorThemePreference(value: unknown): EditorThemePreference {
+  if (value === 'inherit' || value === 'light' || value === 'dark') return value;
+  return DEFAULT_USER_SETTINGS.ui.editorTheme;
 }
 
 function normalizeUiScale(value: unknown): UiScale {
@@ -319,9 +382,26 @@ function normalizeSidebarPosition(value: unknown): SidebarPosition {
   return DEFAULT_USER_SETTINGS.ui.sidebarPosition;
 }
 
+function normalizePanelOrientation(value: unknown): PanelOrientation {
+  if (value === 'side' || value === 'stacked') return value;
+  return DEFAULT_USER_SETTINGS.ui.panelOrientation;
+}
+
 function normalizePanelRatio(value: unknown): PanelRatio {
   if (value === '40-60' || value === '50-50' || value === '60-40') return value;
   return DEFAULT_USER_SETTINGS.ui.panelRatio;
+}
+
+function panelRatioToPercentLocal(ratio: PanelRatio): number {
+  if (ratio === '40-60') return 40;
+  if (ratio === '60-40') return 60;
+  return 50;
+}
+
+export function normalizePanelSplitPercent(value: unknown, ratioFallback: PanelRatio = '50-50'): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (Number.isFinite(n)) return Math.min(75, Math.max(25, Math.round(n)));
+  return panelRatioToPercentLocal(ratioFallback);
 }
 
 function normalizeAccentColor(value: unknown): AccentColor {
@@ -474,12 +554,15 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     saveConversionHistory: true,
     historyLimit: 50,
     confirmBeforeConversion: false,
+    recentPairs: [],
+    favoritePairs: [],
   },
   ui: {
     theme: 'default',
     backgroundMode: 'default',
     editorFontSize: 14,
     editorFontFamily: 'jetbrains',
+    editorTheme: 'inherit',
     compactMode: false,
     editorWordWrap: false,
     reduceMotion: false,
@@ -492,6 +575,8 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     metricsBadgeResetOnView: true,
     uiScale: 'comfort',
     panelRatio: '50-50',
+    panelSplitPercent: 50,
+    panelOrientation: 'side',
     accentColor: 'blue',
     backgroundIntensity: 'medium',
     editorLineHeight: 'normal',
@@ -502,6 +587,8 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     panelDensity: 'comfortable',
     sidebarPosition: 'left',
     syntaxHighlight: false,
+    linkedScroll: false,
+    pinnedCommandIds: [...DEFAULT_PINNED_COMMAND_IDS],
   },
 };
 
@@ -553,6 +640,8 @@ export function normalizeUserSettings(parsed: unknown): UserSettings {
       saveConversionHistory: normalizeBool(c.saveConversionHistory, d.conversion.saveConversionHistory),
       historyLimit: normalizeHistoryLimit(c.historyLimit),
       confirmBeforeConversion: normalizeBool(c.confirmBeforeConversion, d.conversion.confirmBeforeConversion),
+      recentPairs: normalizeFormatPairs(c.recentPairs),
+      favoritePairs: normalizeFormatPairs(c.favoritePairs),
     },
     ui: {
       theme: normalizeThemePreference(u.theme),
@@ -565,6 +654,7 @@ export function normalizeUserSettings(parsed: unknown): UserSettings {
           ? u.editorFontSize
           : 14,
       editorFontFamily: normalizeEditorFontFamily(u.editorFontFamily),
+      editorTheme: normalizeEditorThemePreference(u.editorTheme),
       compactMode: normalizeBool(u.compactMode, d.ui.compactMode),
       editorWordWrap: normalizeBool(u.editorWordWrap, d.ui.editorWordWrap),
       reduceMotion: normalizeBool(u.reduceMotion, d.ui.reduceMotion),
@@ -577,6 +667,8 @@ export function normalizeUserSettings(parsed: unknown): UserSettings {
       metricsBadgeResetOnView: normalizeBool(u.metricsBadgeResetOnView, d.ui.metricsBadgeResetOnView),
       uiScale: normalizeUiScale(u.uiScale),
       panelRatio: normalizePanelRatio(u.panelRatio),
+      panelSplitPercent: normalizePanelSplitPercent(u.panelSplitPercent, normalizePanelRatio(u.panelRatio)),
+      panelOrientation: normalizePanelOrientation(u.panelOrientation),
       accentColor: normalizeAccentColor(u.accentColor),
       backgroundIntensity: normalizeBackgroundIntensity(u.backgroundIntensity),
       editorLineHeight: normalizeEditorLineHeight(u.editorLineHeight),
@@ -587,6 +679,8 @@ export function normalizeUserSettings(parsed: unknown): UserSettings {
       panelDensity: normalizePanelDensity(u.panelDensity),
       sidebarPosition: normalizeSidebarPosition(u.sidebarPosition),
       syntaxHighlight: normalizeBool(u.syntaxHighlight, d.ui.syntaxHighlight),
+      linkedScroll: normalizeBool(u.linkedScroll, d.ui.linkedScroll),
+      pinnedCommandIds: normalizePinnedCommandIds(u.pinnedCommandIds),
     },
   };
 }
@@ -611,7 +705,11 @@ export function cloneUserSettings(settings: UserSettings): UserSettings {
         client: { ...settings.profile.identityPresets.client },
       },
     },
-    conversion: { ...settings.conversion },
+    conversion: {
+      ...settings.conversion,
+      recentPairs: [...settings.conversion.recentPairs],
+      favoritePairs: [...settings.conversion.favoritePairs],
+    },
     ui: { ...settings.ui },
   };
 }
@@ -634,10 +732,13 @@ export function areUserSettingsEqual(a: UserSettings, b: UserSettings): boolean 
     a.conversion.saveConversionHistory === b.conversion.saveConversionHistory &&
     a.conversion.historyLimit === b.conversion.historyLimit &&
     a.conversion.confirmBeforeConversion === b.conversion.confirmBeforeConversion &&
+    formatPairsEqual(a.conversion.recentPairs, b.conversion.recentPairs) &&
+    formatPairsEqual(a.conversion.favoritePairs, b.conversion.favoritePairs) &&
     a.ui.theme === b.ui.theme &&
     a.ui.backgroundMode === b.ui.backgroundMode &&
     a.ui.editorFontSize === b.ui.editorFontSize &&
     a.ui.editorFontFamily === b.ui.editorFontFamily &&
+    a.ui.editorTheme === b.ui.editorTheme &&
     a.ui.compactMode === b.ui.compactMode &&
     a.ui.editorWordWrap === b.ui.editorWordWrap &&
     a.ui.reduceMotion === b.ui.reduceMotion &&
@@ -650,6 +751,8 @@ export function areUserSettingsEqual(a: UserSettings, b: UserSettings): boolean 
     a.ui.metricsBadgeResetOnView === b.ui.metricsBadgeResetOnView &&
     a.ui.uiScale === b.ui.uiScale &&
     a.ui.panelRatio === b.ui.panelRatio &&
+    a.ui.panelSplitPercent === b.ui.panelSplitPercent &&
+    a.ui.panelOrientation === b.ui.panelOrientation &&
     a.ui.accentColor === b.ui.accentColor &&
     a.ui.backgroundIntensity === b.ui.backgroundIntensity &&
     a.ui.editorLineHeight === b.ui.editorLineHeight &&
@@ -659,7 +762,9 @@ export function areUserSettingsEqual(a: UserSettings, b: UserSettings): boolean 
     a.ui.strongFocus === b.ui.strongFocus &&
     a.ui.panelDensity === b.ui.panelDensity &&
     a.ui.sidebarPosition === b.ui.sidebarPosition &&
-    a.ui.syntaxHighlight === b.ui.syntaxHighlight
+    a.ui.syntaxHighlight === b.ui.syntaxHighlight &&
+    a.ui.linkedScroll === b.ui.linkedScroll &&
+    pinnedCommandIdsEqual(a.ui.pinnedCommandIds, b.ui.pinnedCommandIds)
   );
 }
 
@@ -675,6 +780,7 @@ export function resetInterfaceUiSettings(ui: UserSettings['ui']): UserSettings['
     backgroundMode: ui.backgroundMode === 'custom' ? 'custom' : d.backgroundMode,
     editorFontSize: d.editorFontSize,
     editorFontFamily: d.editorFontFamily,
+    editorTheme: d.editorTheme,
     compactMode: d.compactMode,
     editorWordWrap: d.editorWordWrap,
     reduceMotion: d.reduceMotion,
@@ -683,6 +789,8 @@ export function resetInterfaceUiSettings(ui: UserSettings['ui']): UserSettings['
     sidebarCollapsedByDefault: d.sidebarCollapsedByDefault,
     uiScale: d.uiScale,
     panelRatio: d.panelRatio,
+    panelSplitPercent: d.panelSplitPercent,
+    panelOrientation: d.panelOrientation,
     accentColor: d.accentColor,
     backgroundIntensity: d.backgroundIntensity,
     editorLineHeight: d.editorLineHeight,
@@ -693,6 +801,8 @@ export function resetInterfaceUiSettings(ui: UserSettings['ui']): UserSettings['
     panelDensity: d.panelDensity,
     sidebarPosition: d.sidebarPosition,
     syntaxHighlight: d.syntaxHighlight,
+    linkedScroll: d.linkedScroll,
+    pinnedCommandIds: [...d.pinnedCommandIds],
   };
 }
 

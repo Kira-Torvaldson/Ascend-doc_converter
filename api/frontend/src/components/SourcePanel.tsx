@@ -10,6 +10,7 @@ import { EmptyEditorState } from './EmptyEditorState';
 import { TextStats } from './TextStats';
 import { getSampleDocument } from '../examples/sampleDocuments';
 import { EditorWithLines } from './EditorWithLines';
+import { withShortcutId } from '../utils/shortcutTips';
 
 interface SourcePanelProps {
   title: string;
@@ -31,6 +32,12 @@ interface SourcePanelProps {
   onFileSelect: (index: number) => void;
   onMarkModified: () => void;
   onDropFile?: (file: File) => void;
+  linkedScroll?: boolean;
+  onToggleLinkedScroll?: () => void;
+  onTextAreaScroll?: (textarea: HTMLTextAreaElement) => void;
+  /** Lance la conversion en file pour tous les fichiers du dossier. */
+  onStartFolderBatch?: () => void;
+  folderBatchRunning?: boolean;
 }
 
 export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel({
@@ -53,6 +60,11 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
   onFileSelect,
   onMarkModified,
   onDropFile,
+  linkedScroll = false,
+  onToggleLinkedScroll,
+  onTextAreaScroll,
+  onStartFolderBatch,
+  folderBatchRunning = false,
 }) {
   const t = useT();
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -139,27 +151,58 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
           )}
         </h2>
         <div className="panel-header-actions">
-          <label className="file-input-label">
-            <span>📄</span>
-            <input type="file" accept=".adoc,.asciidoc,.md,.txt,.html,.htm" onChange={onFileChange} />
+          <label className="file-input-label" data-tooltip={t('panel.openFile')}>
+            <span aria-hidden="true">📄</span>
+            <span className="sr-only">{t('panel.openFile')}</span>
+            <input type="file" accept=".adoc,.asciidoc,.md,.txt,.html,.htm" onChange={onFileChange} aria-label={t('panel.openFile')} />
           </label>
-          <label className="file-input-label">
-            <span>📁</span>
+          <label className="file-input-label" data-tooltip={t('panel.openFolder')}>
+            <span aria-hidden="true">📁</span>
+            <span className="sr-only">{t('panel.openFolder')}</span>
             <input
               type="file"
               {...({ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>)}
               multiple
               onChange={onFolderChange}
+              aria-label={t('panel.openFolder')}
             />
           </label>
+          {onToggleLinkedScroll ? (
+            <button
+              type="button"
+              onClick={onToggleLinkedScroll}
+              className={`panel-header-btn panel-header-btn--muted${linkedScroll ? ' is-active' : ''}`}
+              aria-pressed={linkedScroll}
+              data-tooltip={
+                linkedScroll ? t('iface.linkedScroll.on') : t('iface.linkedScroll.off')
+              }
+              aria-label={t('iface.linkedScroll')}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M8 7h3M13 7h3M8 12h8M8 17h3M13 17h3"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M7 5v14M17 5v14"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  opacity="0.55"
+                />
+              </svg>
+            </button>
+          ) : null}
           {onClear && (
             <button
               type="button"
               onClick={onClear}
               disabled={!value.trim()}
               className="panel-header-btn panel-header-btn--danger"
-              data-tooltip={t('panel.clearSource', { title })}
-              aria-label={t('panel.clearSource', { title })}
+              data-tooltip={withShortcutId(t('panel.clearSource', { title }), 'clearSource')}
+              aria-label={withShortcutId(t('panel.clearSource', { title }), 'clearSource')}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path
@@ -177,9 +220,11 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
             onClick={onConvert}
             disabled={loading || !value.trim() || !canConvert}
             className={`panel-header-btn panel-header-btn--convert panel-header-btn--convert-primary${loading ? ' is-loading' : ''}`}
-            aria-label={t('convert.cta.aria')}
+            aria-label={withShortcutId(t('convert.cta.aria'), 'convert')}
             data-tooltip={
-              !canConvert ? t('convert.cta.sameFormat') : t('convert.cta.tooltip')
+              !canConvert
+                ? t('convert.cta.sameFormat')
+                : withShortcutId(t('convert.cta.tooltip'), 'convert')
             }
           >
             {loading ? (
@@ -204,7 +249,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
           </button>
         </div>
       </div>
-      {loading && <ConversionLoadingBanner compact />}
+      {loading && <ConversionLoadingBanner compact sourceChars={value.length} />}
       <div className="panel-toolbar">
         {currentFileName && <span className="file-name">{currentFileName}</span>}
         {value ? <TextStats text={value} /> : null}
@@ -231,6 +276,17 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
             <span>📁</span>
             <span>{t('options.filesAvailable', { count: folderFiles.length })}</span>
           </div>
+          {onStartFolderBatch && folderFiles.length > 1 ? (
+            <button
+              type="button"
+              className="folder-batch-start-btn"
+              onClick={onStartFolderBatch}
+              disabled={loading || folderBatchRunning}
+              data-tooltip={t('batch.start.tip')}
+            >
+              {folderBatchRunning ? t('batch.running') : t('batch.start')}
+            </button>
+          ) : null}
         </div>
       )}
       <div className={`editor-shell${isEmpty ? ' is-empty' : ''}`}>
@@ -268,6 +324,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
           onChange={handleChange}
           placeholder={isEmpty ? '' : placeholder}
           highlightFormat={format}
+          onTextAreaScroll={onTextAreaScroll}
         />
       </div>
     </section>

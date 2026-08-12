@@ -17,7 +17,7 @@ const downdocModule = require('./adoc-to-md.converter.js')
 const text2markdownModule = require('./text2markdown.module.js')
 const panwriterModule = require('./panwriter.module.js')
 const docverterModule = require('./docverter.module.js')
-// Note: panwriter and docverter are placeholder implementations (not yet functional)
+// panwriter / docverter: stub files only — not registered in lazy-load / orchestrator
 
 // ============================================================================
 // ORCHESTRATION MODULES (Modules d'orchestration)
@@ -53,16 +53,12 @@ module.exports = {
   text2markdown: text2markdownModule,
   
   /**
-   * PanWriter wrapper: Multi-format document converter (PLACEHOLDER - not yet functional)
-   * Formats: markdown, asciidoc, html, docx, odt, rtf, latex, tex (bidirectional)
-   * NOTE: This is a placeholder implementation. Will be functional in a future version.
+   * PanWriter stub (offline — not in active registry). Returns CONVERTER_NOT_FOUND.
    */
   panwriter: panwriterModule,
   
   /**
-   * Docverter wrapper: Document conversion service (PLACEHOLDER - not yet functional)
-   * Formats: rtf, pdf, html, txt, markdown, docx, xlsx, pptx, odt, ods, odp, png, jpg, jpeg, gif (bidirectional)
-   * NOTE: This is a placeholder implementation. Will be functional in a future version.
+   * Docverter stub (offline — not in active registry). Returns CONVERTER_NOT_FOUND.
    */
   docverter: docverterModule,
   

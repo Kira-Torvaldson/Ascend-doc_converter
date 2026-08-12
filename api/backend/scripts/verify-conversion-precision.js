@@ -152,10 +152,25 @@ async function main() {
   assert.ok(!pAdoc.includes('++>++'), 'pandoc must not mangle blockquotes')
   assert.ok(!pAdoc.includes('**bold**') || pAdoc.includes('*bold*'), 'admon body uses AsciiDoc bold')
 
-  // Images with size
+  // Images with size (block + inline)
   const img = await convertAsciiDoc(['= Doc', '', 'image::fig.png[Alt,200,100]', ''].join('\n'), 'default')
   assert.ok(img.markdown.includes('![Alt](fig.png)'), 'image alt/src')
   assert.ok(/width=200/.test(img.markdown) && /height=100/.test(img.markdown), 'image dimensions')
+
+  const imgInline = await convertAsciiDoc(
+    ['= Doc', '', 'See image:icon.png[Logo,32,32] here.', ''].join('\n'),
+    'default'
+  )
+  assert.ok(imgInline.markdown.includes('![Logo](icon.png)'), 'inline image alt/src')
+  assert.ok(/width=32/.test(imgInline.markdown) && /height=32/.test(imgInline.markdown), 'inline image dimensions')
+  assert.ok(/^See .* here\./m.test(imgInline.markdown), 'inline image keeps surrounding text')
+
+  const imgRound = processInlineFormattingSafe('See ![Logo](icon.png){width=32 height=32} here.')
+  assert.ok(/image:icon\.png\[Logo,32,32\]/.test(imgRound), 'md→adoc inline uses image:')
+  assert.ok(!/image::icon\.png/.test(imgRound), 'md→adoc inline is not block image::')
+
+  const imgBlockRound = processInlineFormattingSafe('![Alt](fig.png){width=200 height=100}')
+  assert.ok(/image::fig\.png\[Alt,200,100\]/.test(imgBlockRound), 'md→adoc block uses image::')
 
   // Mark spans
   const mark = await convertAsciiDoc(['= Doc', '', 'Use #highlighted# text.', ''].join('\n'), 'default')
@@ -180,6 +195,9 @@ async function main() {
   )
   assert.strictEqual(span.engineUsed, 'pandoc', 'span uses pandoc')
   assert.ok(/colspan|span both/i.test(span.markdown), 'colspan or span content preserved')
+  assert.ok(!/<tbody>\s*<\/tbody>/i.test(span.markdown), 'no empty tbody')
+  assert.ok(!/<tfoot/i.test(span.markdown), 'tfoot promoted to tbody')
+  assert.ok(/<tbody>/i.test(span.markdown), 'tbody present for span rows')
 
   // Callouts → portable (n)
   const callout = await convertAsciiDoc(
@@ -198,7 +216,8 @@ async function main() {
     ].join('\n'),
     'default'
   )
-  assert.ok(/\(1\)/.test(callout.markdown) || /explanation/i.test(callout.markdown), 'callout portable or listed')
+  assert.ok(/\(1\)/.test(callout.markdown), 'callout marker portable (1)')
+  assert.ok(/explanation/i.test(callout.markdown), 'callout explanation listed')
   assert.ok(!/[①②③]/.test(callout.markdown), 'no unicode conums')
 
   // Unresolved attribute warning

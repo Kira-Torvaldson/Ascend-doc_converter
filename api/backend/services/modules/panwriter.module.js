@@ -1,157 +1,83 @@
 'use strict'
 
 /**
- * PANWRITER MODULE
- * 
- * Wrapper for PanWriter tool conforming to the interface defined in
- * doc/specifications/modules.interface.md
- * 
- * This module is a placeholder for future implementation.
- * PanWriter integration will be added in a future version.
- * 
- * References:
- * - modules.interface.md: Module interface contract
- * - panwriter.module.md: PanWriter module specification
+ * PANWRITER MODULE (stub offline)
+ *
+ * Kept for a future Office/DOCX path. Not registered in the active converter
+ * registry / lazy-load map — callers must not select it until implemented.
+ * Returns a standardized ConversionResult with CONVERTER_NOT_FOUND.
  */
 
-const { readFileSync, writeFileSync, statSync, existsSync, unlinkSync } = require('fs')
 const path = require('path')
-const { getMaxInputSizeBytes } = require('../config/conversion-limits.js')
+const { existsSync, statSync, unlinkSync } = require('fs')
+const { createFailureResult } = require('../../src/utils/conversion-result.js')
 
-// ============================================================================
-// CONFIGURATION
-// ============================================================================
+function makeErrorObject({ code, message, details, recoverable }) {
+  const err = { code, message, details: details ?? null, recoverable: Boolean(recoverable) }
+  Object.defineProperty(err, 'toString', {
+    value: function toString() { return this.message },
+    enumerable: false,
+  })
+  return err
+}
 
-const MODULE_CONFIG = {}
-
-// ============================================================================
-// PANWRITER MODULE
-// ============================================================================
-
-/**
- * PanWriter module conforming to modules.interface.md interface
- * 
- * NOTE: This is a placeholder implementation. PanWriter integration
- * will be added in a future version.
- */
-const panwriterModule = {
-  /**
-   * Module name (modules.interface.md - Property 1)
-   */
-  name: 'panwriter',
-
-  /**
-   * Supported formats (modules.interface.md - Property 2)
-   */
-  supportedFormats: {
-    from: ['markdown', 'asciidoc', 'html', 'docx', 'odt', 'rtf', 'latex', 'tex'],
-    to: ['markdown', 'asciidoc', 'html', 'docx', 'odt', 'rtf', 'latex', 'tex']
-  },
-
-  /**
-   * Run method conforming to modules.interface.md
-   * 
-   * NOTE: This is a placeholder. Returns an error indicating that
-   * PanWriter is not yet implemented.
-   * 
-   * @param {string} inputPath - Absolute path to input file
-   * @param {string} outputPath - Absolute path to output file
-   * @param {Object} options - Conversion options (optional)
-   * @param {string} options.conversionId - Conversion ID for logs (optional)
-   * @param {string} options.fromFormat - Source format (optional)
-   * @param {string} options.toFormat - Target format (optional)
-   * @returns {Promise<ModuleResult>} Conversion result
-   */
-  async run(inputPath, outputPath, options = {}) {
-    const startTime = Date.now()
-    const logs = []
-    const conversionId = options.conversionId || 'unknown'
-    const fromFormat = options.fromFormat || 'unknown'
-    const toFormat = options.toFormat || 'unknown'
-
-    try {
-      // Minimal logging - Obligation 4 (modules.interface.md)
-      logs.push(`[${conversionId}] Conversion started at ${new Date().toISOString()}`)
-      logs.push(`[${conversionId}] Input: ${path.basename(inputPath)}`)
-      logs.push(`[${conversionId}] Output: ${path.basename(outputPath)}`)
-      logs.push(`[${conversionId}] Format: ${fromFormat} → ${toFormat}`)
-
-      // Basic input validation
-      if (!existsSync(inputPath)) {
-        const duration = (Date.now() - startTime) / 1000
-        logs.push(`[${conversionId}] Validation failed: Input file not found`)
-        return {
-          success: false,
-          logs: logs,
-          error: 'Input file not found',
-          duration: duration
-        }
-      }
-
-      // Check file size
-      try {
-        const stats = statSync(inputPath)
-        if (stats.size > getMaxInputSizeBytes()) {
-          const duration = (Date.now() - startTime) / 1000
-          logs.push(`[${conversionId}] Validation failed: File size exceeds limit`)
-          return {
-            success: false,
-            logs: logs,
-            error: `File size (${stats.size} bytes) exceeds maximum allowed size (${getMaxInputSizeBytes()} bytes)`,
-            duration: duration
-          }
-        }
-      } catch (error) {
-        const duration = (Date.now() - startTime) / 1000
-        logs.push(`[${conversionId}] Validation failed: ${error.message}`)
-        return {
-          success: false,
-          logs: logs,
-          error: `Failed to read file stats: ${error.message}`,
-          duration: duration
-        }
-      }
-
-      // Return error indicating that PanWriter is not yet implemented
-      const duration = (Date.now() - startTime) / 1000
-      logs.push(`[${conversionId}] ERROR: PanWriter module is not yet implemented`)
-      logs.push(`[${conversionId}] This feature will be available in a future version`)
-      logs.push(`[${conversionId}] Finished at ${new Date().toISOString()}`)
-
-      return {
-        success: false,
-        logs: logs,
-        error: 'PanWriter module is not yet implemented. This feature will be available in a future version.',
-        duration: duration
-      }
-
-    } catch (error) {
-      // Obligation 3 - Secure error handling: exhaustive capture
-      const duration = (Date.now() - startTime) / 1000
-      logs.push(`[${conversionId}] Unexpected error: ${error.message}`)
-
-      // Ensure no partial output file is left behind
-      if (existsSync(outputPath)) {
-        try {
-          unlinkSync(outputPath)
-          logs.push(`[${conversionId}] Partial output file removed after error`)
-        } catch (unlinkError) {
-          logs.push(`[${conversionId}] Warning: Failed to remove partial output file`)
-        }
-      }
-
-      return {
-        success: false,
-        logs: logs,
-        error: `Unexpected error: ${error.message}`,
-        duration: duration
-      }
-    }
+function buildInputFileBlock(filePath) {
+  let size = 0
+  try {
+    if (filePath && existsSync(filePath)) size = statSync(filePath).size
+  } catch (_) {}
+  return {
+    originalName: path.basename(filePath || ''),
+    storedPath: filePath,
+    size,
+    mimeType: null,
   }
 }
 
-// ============================================================================
-// EXPORTS
-// ============================================================================
+const panwriterModule = {
+  name: 'panwriter',
+  /** Empty so the stub never matches findConverter if re-registered by mistake. */
+  supportedFormats: { from: [], to: [] },
+
+  async run(inputPath, outputPath, options = {}) {
+    const startTime = Date.now()
+    const conversionId = options.conversionId || 'unknown'
+    const fromFormat = (options.fromFormat || 'unknown').toLowerCase()
+    const toFormat = (options.toFormat || 'unknown').toLowerCase()
+    const logs = [
+      `[${conversionId}] PanWriter stub invoked (${fromFormat} → ${toFormat})`,
+      `[${conversionId}] Module not implemented — use a registered converter`,
+    ]
+
+    if (outputPath && existsSync(outputPath)) {
+      try { unlinkSync(outputPath) } catch (_) {}
+    }
+
+    const endTime = Date.now()
+    const result = createFailureResult({
+      conversionId,
+      converter: 'panwriter',
+      pipeline: [`${fromFormat}->${toFormat}`],
+      inputFormat: fromFormat,
+      outputFormat: toFormat,
+      inputFile: buildInputFileBlock(inputPath),
+      startedAt: new Date(startTime).toISOString(),
+      finishedAt: new Date(endTime).toISOString(),
+      durationMs: endTime - startTime,
+      error: makeErrorObject({
+        code: 'CONVERTER_NOT_FOUND',
+        message: 'PanWriter is not implemented yet (Office path planned for a future release).',
+        details: { stub: true, module: 'panwriter' },
+        recoverable: false,
+      }),
+      outputFile: null,
+      warnings: [],
+      logs,
+      meta: { stub: true },
+    })
+    result.duration = (endTime - startTime) / 1000
+    return result
+  },
+}
 
 module.exports = panwriterModule

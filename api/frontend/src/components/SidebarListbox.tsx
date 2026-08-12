@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 export interface SidebarListboxOption {
   value: string;
   label: string;
+  disabled?: boolean;
 }
 
 interface SidebarListboxProps {
@@ -46,11 +47,13 @@ export const SidebarListbox: React.FC<SidebarListboxProps> = ({
 
   const selectValue = useCallback(
     (next: string) => {
+      const option = options.find((o) => o.value === next);
+      if (option?.disabled) return;
       onChange(next);
       setOpen(false);
       buttonRef.current?.focus();
     },
-    [onChange],
+    [onChange, options],
   );
 
   useEffect(() => {
@@ -110,7 +113,7 @@ export const SidebarListbox: React.FC<SidebarListboxProps> = ({
     } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       const next = options[activeIndex];
-      if (next) selectValue(next.value);
+      if (next && !next.disabled) selectValue(next.value);
     } else if (e.key === 'Tab') {
       setOpen(false);
     }
@@ -154,6 +157,7 @@ export const SidebarListbox: React.FC<SidebarListboxProps> = ({
             {options.map((option, index) => {
               const selected = option.value === value;
               const active = index === activeIndex;
+              const optionDisabled = Boolean(option.disabled);
               return (
                 <button
                   key={option.value}
@@ -161,7 +165,9 @@ export const SidebarListbox: React.FC<SidebarListboxProps> = ({
                   role="option"
                   data-listbox-index={index}
                   aria-selected={selected}
-                  className={`format-select-option${selected ? ' is-selected' : ''}${active ? ' is-active' : ''}`}
+                  aria-disabled={optionDisabled || undefined}
+                  disabled={optionDisabled}
+                  className={`format-select-option${selected ? ' is-selected' : ''}${active ? ' is-active' : ''}${optionDisabled ? ' is-disabled' : ''}`}
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => selectValue(option.value)}
                 >

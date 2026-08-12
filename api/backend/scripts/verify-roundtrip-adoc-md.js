@@ -77,6 +77,32 @@ const RULES_BY_FILE = {
     assert.ok(/span both/i.test(roundtrip), 'spanned cell content')
     assert.ok(/\|===/.test(roundtrip) || /\[cols/.test(roundtrip) || /\d+\+/.test(roundtrip), 'table structure')
   },
+  '09-image-size.adoc': ({ roundtrip, title }) => {
+    assert.match(roundtrip, /^=+ /m, 'level-1 heading')
+    assert.ok(roundtrip.includes(title), `title preserved: ${title}`)
+    assert.ok(/image:{1,2}diagram\.png/i.test(roundtrip), 'block image target')
+    assert.ok(/image:{1,2}icon\.png/i.test(roundtrip), 'inline image target')
+    assert.ok(
+      /640/.test(roundtrip) && /360/.test(roundtrip),
+      'block image width/height preserved'
+    )
+    assert.ok(
+      /32/.test(roundtrip),
+      'inline image size preserved'
+    )
+    assert.ok(/Architecture overview/i.test(roundtrip), 'block image alt preserved')
+    assert.ok(/Logo/i.test(roundtrip), 'inline image alt preserved')
+  },
+  '10-callouts.adoc': ({ roundtrip, title }) => {
+    assert.match(roundtrip, /^=+ /m, 'level-1 heading')
+    assert.ok(roundtrip.includes(title), `title preserved: ${title}`)
+    assert.ok(/Initialize the counter/i.test(roundtrip), 'callout 1 explanation')
+    assert.ok(/Increment once/i.test(roundtrip), 'callout 2 explanation')
+    assert.ok(
+      /<1>|\(1\)|callout/i.test(roundtrip),
+      'callout marker preserved in some form'
+    )
+  },
 }
 
 function extractTitle(adocText) {
