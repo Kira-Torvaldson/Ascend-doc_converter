@@ -6,8 +6,9 @@ import React from 'react';
 import type { FormatType, ConversionOptions } from '../types';
 import { useT } from '../i18n/LocaleContext';
 import { FormatSelector } from './FormatSelector';
+import { FormatPairsBar } from './FormatPairsBar';
 import { OtherOptionsPanel, type OtherOptionsCategory } from './OtherOptionsPanel';
-import { isSupportedUiConversion } from '../utils/conversionPairs';
+import { isSupportedUiConversion, type FormatPair } from '../utils/conversionPairs';
 
 export interface ConversionSidebarProps {
   sidebarCollapsed: boolean;
@@ -27,6 +28,10 @@ export interface ConversionSidebarProps {
   activeProfileIds: string[];
   onToggleProfile: (profileId: string) => void;
   onClearProfiles: () => void;
+  recentPairs: FormatPair[];
+  favoritePairs: FormatPair[];
+  onApplyFormatPair: (source: FormatType, target: FormatType) => void;
+  onToggleFavoritePair: (source: FormatType, target: FormatType) => void;
 }
 
 export const ConversionSidebar: React.FC<ConversionSidebarProps> = (props) => {
@@ -49,6 +54,10 @@ export const ConversionSidebar: React.FC<ConversionSidebarProps> = (props) => {
     activeProfileIds,
     onToggleProfile,
     onClearProfiles,
+    recentPairs,
+    favoritePairs,
+    onApplyFormatPair,
+    onToggleFavoritePair,
   } = props;
 
   return (
@@ -81,6 +90,14 @@ export const ConversionSidebar: React.FC<ConversionSidebarProps> = (props) => {
             label={t('sidebar.targetFormat')}
             value={targetFormat}
             onChange={onTargetFormatChange}
+          />
+          <FormatPairsBar
+            sourceFormat={sourceFormat}
+            targetFormat={targetFormat}
+            recentPairs={recentPairs}
+            favoritePairs={favoritePairs}
+            onApplyPair={onApplyFormatPair}
+            onToggleFavorite={onToggleFavoritePair}
           />
           {!isSupportedUiConversion(sourceFormat, targetFormat) ? (
             <div className="conversion-warning" role="status">

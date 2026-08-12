@@ -1,0 +1,5 @@
+= Image Size Test
+
+image::diagram.png[Architecture overview,640,360]
+
+See image:icon.png[Logo,32,32] in the paragraph.

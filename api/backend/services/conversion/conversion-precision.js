@@ -235,14 +235,19 @@ function processInlineFormattingSafe(text) {
     return `\uE000CODE${i}\uE001`
   })
 
-  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)(?:\{([^}]*)\})?/g, (_, alt, url, attrs) => {
-    if (!attrs) return `image::${url}[${alt || ''}]`
+  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)(?:\{([^}]*)\})?/g, (match, alt, url, attrs, offset, str) => {
+    const lineStart = str.lastIndexOf('\n', offset - 1) + 1
+    const lineEndIdx = str.indexOf('\n', offset)
+    const line = str.slice(lineStart, lineEndIdx === -1 ? str.length : lineEndIdx)
+    const isBlock = line.trim() === match.trim()
+    const macro = isBlock ? 'image::' : 'image:'
+    if (!attrs) return `${macro}${url}[${alt || ''}]`
     const width = /(?:^|\s)width=(\d+)/i.exec(attrs)
     const height = /(?:^|\s)height=(\d+)/i.exec(attrs)
     const parts = [alt || '']
     if (width) parts.push(width[1])
     if (height) parts.push(height[1])
-    return `image::${url}[${parts.join(',')}]`
+    return `${macro}${url}[${parts.join(',')}]`
   })
   result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
     if (url.startsWith('#')) return `<<${url.substring(1)},${label}>>`
@@ -273,18 +278,32 @@ function processInlineFormattingSafe(text) {
 }
 
 /**
- * Protect image::path[alt,w,h] so width/height survive downdoc.
+ * Protect image:: / image: path[alt,w,h] so width/height survive downdoc.
+ * Block (image::) and inline (image:) forms are both handled.
  */
 function protectAsciiDocImages(asciidoc) {
   if (!asciidoc || typeof asciidoc !== 'string') return asciidoc || ''
-  return asciidoc.replace(/^image::([^\s[]+)\[([^\]]*)\]\s*$/gm, (_, target, attrs) => {
+
+  const encodeSized = (target, attrs) => {
     const parts = String(attrs).split(',').map((s) => s.trim())
     const alt = parts[0] || ''
     const width = parts[1] || ''
     const height = parts[2] || ''
-    if (!width && !height) return `image::${target}[${alt}]`
+    if (!width && !height) return null
     return `${IMG_START}${target}|${alt}|${width}|${height}${IMG_END}`
+  }
+
+  // Block macro on its own line
+  let result = asciidoc.replace(/^image::([^\s[]+)\[([^\]]*)\]\s*$/gm, (full, target, attrs) => {
+    return encodeSized(target, attrs) || `image::${target}[${String(attrs).split(',').map((s) => s.trim())[0] || ''}]`
   })
+
+  // Inline macro (not image::) — keep surrounding text
+  result = result.replace(/\bimage:([^\s:[]+)\[([^\]]*)\]/g, (full, target, attrs) => {
+    return encodeSized(target, attrs) || full
+  })
+
+  return result
 }
 
 function restoreMarkdownImages(markdown) {
@@ -381,7 +400,7 @@ function normalizeCallouts(markdown) {
 
 /**
  * Prefer pipe tables when HTML table has no colspan/rowspan (portable MD).
- * Leave complex span tables as HTML.
+ * Leave complex span tables as HTML (after normalizeSpanHtmlTables cleanup).
  */
 function normalizeSimpleHtmlTables(markdown) {
   if (!markdown || typeof markdown !== 'string') return markdown || ''
@@ -408,6 +427,30 @@ function normalizeSimpleHtmlTables(markdown) {
     const body = matrix.slice(1).map(pad)
     const line = (cells) => `| ${cells.join(' | ')} |`
     return [line(header), line(sep), ...body.map(line)].join('\n')
+  })
+}
+
+/**
+ * Clean Pandoc GFM HTML tables that use colspan/rowspan:
+ * empty <tbody></tbody>, body rows parked in <tfoot>, wrapper <p> in cells.
+ */
+function normalizeSpanHtmlTables(markdown) {
+  if (!markdown || typeof markdown !== 'string') return markdown || ''
+  if (!/<table\b/i.test(markdown)) return markdown
+  return markdown.replace(/<table\b[\s\S]*?<\/table>/gi, (table) => {
+    if (!/colspan|rowspan/i.test(table)) return table
+    let t = table
+    t = t.replace(/<tbody>\s*<\/tbody>/gi, '')
+    t = t.replace(/<tfoot\b[^>]*>([\s\S]*?)<\/tfoot>/gi, (_, inner) => {
+      const body = String(inner || '').trim()
+      return body ? `<tbody>\n${body}\n</tbody>` : ''
+    })
+    t = t.replace(
+      /<(t[hd])(\b[^>]*)>\s*<p\b[^>]*>([\s\S]*?)<\/p>\s*<\/\1>/gi,
+      '<$1$2>$3</$1>'
+    )
+    t = t.replace(/>\s*\n?\s*</g, '>\n<')
+    return t
   })
 }
 
@@ -456,6 +499,7 @@ module.exports = {
   collectAsciiDocWarnings,
   normalizeCallouts,
   normalizeSimpleHtmlTables,
+  normalizeSpanHtmlTables,
   normalizePandocInternalLinks,
   prepareAsciiDocForDowndoc,
   finalizeDowndocMarkdown,

@@ -6,6 +6,7 @@ import React from 'react';
 import { HeaderStatusPill } from './HeaderStatusPill';
 import { ShortcutsHelpPopover } from './ShortcutsHelpPopover';
 import { useT } from '../i18n/LocaleContext';
+import { withShortcutId } from '../utils/shortcutTips';
 
 type ConversionUiState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -25,7 +26,8 @@ interface AppHeaderProps {
   settingsButtonRef: React.RefObject<HTMLButtonElement | null>;
   settingsOpen: boolean;
   onToggleSettings: () => void;
-  /** Échecs conversion récents (badge sur l’icône Paramètres). */
+  focusMode?: boolean;
+  onToggleFocusMode?: () => void;
   metricsFailureCount?: number;
 }
 
@@ -45,6 +47,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   settingsButtonRef,
   settingsOpen,
   onToggleSettings,
+  focusMode = false,
+  onToggleFocusMode,
   metricsFailureCount = 0,
 }) => {
   const t = useT();
@@ -57,6 +61,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     metricsFailureCount > 0
       ? t('header.settings.ariaFailures', { count: metricsFailureCount })
       : t('header.settings');
+
+  const focusLabel = focusMode ? t('focus.exit') : t('focus.enter');
 
   return (
   <header className="header">
@@ -96,10 +102,30 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
           <button
             type="button"
+            className={`settings-button header-icon-btn header-focus-btn${focusMode ? ' is-active' : ''}`}
+            onClick={onToggleFocusMode}
+            aria-pressed={focusMode}
+            aria-label={withShortcutId(focusLabel, 'focus')}
+            data-tooltip={withShortcutId(focusLabel, 'focus')}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+
+          <button
+            type="button"
             className={`settings-button header-icon-btn header-history-btn${historyOpen ? ' is-active' : ''}`}
             onClick={onToggleHistory}
             aria-pressed={historyOpen}
-            data-tooltip={t('header.history')}
+            aria-label={withShortcutId(t('header.history'), 'history')}
+            data-tooltip={withShortcutId(t('header.history'), 'history')}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
@@ -141,10 +167,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             ref={settingsButtonRef as React.RefObject<HTMLButtonElement>}
             className={`settings-button settings-gear-btn header-icon-btn header-settings-btn${settingsOpen ? ' is-active' : ''}`}
             onClick={onToggleSettings}
-            data-tooltip={settingsLabel}
+            data-tooltip={withShortcutId(settingsLabel, 'settings')}
             aria-haspopup="dialog"
             aria-expanded={settingsOpen}
-            aria-label={settingsAria}
+            aria-label={withShortcutId(settingsAria, 'settings')}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>

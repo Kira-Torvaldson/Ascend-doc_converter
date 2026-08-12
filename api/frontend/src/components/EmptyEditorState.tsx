@@ -5,7 +5,82 @@ type EmptyEditorStateProps = {
   onAction?: () => void;
   /** Visual tone: source invites input; result waits for conversion */
   variant?: 'source' | 'result';
+  /** Pour le résultat : en attente de source, ou prêt à convertir. */
+  resultMode?: 'waiting' | 'ready';
 };
+
+function SourceIllustration() {
+  return (
+    <svg className="editor-empty-illu" viewBox="0 0 160 100" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="emptySrcPaper" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.14" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0.05" />
+        </linearGradient>
+      </defs>
+      <ellipse cx="80" cy="86" rx="48" ry="6" fill="currentColor" opacity="0.08" />
+      <rect x="38" y="12" width="72" height="68" rx="8" fill="url(#emptySrcPaper)" stroke="currentColor" strokeWidth="1.5" opacity="0.55" />
+      <path d="M86 12v18h18" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" opacity="0.45" />
+      <path d="M52 42h44M52 52h36M52 62h28" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.35" />
+      <g className="editor-empty-illu-float">
+        <rect x="108" y="28" width="34" height="28" rx="6" fill="currentColor" fillOpacity="0.08" stroke="currentColor" strokeWidth="1.4" opacity="0.45" />
+        <path d="M119 38v12M125 44H113" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" opacity="0.55" />
+      </g>
+      <path
+        d="M28 58c0-6 4-10 10-10h8"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeDasharray="3 3"
+        opacity="0.35"
+      />
+      <circle cx="26" cy="58" r="3" fill="currentColor" opacity="0.25" />
+    </svg>
+  );
+}
+
+function ResultIllustration({ ready }: { ready: boolean }) {
+  return (
+    <svg className="editor-empty-illu" viewBox="0 0 160 100" fill="none" aria-hidden="true">
+      <ellipse cx="80" cy="86" rx="48" ry="6" fill="currentColor" opacity="0.08" />
+      <rect x="18" y="22" width="42" height="52" rx="7" stroke="currentColor" strokeWidth="1.5" opacity="0.35" fill="currentColor" fillOpacity="0.06" />
+      <path d="M28 36h22M28 46h16M28 56h20" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.28" />
+      <path
+        className={ready ? 'editor-empty-illu-arrow is-ready' : 'editor-empty-illu-arrow'}
+        d="M68 48h24"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        opacity={ready ? 0.65 : 0.3}
+      />
+      <path
+        d="M86 40l10 8-10 8"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity={ready ? 0.65 : 0.3}
+      />
+      <rect
+        x="100"
+        y="18"
+        width="46"
+        height="58"
+        rx="8"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        opacity={ready ? 0.55 : 0.28}
+        fill="currentColor"
+        fillOpacity={ready ? 0.1 : 0.04}
+      />
+      {ready ? (
+        <path d="M112 40h22M112 50h18M112 60h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.45" />
+      ) : (
+        <path d="M112 48h22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="4 4" opacity="0.3" />
+      )}
+    </svg>
+  );
+}
 
 /**
  * Overlay shown when an editor panel has no content.
@@ -17,23 +92,20 @@ export function EmptyEditorState({
   actionLabel,
   onAction,
   variant = 'source',
+  resultMode = 'waiting',
 }: EmptyEditorStateProps) {
+  const ready = variant === 'result' && resultMode === 'ready';
+
   return (
-    <div className={`editor-empty-state editor-empty-state--${variant}`} aria-hidden="true">
+    <div
+      className={`editor-empty-state editor-empty-state--${variant}${ready ? ' is-ready' : ''}`}
+      aria-hidden="true"
+    >
+      <div className="editor-empty-state-glow" aria-hidden="true" />
       <div className="editor-empty-state-card">
-        <span className="editor-empty-state-mark" aria-hidden="true">
-          {variant === 'result' ? (
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-              <path d="M4 6h16M4 12h10M4 18h14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-              <path d="M16 10l3 3-3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          ) : (
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-              <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
-              <path d="M14 3v5h5M9 13h6M9 17h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          )}
-        </span>
+        <div className="editor-empty-state-illu-wrap">
+          {variant === 'result' ? <ResultIllustration ready={ready} /> : <SourceIllustration />}
+        </div>
         <p className="editor-empty-state-title">{title}</p>
         <p className="editor-empty-state-desc">{description}</p>
         {actionLabel && onAction && (

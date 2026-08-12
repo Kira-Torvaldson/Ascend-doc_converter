@@ -6,15 +6,24 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.9.3 (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** UI i18n (langue du compte) + peaufinage Compte / Interface  
-**Focus:** traduction FR/EN/ES/DE, identité compte, accents, chrome convertisseur
+**Version:** 0.0.1.9.4 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** UX productivité (sessions, palette, batch dossier) + polish flux existants  
+**Focus:** onglets, Ctrl+K, conversion dossier, workspace, find/goto, a11y
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.9.3 (Current — Ascend)
+### 0.0.1.9.4 (Current — Ascend)
+
+**Delivered:**
+- Onglets de session, palette Ctrl+K, conversion dossier + ZIP
+- Présets workspace, aperçu détaché, mode zen, find/goto, warnings → ligne
+- Header épuré ; historique preview-only au clic ; raisons disabled dans la palette
+
+**Docs:** `doc/releases/v0.0.1.9.4-notes.md`
+
+### 0.0.1.9.3
 
 **Delivered:**
 - Langue du compte → i18n UI (FR/EN/ES/DE) ; langue de conversion séparée

@@ -86,6 +86,7 @@ describe('userSettings helpers', () => {
     const normalized = normalizeUserSettings({
       ui: {
         panelRatio: '60-40',
+        panelOrientation: 'stacked',
         accentColor: 'rose',
         backgroundIntensity: 'high',
         editorLineHeight: 'relaxed',
@@ -96,6 +97,7 @@ describe('userSettings helpers', () => {
       },
     })
     expect(normalized.ui.panelRatio).toBe('60-40')
+    expect(normalized.ui.panelOrientation).toBe('stacked')
     expect(normalized.ui.accentColor).toBe('rose')
     expect(normalizeUserSettings({ ui: { accentColor: 'emerald' } }).ui.accentColor).toBe('emerald')
     expect(normalizeUserSettings({ ui: { accentColor: 'cyan' } }).ui.accentColor).toBe('cyan')
@@ -128,10 +130,12 @@ describe('userSettings helpers', () => {
           snackbarDuration: 'nope',
           panelDensity: 'nope',
           sidebarPosition: 'nope',
+          panelOrientation: 'nope',
         },
       }).ui
     ).toMatchObject({
       panelRatio: '50-50',
+      panelOrientation: 'side',
       accentColor: 'blue',
       backgroundIntensity: 'medium',
       editorLineHeight: 'normal',
@@ -148,12 +152,18 @@ describe('userSettings helpers', () => {
   it('normalizes panel density, sidebar position and syntax highlight', () => {
     expect(
       normalizeUserSettings({
-        ui: { panelDensity: 'spacious', sidebarPosition: 'right', syntaxHighlight: true },
+        ui: {
+          panelDensity: 'spacious',
+          sidebarPosition: 'right',
+          syntaxHighlight: true,
+          linkedScroll: true,
+        },
       }).ui
     ).toMatchObject({
       panelDensity: 'spacious',
       sidebarPosition: 'right',
       syntaxHighlight: true,
+      linkedScroll: true,
     })
   })
 
@@ -178,6 +188,8 @@ describe('userSettings helpers', () => {
     expect(reset.panelDensity).toBe('comfortable')
     expect(reset.sidebarPosition).toBe('left')
     expect(reset.syntaxHighlight).toBe(false)
+    expect(reset.linkedScroll).toBe(false)
+    expect(reset.editorTheme).toBe('inherit')
     expect(reset.backgroundMode).toBe('custom')
     expect(reset.showConversionWarnings).toBe(false)
     expect(reset.warningsDetailLevel).toBe('compact')

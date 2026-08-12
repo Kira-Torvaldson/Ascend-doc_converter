@@ -39,13 +39,15 @@ export const ConversionProfilesSection: React.FC<ConversionProfilesSectionProps>
 
   const profileOptions = useMemo(
     () =>
-      CONVERSION_PROFILES.map((p) => ({
-        value: p.id,
-        label: activeProfileIds.includes(p.id)
-          ? `${p.label} · ${t('profiles.activeBadge')}`
-          : p.label,
-      })),
-    [activeProfileIds, t]
+      CONVERSION_PROFILES.map((p) => {
+        const active = activeProfileIds.includes(p.id);
+        return {
+          value: p.id,
+          label: active ? `${p.label} · ${t('profiles.activeBadge')}` : p.label,
+          disabled: atMax && !active,
+        };
+      }),
+    [activeProfileIds, atMax, t]
   );
 
   const handleSelectProfile = (profileId: string) => {
@@ -71,10 +73,15 @@ export const ConversionProfilesSection: React.FC<ConversionProfilesSectionProps>
             .filter(Boolean)
             .join(' ')}
           aria-live="polite"
+          data-tooltip={atMax ? t('profiles.maxHint', { count: MAX_ACTIVE_PROFILES }) : undefined}
         >
           {activeProfileIds.length}/{MAX_ACTIVE_PROFILES}
         </span>
       </h3>
+
+      {atMax ? (
+        <p className="conversion-profiles-max-hint">{t('profiles.maxHint', { count: MAX_ACTIVE_PROFILES })}</p>
+      ) : null}
 
       <div className="sidebar-content conversion-profiles">
         <div className="other-options-picker conversion-profiles-picker">

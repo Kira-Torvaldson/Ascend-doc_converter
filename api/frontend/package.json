@@ -1,6 +1,6 @@
 {
   "name": "ascend-frontend",
-  "version": "0.0.1.9.3",
+  "version": "0.0.1.9.4",
   "private": true,
   "scripts": {
     "dev": "vite",

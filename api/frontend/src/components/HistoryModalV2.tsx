@@ -5,7 +5,10 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { ConversionHistoryItem, FormatType } from "../types";
 import { useFloatingWindow } from "../hooks/useFloatingWindow";
-import { useT } from "../i18n/LocaleContext";
+import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useLocale, useT } from "../i18n/LocaleContext";
+import type { MessageKey } from "../i18n/messages";
+import { downloadJson } from "../utils/downloadFile";
 
 const DEFAULT_WIDTH = 520;
 const DEFAULT_HEIGHT = 440;
@@ -14,6 +17,15 @@ const MIN_HEIGHT = 240;
 const GEOMETRY_KEY = "ascend_history_window_geometry";
 const FILTERS_KEY = "ascend_history_window_filters";
 const COLLAPSED_GROUPS_KEY = "ascend_history_collapsed_groups";
+
+const LOCALE_TAGS: Record<string, string> = {
+  fr: "fr-FR",
+  en: "en-US",
+  es: "es-ES",
+  de: "de-DE",
+};
+
+type TranslateFn = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 export const useNewHistoryModal: boolean = true;
 
@@ -51,20 +63,20 @@ function getRestorable(
   return isDisplayEntry(item) ? item.originalEntry : item;
 }
 
-function formatClock(ts: number): string {
-  return new Date(ts).toLocaleTimeString("fr-FR", {
+function formatClock(ts: number, localeTag: string): string {
+  return new Date(ts).toLocaleTimeString(localeTag, {
     hour: "2-digit",
     minute: "2-digit",
   });
 }
 
 /** Relative + clock, e.g. "il y a 3 min · 14:32" */
-function formatHistoryTime(ts: number): string {
-  const clock = formatClock(ts);
+function formatHistoryTime(ts: number, t: TranslateFn, localeTag: string): string {
+  const clock = formatClock(ts, localeTag);
   const deltaSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  if (deltaSec < 45) return `à l'instant · ${clock}`;
-  if (deltaSec < 3600) return `il y a ${Math.floor(deltaSec / 60)} min · ${clock}`;
-  if (deltaSec < 86400) return `il y a ${Math.floor(deltaSec / 3600)} h · ${clock}`;
+  if (deltaSec < 45) return t("history.justNow", { clock });
+  if (deltaSec < 3600) return t("history.minutesAgo", { n: Math.floor(deltaSec / 60), clock });
+  if (deltaSec < 86400) return t("history.hoursAgo", { n: Math.floor(deltaSec / 3600), clock });
   return clock;
 }
 
@@ -81,7 +93,7 @@ function dayGroupKey(ts: number): string {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
-function dayGroupLabel(ts: number): string {
+function dayGroupLabel(ts: number, t: TranslateFn, localeTag: string): string {
   const d = new Date(ts);
   const now = new Date();
   const sameDay =
@@ -94,9 +106,9 @@ function dayGroupLabel(ts: number): string {
     d.getDate() === yesterday.getDate() &&
     d.getMonth() === yesterday.getMonth() &&
     d.getFullYear() === yesterday.getFullYear();
-  if (sameDay) return "Aujourd'hui";
-  if (wasYesterday) return "Hier";
-  return d.toLocaleDateString("fr-FR", {
+  if (sameDay) return t("history.today");
+  if (wasYesterday) return t("history.yesterday");
+  return d.toLocaleDateString(localeTag, {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -140,11 +152,14 @@ function loadCollapsedGroups(): Set<string> {
   }
 }
 
-function contentStats(text: string): string {
-  const t = text || "";
-  const chars = t.length;
-  const lines = t ? t.split("\n").length : 0;
-  return `${chars.toLocaleString("fr-FR")} car. · ${lines} lig.`;
+function contentStats(text: string, t: TranslateFn, localeTag: string): string {
+  const raw = text || "";
+  const chars = raw.length;
+  const lines = raw ? raw.split("\n").length : 0;
+  return t("history.stats", {
+    chars: chars.toLocaleString(localeTag),
+    lines,
+  });
 }
 
 export interface HistoryModalV2Props {
@@ -157,6 +172,12 @@ export interface HistoryModalV2Props {
   onDelete?: (id: string) => void;
   onClear: () => void;
   getFormatTitle: (format: FormatType) => string;
+  /** Compare two history entries (defaults to result content). */
+  onCompare?: (
+    left: ConversionHistoryItem,
+    right: ConversionHistoryItem,
+    field: 'source' | 'result'
+  ) => void;
 }
 
 export function HistoryModalV2({
@@ -168,8 +189,11 @@ export function HistoryModalV2({
   onDelete,
   onClear,
   getFormatTitle,
+  onCompare,
 }: HistoryModalV2Props) {
   const t = useT();
+  const { locale } = useLocale();
+  const localeTag = LOCALE_TAGS[locale] || "fr-FR";
   const listRef = useRef<HTMLDivElement | null>(null);
   const savedFilters = useMemo(() => loadFilters(), []);
   const {
@@ -195,15 +219,20 @@ export function HistoryModalV2({
   const [activeIndex, setActiveIndex] = useState(0);
   const [confirmClear, setConfirmClear] = useState(false);
   const [copiedPreview, setCopiedPreview] = useState<"source" | "result" | null>(null);
+  const [exportedId, setExportedId] = useState<string | null>(null);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [compareField, setCompareField] = useState<'source' | 'result'>('result');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => loadCollapsedGroups());
   const [nowTick, setNowTick] = useState(0);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  useFocusTrap(panelRef, open && !minimized, { initialFocusRef: searchRef });
 
   useEffect(() => {
     if (!open) {
       setConfirmClear(false);
       setActiveIndex(0);
       setPreviewId(null);
+      setCompareIds([]);
       return;
     }
     const t = window.setTimeout(() => searchRef.current?.focus(), 80);
@@ -312,16 +341,35 @@ export function HistoryModalV2({
     });
   }, [list, query, statusFilter, getFormatTitle]);
 
+  const toggleCompareId = useCallback((id: string) => {
+    setCompareIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 2) return [prev[1], id];
+      return [...prev, id];
+    });
+  }, []);
+
+  const compareSlots = useMemo(() => {
+    const a = compareIds[0] ? list.find((r) => r.restorable.id === compareIds[0]) : undefined;
+    const b = compareIds[1] ? list.find((r) => r.restorable.id === compareIds[1]) : undefined;
+    return { a, b };
+  }, [compareIds, list]);
+
+  const runHistoryCompare = useCallback(() => {
+    if (!onCompare || !compareSlots.a || !compareSlots.b) return;
+    onCompare(compareSlots.a.restorable, compareSlots.b.restorable, compareField);
+  }, [onCompare, compareSlots, compareField]);
+
   const groups = useMemo(() => {
     const map = new Map<string, { label: string; rows: HistoryRow[] }>();
     for (const row of filtered) {
       const key = dayGroupKey(row.timestamp);
       const existing = map.get(key);
       if (existing) existing.rows.push(row);
-      else map.set(key, { label: dayGroupLabel(row.timestamp), rows: [row] });
+      else map.set(key, { label: dayGroupLabel(row.timestamp, t, localeTag), rows: [row] });
     }
     return Array.from(map.entries()).map(([key, value]) => ({ key, ...value }));
-  }, [filtered]);
+  }, [filtered, t, localeTag]);
 
   useEffect(() => {
     setActiveIndex((i) => (filtered.length === 0 ? 0 : Math.min(i, filtered.length - 1)));
@@ -404,6 +452,13 @@ export function HistoryModalV2({
     }
   }, []);
 
+  const exportEntry = useCallback((item: ConversionHistoryItem) => {
+    const stamp = new Date(item.timestamp).toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    downloadJson(`ascend-conversion-${stamp}.json`, item);
+    setExportedId(item.id);
+    window.setTimeout(() => setExportedId(null), 1600);
+  }, []);
+
   if (!open) return null;
 
   const primaryLabel = (row: HistoryRow) =>
@@ -456,7 +511,7 @@ export function HistoryModalV2({
             {!minimized && list.length > 0 && (
               <span className="floating-window-count history-modal-v2-count">
                 {filtered.length === list.length
-                  ? `${list.length} conversion${list.length > 1 ? "s" : ""}`
+                  ? t("history.count", { count: list.length })
                   : `${filtered.length}/${list.length}`}
               </span>
             )}
@@ -483,7 +538,7 @@ export function HistoryModalV2({
                   if (onMinimize) onMinimize();
                   else setMinimized(true);
                 }}
-                aria-label="Réduire"
+                aria-label={t("settings.minimize")}
               >
                 −
               </button>
@@ -523,19 +578,19 @@ export function HistoryModalV2({
                   ref={searchRef}
                   type="search"
                   className="history-modal-v2-search"
-                  placeholder="Rechercher…  ( / )"
+                  placeholder={t("history.search")}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onMouseDown={(e) => e.stopPropagation()}
-                  aria-label="Rechercher dans l'historique"
+                  aria-label={t("history.search.aria")}
                 />
-                <div className="history-modal-v2-status-filters" role="group" aria-label="Filtrer par statut">
+                <div className="history-modal-v2-status-filters" role="group" aria-label={t("history.filterStatus")}>
                   {(
                     [
-                      ["all", "Tous"],
-                      ["success", "OK"],
-                      ["error", "Erreur"],
-                      ["unknown", "—"],
+                      ["all", t("history.filter.all")],
+                      ["success", t("history.filter.ok")],
+                      ["error", t("history.filter.error")],
+                      ["unknown", t("history.filter.unknown")],
                     ] as const
                   ).map(([value, label]) => (
                     <button
@@ -556,7 +611,7 @@ export function HistoryModalV2({
               {list.length > 0 && (
                 confirmClear ? (
                   <div className="history-modal-v2-clear-confirm">
-                    <span>Tout effacer ?</span>
+                    <span>{t("history.clearConfirm")}</span>
                     <button
                       type="button"
                       className="history-modal-v2-btn-clear is-confirm"
@@ -566,7 +621,7 @@ export function HistoryModalV2({
                         onClear();
                       }}
                     >
-                      Oui
+                      {t("history.yes")}
                     </button>
                     <button
                       type="button"
@@ -576,7 +631,7 @@ export function HistoryModalV2({
                         setConfirmClear(false);
                       }}
                     >
-                      Non
+                      {t("history.no")}
                     </button>
                   </div>
                 ) : (
@@ -593,6 +648,59 @@ export function HistoryModalV2({
                 )
               )}
             </div>
+
+            {onCompare && compareIds.length > 0 && (
+              <div className="history-modal-v2-compare-bar" role="status">
+                <span className="history-modal-v2-compare-summary">
+                  {t('history.compare.picked', { n: compareIds.length })}
+                  {compareSlots.a ? ` · A` : ''}
+                  {compareSlots.b ? ` · B` : ''}
+                </span>
+                <div className="history-modal-v2-compare-field" role="group" aria-label={t('history.compare.field')}>
+                  <button
+                    type="button"
+                    className={`history-modal-v2-chip${compareField === 'result' ? ' is-active' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCompareField('result');
+                    }}
+                  >
+                    {t('diff.result')}
+                  </button>
+                  <button
+                    type="button"
+                    className={`history-modal-v2-chip${compareField === 'source' ? ' is-active' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCompareField('source');
+                    }}
+                  >
+                    {t('diff.source')}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="history-modal-v2-btn-compare"
+                  disabled={compareIds.length < 2}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    runHistoryCompare();
+                  }}
+                >
+                  {t('history.compare.run')}
+                </button>
+                <button
+                  type="button"
+                  className="history-modal-v2-chip"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCompareIds([]);
+                  }}
+                >
+                  {t('history.compare.clear')}
+                </button>
+              </div>
+            )}
 
             <div className="history-modal-v2-list" ref={listRef}>
               {list.length === 0 ? (
@@ -616,14 +724,14 @@ export function HistoryModalV2({
                   </span>
                   <p className="history-modal-v2-empty-title">{t("history.empty")}</p>
                   <p className="history-modal-v2-empty-desc">
-                    Lancez une conversion : elle apparaîtra ici pour être restaurée en un clic.
+                    {t("history.empty.desc")}
                   </p>
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="history-modal-v2-empty">
-                  <p className="history-modal-v2-empty-title">Aucun résultat</p>
+                  <p className="history-modal-v2-empty-title">{t("history.noResults")}</p>
                   <p className="history-modal-v2-empty-desc">
-                    Modifiez la recherche ou le filtre de statut.
+                    {t("history.noResults.desc")}
                   </p>
                   <button
                     type="button"
@@ -633,7 +741,7 @@ export function HistoryModalV2({
                       setStatusFilter("all");
                     }}
                   >
-                    Réinitialiser les filtres
+                    {t("history.resetFilters")}
                   </button>
                 </div>
               ) : (
@@ -664,9 +772,13 @@ export function HistoryModalV2({
                         data-history-index={flatIndex}
                         className={`history-modal-v2-row history-modal-v2-row--${row.status}${
                           isActive || previewId === row.restorable.id ? " is-preview" : ""
-                        }${isActive ? " is-active" : ""}`}
-                        onClick={() => onRestore(row.restorable)}
-                        onDoubleClick={() => onRestore(row.restorable)}
+                        }${isActive ? " is-active" : ""}${
+                          compareIds.includes(row.restorable.id) ? " is-compare" : ""
+                        }`}
+                        onClick={() => {
+                          setPreviewId(row.restorable.id);
+                          if (flatIndex >= 0) setActiveIndex(flatIndex);
+                        }}
                         onMouseEnter={() => {
                           setPreviewId(row.restorable.id);
                           if (flatIndex >= 0) setActiveIndex(flatIndex);
@@ -674,15 +786,27 @@ export function HistoryModalV2({
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
+                          if (e.key === "Enter") {
                             e.preventDefault();
                             onRestore(row.restorable);
+                          } else if (e.key === " ") {
+                            e.preventDefault();
+                            setPreviewId(row.restorable.id);
+                            if (flatIndex >= 0) setActiveIndex(flatIndex);
                           }
                         }}
-                        aria-label={`Restaurer : ${primaryLabel(row)} vers ${targetLabel(row)}`}
+                        aria-label={t("history.previewAria", {
+                          from: primaryLabel(row),
+                          to: targetLabel(row),
+                        })}
                       >
                         <div className="history-modal-v2-row-main">
                           <div className="history-modal-v2-row-primary">
+                            {onCompare && compareIds.includes(row.restorable.id) ? (
+                              <span className="history-modal-v2-compare-slot" aria-hidden="true">
+                                {compareIds[0] === row.restorable.id ? 'A' : 'B'}
+                              </span>
+                            ) : null}
                             <span className="history-modal-v2-format-pill">
                               {getFormatTitle(row.restorable.fromFormat)}
                             </span>
@@ -693,7 +817,7 @@ export function HistoryModalV2({
                           </div>
                           <div className="history-modal-v2-row-secondary">
                             <span className="history-modal-v2-row-title">{primaryLabel(row)}</span>
-                            <span key={nowTick}>{formatHistoryTime(row.timestamp)}</span>
+                            <span key={nowTick}>{formatHistoryTime(row.timestamp, t, localeTag)}</span>
                           </div>
                         </div>
                         <div className="history-modal-v2-row-meta">
@@ -701,13 +825,30 @@ export function HistoryModalV2({
                             {row.status === "unknown"
                               ? "—"
                               : row.status === "success"
-                                ? "réussi"
-                                : "erreur"}
+                                ? t("history.status.success")
+                                : t("history.status.error")}
                           </span>
                           {row.repeatCount > 1 && (
                             <span className="history-modal-v2-repeat">×{row.repeatCount}</span>
                           )}
                           <div className="history-modal-v2-row-actions">
+                            {onCompare ? (
+                              <button
+                                type="button"
+                                className={`history-modal-v2-row-action history-modal-v2-row-action--compare${
+                                  compareIds.includes(row.restorable.id) ? ' is-active' : ''
+                                }`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleCompareId(row.restorable.id);
+                                }}
+                                aria-label={t('history.compare.toggle')}
+                                data-tooltip={t('history.compare.toggle')}
+                                aria-pressed={compareIds.includes(row.restorable.id)}
+                              >
+                                ⇄
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="history-modal-v2-row-action history-modal-v2-row-action--restore"
@@ -719,6 +860,18 @@ export function HistoryModalV2({
                             >
                               ↩
                             </button>
+                            <button
+                              type="button"
+                              className="history-modal-v2-row-action history-modal-v2-row-action--export"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                exportEntry(row.restorable);
+                              }}
+                              aria-label={t("history.exportEntry")}
+                              data-tooltip={t("history.exportEntry")}
+                            >
+                              ↓
+                            </button>
                             {onDelete && (
                               <button
                                 type="button"
@@ -727,7 +880,7 @@ export function HistoryModalV2({
                                   e.stopPropagation();
                                   onDelete(row.restorable.id);
                                 }}
-                                aria-label="Supprimer"
+                                aria-label={t("history.delete")}
                               >
                                 ×
                               </button>
@@ -748,7 +901,7 @@ export function HistoryModalV2({
                 <div className="history-modal-v2-preview-col">
                   <div className="history-modal-v2-preview-head">
                     <span className="history-modal-v2-preview-label">
-                      {t("common.source")} · {contentStats(previewRow.restorable.sourceContent)}
+                      {t("common.source")} · {contentStats(previewRow.restorable.sourceContent, t, localeTag)}
                     </span>
                     <button
                       type="button"
@@ -766,7 +919,7 @@ export function HistoryModalV2({
                 <div className="history-modal-v2-preview-col">
                   <div className="history-modal-v2-preview-head">
                     <span className="history-modal-v2-preview-label">
-                      {t("common.result")} · {contentStats(previewRow.restorable.resultContent)}
+                      {t("common.result")} · {contentStats(previewRow.restorable.resultContent, t, localeTag)}
                     </span>
                     <button
                       type="button"
@@ -789,13 +942,23 @@ export function HistoryModalV2({
                   >
                     {t("history.restoreEntry")}
                   </button>
+                  <button
+                    type="button"
+                    className="history-modal-v2-preview-export"
+                    onClick={() => exportEntry(previewRow.restorable)}
+                    data-tooltip={t("history.exportEntry")}
+                  >
+                    {exportedId === previewRow.restorable.id
+                      ? t("history.exported")
+                      : t("history.export")}
+                  </button>
                 </div>
               </div>
             )}
 
             {list.length > 0 && (
               <footer className="history-modal-v2-footer">
-                ↑↓ · Entrée restaurer · Suppr. retirer · / chercher · Esc
+                {t("history.shortcuts")}
               </footer>
             )}
           </>
@@ -805,7 +968,7 @@ export function HistoryModalV2({
           <div
             className="floating-window-resize-handle history-modal-v2-resize-handle"
             onMouseDown={handleResizeStart}
-            aria-label="Redimensionner"
+            aria-label={t("iface.resize")}
           />
         )}
       </div>

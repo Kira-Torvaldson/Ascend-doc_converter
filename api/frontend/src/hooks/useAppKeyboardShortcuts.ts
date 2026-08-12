@@ -12,7 +12,10 @@ export interface AppKeyboardShortcutsHandlers {
   onOpenSettings?: () => void;
   onToggleHistory: () => void;
   onOpenFindReplace?: () => void;
+  onOpenGotoLine?: () => void;
   onOpenDiff?: () => void;
+  onToggleFocusMode?: () => void;
+  onOpenCommandPalette?: () => void;
   isEditingResult: boolean;
   onOpenSaveModal: () => void;
   loading: boolean;
@@ -41,6 +44,24 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
         return;
       }
 
+      if (mod && e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        h.onToggleFocusMode?.();
+        return;
+      }
+
+      if (mod && e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        h.onClearSource();
+        return;
+      }
+
+      if (mod && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        h.onOpenCommandPalette?.();
+        return;
+      }
+
       if (inField) {
         if (mod && (e.key === 's' || e.key === 'S')) {
           e.preventDefault();
@@ -55,6 +76,11 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
         if (mod && (e.key === 'f' || e.key === 'F')) {
           e.preventDefault();
           h.onOpenFindReplace?.();
+          return;
+        }
+        if (mod && (e.key === 'g' || e.key === 'G')) {
+          e.preventDefault();
+          h.onOpenGotoLine?.();
           return;
         }
         if (mod && e.key === '/') {
@@ -88,11 +114,6 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
           e.preventDefault();
           if (!h.loading) h.onConvert();
           break;
-        case 'k':
-        case 'K':
-          e.preventDefault();
-          h.onClearSource();
-          break;
         case 'h':
         case 'H':
           e.preventDefault();
@@ -102,6 +123,11 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
         case 'F':
           e.preventDefault();
           h.onOpenFindReplace?.();
+          break;
+        case 'g':
+        case 'G':
+          e.preventDefault();
+          h.onOpenGotoLine?.();
           break;
         case '/':
           e.preventDefault();

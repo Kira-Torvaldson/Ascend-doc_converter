@@ -4,6 +4,34 @@
 
 import type { FormatType } from '../types';
 
+export const MAX_FORMAT_PAIRS = 5;
+
+export type FormatPair = { source: FormatType; target: FormatType };
+
+const FORMAT_TYPE_SET = new Set<string>([
+  'asciidoc',
+  'markdown',
+  'html',
+  'pdf',
+  'yaml',
+  'json',
+  'txt',
+]);
+
+const FORMAT_SHORT: Record<FormatType, string> = {
+  asciidoc: 'Adoc',
+  markdown: 'MD',
+  html: 'HTML',
+  pdf: 'PDF',
+  yaml: 'YAML',
+  json: 'JSON',
+  txt: 'TXT',
+};
+
+export function isFormatType(value: unknown): value is FormatType {
+  return typeof value === 'string' && FORMAT_TYPE_SET.has(value);
+}
+
 export function isSupportedUiConversion(source: FormatType, target: FormatType): boolean {
   return (
     (source === 'asciidoc' && target === 'markdown') ||
@@ -13,6 +41,78 @@ export function isSupportedUiConversion(source: FormatType, target: FormatType):
       (target === 'markdown' || target === 'txt' || target === 'asciidoc')) ||
     (source === 'txt' && (target === 'markdown' || target === 'html'))
   );
+}
+
+export function pairKey(pair: FormatPair): string {
+  return `${pair.source}->${pair.target}`;
+}
+
+export function formatPairShortLabel(pair: FormatPair): string {
+  return `${FORMAT_SHORT[pair.source]} → ${FORMAT_SHORT[pair.target]}`;
+}
+
+export function formatPairShortParts(pair: FormatPair): { from: string; to: string } {
+  return { from: FORMAT_SHORT[pair.source], to: FORMAT_SHORT[pair.target] };
+}
+
+/** Filtre / déduplique / borne une liste de paires persistées. */
+export function normalizeFormatPairs(raw: unknown): FormatPair[] {
+  if (!Array.isArray(raw)) return [];
+  const out: FormatPair[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const source = (item as { source?: unknown }).source;
+    const target = (item as { target?: unknown }).target;
+    if (!isFormatType(source) || !isFormatType(target)) continue;
+    if (source === target || !isSupportedUiConversion(source, target)) continue;
+    const next = { source, target };
+    const key = pairKey(next);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(next);
+    if (out.length >= MAX_FORMAT_PAIRS) break;
+  }
+  return out;
+}
+
+export function recordRecentPair(
+  recent: FormatPair[],
+  source: FormatType,
+  target: FormatType
+): FormatPair[] {
+  if (source === target || !isSupportedUiConversion(source, target)) return recent;
+  const next = { source, target };
+  const key = pairKey(next);
+  return [next, ...recent.filter((p) => pairKey(p) !== key)].slice(0, MAX_FORMAT_PAIRS);
+}
+
+export function toggleFavoritePair(
+  favorites: FormatPair[],
+  source: FormatType,
+  target: FormatType
+): FormatPair[] {
+  if (source === target || !isSupportedUiConversion(source, target)) return favorites;
+  const next = { source, target };
+  const key = pairKey(next);
+  if (favorites.some((p) => pairKey(p) === key)) {
+    return favorites.filter((p) => pairKey(p) !== key);
+  }
+  return [...favorites, next].slice(-MAX_FORMAT_PAIRS);
+}
+
+export function isFavoritePair(
+  favorites: FormatPair[],
+  source: FormatType,
+  target: FormatType
+): boolean {
+  const key = pairKey({ source, target });
+  return favorites.some((p) => pairKey(p) === key);
+}
+
+export function formatPairsEqual(a: FormatPair[], b: FormatPair[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((p, i) => p.source === b[i].source && p.target === b[i].target);
 }
 
 export const SUPPORTED_CONVERSION_HINT =
