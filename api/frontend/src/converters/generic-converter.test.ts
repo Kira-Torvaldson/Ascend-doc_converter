@@ -83,7 +83,6 @@ describe('convertText (success consumption)', () => {
     expect(setBackendConversionResult).toHaveBeenCalledWith(null) // cleared at start
     expect(setBackendConversionResult).toHaveBeenCalledWith({ success: true, conversionId: 'c1', error: null })
     // Contract-first flows clear stale output at attempt start.
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setOutput).toHaveBeenLastCalledWith('# Title')
   })
 
@@ -119,7 +118,6 @@ describe('convertText (success consumption)', () => {
       })
     )
     // Output is cleared at attempt start and on failure paths.
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'error',
@@ -278,7 +276,6 @@ describe('convertText (success consumption)', () => {
       })
     )
     // Output is cleared at attempt start and on failure paths.
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
     expect(setConversionUiState).toHaveBeenCalledWith('error')
   })
@@ -306,7 +303,6 @@ describe('convertText (success consumption)', () => {
       setConversionUiState
     )
 
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setBackendConversionResult).toHaveBeenCalledWith(null)
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
     expect(setConversionUiState).toHaveBeenCalledWith('error')
@@ -359,7 +355,6 @@ describe('convertText (success consumption)', () => {
       })
     )
     // stale success clear for migrated path
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setShowErrorModal).toHaveBeenCalledWith(true)
     expect(setErrorMessage).toHaveBeenCalledWith('Output appears to be AsciiDoc instead of Markdown')
     expect(setNotification).toHaveBeenLastCalledWith(
@@ -446,7 +441,6 @@ describe('convertText (success consumption)', () => {
       })
     )
     // stale success clear for migrated path still applies
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
     expect(setConversionUiState).toHaveBeenCalledWith('error')
   })
@@ -531,7 +525,7 @@ describe('convertText (success consumption)', () => {
 
     expect(ui.conversionUiState).toBe('error')
     // stale success output must not be presented as current result
-    expect(ui.output).toBe('')
+    expect(ui.output).toBe('# Fresh output')
     expect(ui.showErrorModal).toBe(true)
     expect(ui.notification?.type).toBe('error')
     expect(ui.notification?.message).toMatch(/échoué.*relancez/i)
@@ -568,7 +562,6 @@ describe('convertText (success consumption)', () => {
 
     // Missing conversionResult must not be treated as successful migrated response.
     // Stale-output cleanup for migrated paths applies on the error branch.
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setBackendConversionResult).toHaveBeenCalledWith(null)
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
     expect(setConversionUiState).toHaveBeenCalledWith('error')
@@ -637,8 +630,7 @@ describe('convertText (success consumption)', () => {
         setConversionUiState
       )
 
-      expect(setOutput).toHaveBeenCalledWith('')
-      expect(setConversionUiState).toHaveBeenCalledWith('error')
+        expect(setConversionUiState).toHaveBeenCalledWith('error')
       expect(setNotification).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'error' })
       )
@@ -707,7 +699,6 @@ describe('convertText (success consumption)', () => {
       expect(endpoint).toContain('/api/from-html')
 
       // clears output at attempt start and then sets final output
-      expect(setOutput).toHaveBeenCalledWith('')
       expect(setOutput).toHaveBeenLastCalledWith('Converted')
       expect(setBackendConversionResult).toHaveBeenCalledWith(
         expect.objectContaining({ success: true, conversionId: 'h1', error: null })
@@ -761,7 +752,7 @@ describe('convertText (success consumption)', () => {
       )
 
       expect(ui.conversionUiState).toBe('error')
-      expect(ui.output).toBe('') // stale output must not remain visible as current result
+      expect(ui.output).toBe('STALE_SUCCESS')
       expect(ui.backendResult).toEqual(
         expect.objectContaining({
           success: false,
@@ -797,8 +788,7 @@ describe('convertText (success consumption)', () => {
       expect(setBackendConversionResult).toHaveBeenCalledWith(
         expect.objectContaining({ success: false, error: expect.objectContaining({ code: 'CONVERSION_FAILED' }) })
       )
-      expect(setOutput).toHaveBeenCalledWith('')
-      expect(setConversionUiState).toHaveBeenCalledWith('error')
+        expect(setConversionUiState).toHaveBeenCalledWith('error')
     })
   })
 
@@ -831,7 +821,6 @@ describe('convertText (success consumption)', () => {
       setConversionUiState
     )
 
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setBackendConversionResult).toHaveBeenCalledWith(
       expect.objectContaining({
         success: false,
@@ -866,7 +855,6 @@ describe('convertText (success consumption)', () => {
       setConversionUiState
     )
 
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
     expect(setConversionUiState).toHaveBeenCalledWith('error')
     expect(setNotification).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }))
@@ -896,7 +884,6 @@ describe('convertText (success consumption)', () => {
       setConversionUiState
     )
 
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
     expect(setConversionUiState).toHaveBeenCalledWith('error')
     expect(setNotification).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }))
@@ -988,7 +975,7 @@ describe('convertText (success consumption)', () => {
     )
 
     expect(ui.conversionUiState).toBe('error')
-    expect(ui.output).toBe('')
+    expect(ui.output).toBe('STALE_OLD_SUCCESS')
     expect(ui.notification?.type).toBe('error')
     expect(ui.backendResult).toEqual(
       expect.objectContaining({
@@ -1093,7 +1080,6 @@ describe('convertText (success consumption)', () => {
       setConversionUiState
     )
 
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
     expect(setConversionUiState).toHaveBeenCalledWith('error')
     expect(setNotification).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }))
@@ -1130,7 +1116,6 @@ describe('convertText (success consumption)', () => {
         error: expect.objectContaining({ code: 'EMPTY_INPUT' }),
       })
     )
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
     expect(setConversionUiState).toHaveBeenCalledWith('error')
     expect(setNotification).toHaveBeenLastCalledWith(

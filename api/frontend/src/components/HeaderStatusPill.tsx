@@ -10,10 +10,28 @@ export type ConversionUiState = 'idle' | 'loading' | 'success' | 'error';
 export interface HeaderStatusPillProps {
   state: ConversionUiState;
   status?: string;
+  autoConvertPending?: boolean;
 }
 
-export const HeaderStatusPill: React.FC<HeaderStatusPillProps> = ({ state, status }) => {
+export const HeaderStatusPill: React.FC<HeaderStatusPillProps> = ({
+  state,
+  status,
+  autoConvertPending = false,
+}) => {
   const t = useT();
+  if (state === 'idle' && autoConvertPending) {
+    return (
+      <div
+        className="header-status-pill header-status-pill--pending"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <span className="header-status-spinner" aria-hidden="true" />
+        <span className="header-status-label">{t('convert.autoPending')}</span>
+      </div>
+    );
+  }
   if (state === 'idle') return null;
 
   const defaultLabels = {

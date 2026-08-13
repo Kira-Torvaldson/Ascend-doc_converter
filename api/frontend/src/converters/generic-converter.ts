@@ -207,11 +207,6 @@ export async function convertText(
   if (setShowErrorModal) setShowErrorModal(false);
   if (setErrorMessage) setErrorMessage("");
   if (setBackendConversionResult) setBackendConversionResult(null);
-  // Prevent stale output from being presented as current attempt output on contract-first flows.
-  if (isMigratedContractPath) {
-    setOutput("");
-  }
-
   try {
     const controller = new AbortController();
     const effectiveTimeoutMs =
@@ -314,11 +309,6 @@ export async function convertText(
             : (errorDetail || errorText || `HTTP Error ${res.status}`);
         const backendCode = typeof backendError.code === 'string' ? backendError.code : '';
 
-        // Prevent stale success output from being presented as current failed conversion output.
-        if (isMigratedContractPath) {
-          setOutput("");
-        }
-
         const shouldShowConversionErrorModal = Boolean(backendCode);
 
         if (shouldShowConversionErrorModal && setShowErrorModal && setErrorMessage) {
@@ -391,11 +381,6 @@ export async function convertText(
             ? backendError.message
             : 'ConversionResult indicates failure'
         const backendCode = typeof backendError.code === 'string' ? backendError.code : '';
-
-        // Prevent stale success output from being presented as current failed conversion output.
-        if (isMigratedContractPath) {
-          setOutput("");
-        }
 
         const shouldShowConversionErrorModal = Boolean(backendCode);
 
@@ -484,11 +469,6 @@ export async function convertText(
     });
     if (setConversionUiState) setConversionUiState('success');
   } catch (e: any) {
-    // Keep current-attempt ownership coherent on migrated paths: any request-time
-    // error should not leave previous successful output presented as current.
-    if (isMigratedContractPath) {
-      setOutput("");
-    }
     if (e.name === "AbortError") {
       // Superseded by a newer attempt — do not surface a timeout error.
       if (externalSignal?.aborted) {

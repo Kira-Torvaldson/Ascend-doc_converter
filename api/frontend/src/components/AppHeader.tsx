@@ -14,6 +14,7 @@ interface AppHeaderProps {
   logoSrc: string;
   onLogoError: () => void;
   conversionUiState: ConversionUiState;
+  autoConvertPending?: boolean;
   status: string;
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
@@ -35,6 +36,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   logoSrc,
   onLogoError,
   conversionUiState,
+  autoConvertPending = false,
   status,
   sidebarCollapsed,
   onToggleSidebar,
@@ -77,7 +79,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         <div className="header-brand-text">
           <span className="header-app-title">Ascend</span>
           <span className="header-app-tagline">{t('header.tagline')}</span>
-          <HeaderStatusPill state={conversionUiState} status={status} />
+          <HeaderStatusPill
+            state={conversionUiState}
+            status={status}
+            autoConvertPending={autoConvertPending}
+          />
         </div>
       </div>
 

@@ -180,7 +180,6 @@ export async function convertAsciiDocToMarkdown(
   if (setShowErrorModal) setShowErrorModal(false);
   if (setErrorMessage) setErrorMessage("");
   if (setBackendConversionResult) setBackendConversionResult(null);
-  setOutput("");
   setLoading(true);
   if (setConversionUiState) setConversionUiState('loading');
 
@@ -230,7 +229,6 @@ export async function convertAsciiDocToMarkdown(
           : null;
 
       if (structuredFailure) {
-        setOutput("");
         if (setBackendConversionResult) setBackendConversionResult(structuredFailure);
         const backendError = structuredFailure.error || {};
         const backendMessage =
@@ -282,7 +280,6 @@ export async function convertAsciiDocToMarkdown(
           type: 'error',
           visible: true
         });
-        setOutput("");
         const finishedAtMs = Date.now();
         const backendFailure =
           parsedFailureBody && typeof parsedFailureBody === 'object'
@@ -370,7 +367,6 @@ export async function convertAsciiDocToMarkdown(
       });
 
       // Harmonized failure exit: return structured failure directly (no throw/catch detour).
-      setOutput("");
       setStatus(`Erreur lors de l'appel à l'API : ${errorMessage}`);
       setNotification({
         message: `Erreur lors de l'appel à l'API : ${errorMessage}`,
@@ -389,7 +385,6 @@ export async function convertAsciiDocToMarkdown(
     const backendConversionResult =
       data && typeof data === 'object' ? (data as any).conversionResult : null;
     if (!backendConversionResult || typeof backendConversionResult !== 'object') {
-      setOutput("");
       const finishedAtMs = Date.now();
       const nowIso = new Date(finishedAtMs).toISOString();
       const msg = 'Invalid conversion response: missing conversionResult';
@@ -417,7 +412,6 @@ export async function convertAsciiDocToMarkdown(
       return failure;
     }
     if ((backendConversionResult as any).success !== true) {
-      setOutput("");
       const finishedAtMs = Date.now();
       const nowIso = new Date(finishedAtMs).toISOString();
       const msg = 'Invalid conversion response: conversionResult.success is not true';
@@ -469,7 +463,6 @@ export async function convertAsciiDocToMarkdown(
     });
 
     if (typeof data.markdown !== 'string') {
-      setOutput("");
       const finishedAtMs = Date.now();
       const nowIso = new Date(finishedAtMs).toISOString();
       const msg = 'Invalid conversion response: missing markdown output';
@@ -515,7 +508,6 @@ export async function convertAsciiDocToMarkdown(
     if (setConversionUiState) setConversionUiState('success');
     return conversionResult;
   } catch (e: any) {
-    setOutput("");
     if (e.name === "AbortError") {
       const timeoutMessage = "Erreur : Timeout - La conversion prend trop de temps. Le fichier est peut-être trop volumineux.";
       setStatus(timeoutMessage);

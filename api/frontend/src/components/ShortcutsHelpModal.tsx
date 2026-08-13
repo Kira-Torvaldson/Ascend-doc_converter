@@ -22,6 +22,8 @@ const SHORTCUT_DEFS: Array<{ key: MessageKey; keys: string }> = [
   { key: 'shortcuts.history', keys: 'Ctrl + H' },
   { key: 'shortcuts.settings', keys: 'Ctrl + ,' },
   { key: 'shortcuts.clearSource', keys: 'Ctrl + Maj + K' },
+  { key: 'shortcuts.closeTab', keys: 'Alt + W' },
+  { key: 'shortcuts.closeAllTabs', keys: 'Alt + Maj + W' },
   { key: 'shortcuts.help', keys: 'Ctrl + /' },
 ];
 

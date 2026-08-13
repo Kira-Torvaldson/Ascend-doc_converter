@@ -11,6 +11,15 @@ import { TextStats } from './TextStats';
 import { getSampleDocument } from '../examples/sampleDocuments';
 import { EditorWithLines } from './EditorWithLines';
 import { withShortcutId } from '../utils/shortcutTips';
+import type { FolderBatchEstimate } from '../utils/folderBatchConvert';
+import {
+  formatBatchDurationLabel,
+  formatBatchSizeLabel,
+  folderFileKey,
+  folderFileLabel,
+  getBatchFormatLabels,
+  MAX_FOLDER_BATCH,
+} from '../utils/folderBatchConvert';
 
 interface SourcePanelProps {
   title: string;
@@ -38,6 +47,8 @@ interface SourcePanelProps {
   /** Lance la conversion en file pour tous les fichiers du dossier. */
   onStartFolderBatch?: () => void;
   folderBatchRunning?: boolean;
+  /** Estimation lot (éligibles / taille / durée). */
+  folderBatchEstimate?: FolderBatchEstimate | null;
 }
 
 export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel({
@@ -65,8 +76,10 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
   onTextAreaScroll,
   onStartFolderBatch,
   folderBatchRunning = false,
+  folderBatchEstimate = null,
 }) {
   const t = useT();
+  const batchLabels = getBatchFormatLabels((key) => t(key));
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const dragDepthRef = useRef(0);
   const panelRef = useRef<HTMLElement | null>(null);
@@ -218,7 +231,7 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
           <button
             type="button"
             onClick={onConvert}
-            disabled={loading || !value.trim() || !canConvert}
+            disabled={loading || folderBatchRunning || !value.trim() || !canConvert}
             className={`panel-header-btn panel-header-btn--convert panel-header-btn--convert-primary${loading ? ' is-loading' : ''}`}
             aria-label={withShortcutId(t('convert.cta.aria'), 'convert')}
             data-tooltip={
@@ -267,8 +280,8 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
           >
             <option value={-1}>{t('panel.chooseFile')}</option>
             {folderFiles.map((file, index) => (
-              <option key={`${file.name}-${index}`} value={index}>
-                {file.name} ({(file.size / 1024).toFixed(1)} KB)
+              <option key={folderFileKey(file, index)} value={index}>
+                {folderFileLabel(file)} ({(file.size / 1024).toFixed(1)} KB)
               </option>
             ))}
           </select>
@@ -277,15 +290,73 @@ export const SourcePanel: React.FC<SourcePanelProps> = memo(function SourcePanel
             <span>{t('options.filesAvailable', { count: folderFiles.length })}</span>
           </div>
           {onStartFolderBatch && folderFiles.length > 1 ? (
-            <button
-              type="button"
-              className="folder-batch-start-btn"
-              onClick={onStartFolderBatch}
-              disabled={loading || folderBatchRunning}
-              data-tooltip={t('batch.start.tip')}
-            >
-              {folderBatchRunning ? t('batch.running') : t('batch.start')}
-            </button>
+            <div className="folder-batch-launch">
+              {folderBatchEstimate ? (
+                <div
+                  className={`folder-batch-estimate${
+                    folderBatchEstimate.eligibleCount === 0 ? ' is-empty' : ''
+                  }`}
+                  aria-live="polite"
+                >
+                  {folderBatchEstimate.eligibleCount === 0 ? (
+                    <span className="folder-batch-estimate-msg">{t('batch.estimate.none')}</span>
+                  ) : (
+                    <>
+                      <span className="folder-batch-chip folder-batch-chip--ok">
+                        {t('batch.estimate.eligible', {
+                          count: folderBatchEstimate.eligibleCount,
+                        })}
+                      </span>
+                      {folderBatchEstimate.skippedCount > 0 ? (
+                        <span className="folder-batch-chip folder-batch-chip--skip">
+                          {t('batch.estimate.skipped', {
+                            count: folderBatchEstimate.skippedCount,
+                          })}
+                        </span>
+                      ) : null}
+                      {folderBatchEstimate.truncatedCount > 0 ? (
+                        <span className="folder-batch-chip folder-batch-chip--warn">
+                          {t('batch.estimate.truncated', {
+                            count: folderBatchEstimate.truncatedCount,
+                            max: MAX_FOLDER_BATCH,
+                          })}
+                        </span>
+                      ) : null}
+                      <span className="folder-batch-chip">
+                        {formatBatchSizeLabel(folderBatchEstimate.totalBytes, batchLabels)}
+                      </span>
+                      <span className="folder-batch-chip folder-batch-chip--time">
+                        {formatBatchDurationLabel(folderBatchEstimate.estimatedSeconds, batchLabels)}
+                      </span>
+                    </>
+                  )}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="folder-batch-start-btn"
+                onClick={onStartFolderBatch}
+                disabled={
+                  loading ||
+                  folderBatchRunning ||
+                  (folderBatchEstimate != null && folderBatchEstimate.eligibleCount === 0)
+                }
+                data-tooltip={
+                  folderBatchEstimate && folderBatchEstimate.eligibleCount > 0
+                    ? `${t('batch.start.tip')} — ${t('batch.estimate.eligible', {
+                        count: folderBatchEstimate.eligibleCount,
+                      })}, ${formatBatchSizeLabel(folderBatchEstimate.totalBytes, batchLabels)}, ${formatBatchDurationLabel(
+                        folderBatchEstimate.estimatedSeconds,
+                        batchLabels
+                      )}`
+                    : folderBatchEstimate?.eligibleCount === 0
+                      ? t('batch.estimate.none')
+                      : t('batch.start.tip')
+                }
+              >
+                {folderBatchRunning ? t('batch.running') : t('batch.start')}
+              </button>
+            </div>
           ) : null}
         </div>
       )}

@@ -94,7 +94,6 @@ describe('Step 10 wrapper: convertAsciiDocToMarkdown', () => {
     )
     expect(setConversionUiState).toHaveBeenCalledWith('loading')
     expect(setConversionUiState).toHaveBeenCalledWith('success')
-    expect(setOutput).toHaveBeenCalledWith('')
     expect(setOutput).toHaveBeenLastCalledWith('# Title')
   })
 
@@ -146,7 +145,6 @@ describe('Step 10 wrapper: convertAsciiDocToMarkdown', () => {
       })
     )
     expect(setConversionUiState).toHaveBeenCalledWith('error')
-    expect(setOutput).toHaveBeenCalledWith('')
   })
 
   it('does not treat HTTP 200 as success when conversionResult is missing', async () => {
@@ -175,8 +173,7 @@ describe('Step 10 wrapper: convertAsciiDocToMarkdown', () => {
       })
     )
     expect(setConversionUiState).toHaveBeenCalledWith('error')
-    // No stale success output should remain the last attempt output.
-    expect(setOutput).toHaveBeenLastCalledWith('')
+    expect(setOutput).not.toHaveBeenCalled()
   })
 })
 

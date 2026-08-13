@@ -8,8 +8,45 @@ import { sanitizeActiveProfileIds } from './conversionProfiles';
 
 const SESSION_KEY_V1 = 'ascend_session_draft_v1';
 const SESSION_KEY = 'ascend_session_workspace_v1';
-const MAX_CONTENT_CHARS = 2_000_000;
+export const MAX_CONTENT_CHARS = 2_000_000;
 export const MAX_SESSION_TABS = 8;
+
+export type PersistSessionResult = {
+  ok: boolean;
+  truncated: boolean;
+  truncatedTabCount: number;
+};
+
+export type PersistNoticeKind = 'ok' | 'fail' | 'trunc';
+
+/** Dédup snackbar : un fail / un trunc d’affilée, reset après un ok. */
+export function nextPersistNotice(
+  last: PersistNoticeKind | null,
+  result: PersistSessionResult
+): { kind: PersistNoticeKind; notify: boolean } {
+  if (!result.ok) {
+    return { kind: 'fail', notify: last !== 'fail' };
+  }
+  if (result.truncated) {
+    return { kind: 'trunc', notify: last !== 'trunc' };
+  }
+  return { kind: 'ok', notify: false };
+}
+
+/** True if replacing source/result (file, folder, history) would lose unsaved work. */
+export function isReplaceSourceDirty(input: {
+  sourceModified: boolean;
+  resultModified: boolean;
+  isEditingResult: boolean;
+  dirtyTab: boolean;
+}): boolean {
+  return (
+    input.sourceModified ||
+    input.resultModified ||
+    input.isEditingResult ||
+    input.dirtyTab
+  );
+}
 
 export interface SessionTabSnapshot {
   id: string;
@@ -22,6 +59,16 @@ export interface SessionTabSnapshot {
   sourceFormat: FormatType;
   targetFormat: FormatType;
   currentFileName: string | null;
+}
+
+export function tabContentExceedsPersistLimit(
+  tab: Pick<SessionTabSnapshot, 'adocInput' | 'mdOutput' | 'otherOutput'>
+): boolean {
+  return (
+    tab.adocInput.length > MAX_CONTENT_CHARS ||
+    tab.mdOutput.length > MAX_CONTENT_CHARS ||
+    (tab.otherOutput || '').length > MAX_CONTENT_CHARS
+  );
 }
 
 /** Snapshot plat (= onglet actif) — rétrocompat tests / API simple. */
@@ -42,6 +89,8 @@ export interface SessionWorkspace {
   activeTabId: string;
   conversionOptions: ConversionOptions;
   activeProfileIds: string[];
+  /** Ignoré à la lecture / écriture : le dirty est uniquement en mémoire. */
+  dirtyTabIds?: string[];
   savedAt: number;
 }
 
@@ -90,7 +139,14 @@ function clampContent(value: unknown): string {
   return typeof value === 'string' ? value.slice(0, MAX_CONTENT_CHARS) : '';
 }
 
-function normalizeTab(raw: Partial<SessionTabSnapshot>, index: number): SessionTabSnapshot | null {
+function fieldWasTruncated(value: unknown): boolean {
+  return typeof value === 'string' && value.length > MAX_CONTENT_CHARS;
+}
+
+function normalizeTab(
+  raw: Partial<SessionTabSnapshot>,
+  index: number
+): { tab: SessionTabSnapshot; truncated: boolean } | null {
   if (!isFormat(raw.sourceFormat) || !isFormat(raw.targetFormat)) return null;
   const titleLocked = raw.titleLocked === true;
   const rawTitle =
@@ -109,7 +165,11 @@ function normalizeTab(raw: Partial<SessionTabSnapshot>, index: number): SessionT
   if (!titleLocked) {
     tab.title = deriveTabTitle(tab, index);
   }
-  return tab;
+  const truncated =
+    fieldWasTruncated(raw.adocInput) ||
+    fieldWasTruncated(raw.mdOutput) ||
+    fieldWasTruncated(raw.otherOutput);
+  return { tab, truncated };
 }
 
 function draftToTab(draft: SessionDraft, index = 0): SessionTabSnapshot {
@@ -162,35 +222,52 @@ export function createDefaultWorkspace(): SessionWorkspace {
   };
 }
 
-export function loadSessionWorkspace(): SessionWorkspace {
+export type LoadSessionResult = {
+  workspace: SessionWorkspace;
+  corrupted: boolean;
+  truncatedOnLoad: boolean;
+  truncatedTabCount: number;
+};
+
+export function inspectSessionWorkspace(): LoadSessionResult {
+  let hadStoredWorkspace = false;
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (raw) {
+      hadStoredWorkspace = true;
       const parsed = JSON.parse(raw) as Partial<SessionWorkspace>;
       const tabsRaw = Array.isArray(parsed.tabs) ? parsed.tabs : [];
-      const tabs = tabsRaw
+      const normalized = tabsRaw
         .slice(0, MAX_SESSION_TABS)
         .map((t, i) => normalizeTab(t as Partial<SessionTabSnapshot>, i))
-        .filter((t): t is SessionTabSnapshot => !!t);
+        .filter((t): t is { tab: SessionTabSnapshot; truncated: boolean } => !!t);
+      const tabs = normalized.map((n) => n.tab);
+      const truncatedTabCount = normalized.filter((n) => n.truncated).length;
       if (tabs.length > 0) {
         const activeTabId =
           typeof parsed.activeTabId === 'string' && tabs.some((t) => t.id === parsed.activeTabId)
             ? parsed.activeTabId
             : tabs[0].id;
         return {
-          tabs,
-          activeTabId,
-          conversionOptions:
-            parsed.conversionOptions && typeof parsed.conversionOptions === 'object'
-              ? parsed.conversionOptions
-              : {},
-          activeProfileIds: sanitizeActiveProfileIds(parsed.activeProfileIds),
-          savedAt: typeof parsed.savedAt === 'number' ? parsed.savedAt : Date.now(),
+          workspace: {
+            tabs,
+            activeTabId,
+            conversionOptions:
+              parsed.conversionOptions && typeof parsed.conversionOptions === 'object'
+                ? parsed.conversionOptions
+                : {},
+            activeProfileIds: sanitizeActiveProfileIds(parsed.activeProfileIds),
+            dirtyTabIds: [],
+            savedAt: typeof parsed.savedAt === 'number' ? parsed.savedAt : Date.now(),
+          },
+          corrupted: false,
+          truncatedOnLoad: truncatedTabCount > 0,
+          truncatedTabCount,
         };
       }
     }
   } catch {
-    /* fall through */
+    /* fall through — treat as corrupted if a key was present */
   }
 
   const legacy = parseLegacyV1();
@@ -209,13 +286,26 @@ export function loadSessionWorkspace(): SessionWorkspace {
     } catch {
       /* ignore */
     }
-    return ws;
+    return { workspace: ws, corrupted: false, truncatedOnLoad: false, truncatedTabCount: 0 };
   }
 
-  return createDefaultWorkspace();
+  return {
+    workspace: createDefaultWorkspace(),
+    corrupted: hadStoredWorkspace,
+    truncatedOnLoad: false,
+    truncatedTabCount: 0,
+  };
 }
 
-export function persistSessionWorkspace(workspace: Omit<SessionWorkspace, 'savedAt'> | SessionWorkspace): void {
+export function loadSessionWorkspace(): SessionWorkspace {
+  return inspectSessionWorkspace().workspace;
+}
+
+export function persistSessionWorkspace(
+  workspace: Omit<SessionWorkspace, 'savedAt'> | SessionWorkspace
+): PersistSessionResult {
+  const truncatedTabCount = workspace.tabs.filter(tabContentExceedsPersistLimit).length;
+  const truncated = truncatedTabCount > 0;
   try {
     const tabs = workspace.tabs.slice(0, MAX_SESSION_TABS).map((t, i) => ({
       ...t,
@@ -228,7 +318,7 @@ export function persistSessionWorkspace(workspace: Omit<SessionWorkspace, 'saved
     if (tabs.length === 0) {
       const empty = createDefaultWorkspace();
       localStorage.setItem(SESSION_KEY, JSON.stringify(empty));
-      return;
+      return { ok: true, truncated: false, truncatedTabCount: 0 };
     }
     const activeTabId = tabs.some((t) => t.id === workspace.activeTabId)
       ? workspace.activeTabId
@@ -238,11 +328,13 @@ export function persistSessionWorkspace(workspace: Omit<SessionWorkspace, 'saved
       activeTabId,
       conversionOptions: workspace.conversionOptions || {},
       activeProfileIds: sanitizeActiveProfileIds(workspace.activeProfileIds),
+      dirtyTabIds: [],
       savedAt: Date.now(),
     };
     localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+    return { ok: true, truncated, truncatedTabCount };
   } catch {
-    /* quota / private mode */
+    return { ok: false, truncated, truncatedTabCount };
   }
 }
 
