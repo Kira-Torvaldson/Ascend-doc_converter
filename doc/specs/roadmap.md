@@ -6,15 +6,23 @@ This document defines the canonical roadmap for Ascend. It outlines planned feat
 
 ## Current Status
 
-**Version:** 0.0.1.9.4 (Ascend app — `api/backend` / `api/frontend`)  
-**Status:** UX productivité (sessions, palette, batch dossier) + polish flux existants  
-**Focus:** onglets, Ctrl+K, conversion dossier, workspace, find/goto, a11y
+**Version:** 0.0.1.9.5 (Ascend app — `api/backend` / `api/frontend`)  
+**Status:** Fiabilité sessions + découpage `App.tsx`  
+**Focus:** hooks UI, livraison résultat, garde-fous session
 
 > Le package racine npm `downdoc` reste sur `1.0.2-stable` et n’est pas versionné comme Ascend.
 
 ## Version History
 
-### 0.0.1.9.4 (Current — Ascend)
+### 0.0.1.9.5 (Current — Ascend)
+
+**Delivered:**
+- Hooks extraits de `App.tsx` (import, convert, auto-convert, batch, export, réglages, palette)
+- Sessions durcies (livraison onglet d’origine, historique, dirty, aperçu HTML, quota)
+
+**Docs:** `doc/releases/v0.0.1.9.5-notes.md`
+
+### 0.0.1.9.4
 
 **Delivered:**
 - Onglets de session, palette Ctrl+K, conversion dossier + ZIP

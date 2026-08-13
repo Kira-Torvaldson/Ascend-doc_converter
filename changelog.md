@@ -13,6 +13,14 @@ Each entry includes:
 
 ## Version History
 
+### 0.0.1.9.5 (2026-08-13)
+
+#### Changed
+- Split `App.tsx` into focused hooks: source import, conversion flow, auto-convert, folder batch, document export, settings panel, command palette.
+
+#### Fixed
+- Harden conversion sessions: lost/stale results, dirty guards, HTML preview sanitization, history parse, session quota/corruption snacks.
+
 ### 0.0.1.9.4 (2026-08-12)
 
 #### Added

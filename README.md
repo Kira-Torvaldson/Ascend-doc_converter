@@ -1,18 +1,18 @@
 # Ascend
 
-![Version](https://img.shields.io/badge/version-0.0.1.9.4-orange)
+![Version](https://img.shields.io/badge/version-0.0.1.9.5-orange)
 ![Status](https://img.shields.io/badge/status-alpha-red)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16.17.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Latest changes (v0.0.1.9.4)
+## Latest changes (v0.0.1.9.5)
 
-- **i18n / Compte**
-  - Langue du compte (FR/EN/ES/DE) traduit l’interface Ascend ; langue de conversion indépendante (métadonnées).
-- **UX Compte & Interface**
-  - Profils d’identité, signature, accents métaux, prefs panneaux / sidebar / coloration.
-- **Chrome convertisseur**
-  - Source/Résultat, sidebar, modales, historique, snackbars et paramètres localisés.
+- **Sessions**
+  - Livraison du résultat sur l’onglet d’origine, historique depuis le snapshot, garde-fous dirty / quota / session corrompue.
+- **Découpage UI**
+  - `App.tsx` allégé : import, conversion, auto-convert, batch dossier, export, réglages et palette extraits en hooks.
+- **Sécurité**
+  - Aperçu HTML assaini.
 
 ## Overview
 
