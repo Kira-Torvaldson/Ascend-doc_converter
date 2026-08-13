@@ -16,6 +16,8 @@ export interface AppKeyboardShortcutsHandlers {
   onOpenDiff?: () => void;
   onToggleFocusMode?: () => void;
   onOpenCommandPalette?: () => void;
+  onCloseActiveSessionTab?: () => void;
+  onCloseAllSessionTabs?: () => void;
   isEditingResult: boolean;
   onOpenSaveModal: () => void;
   loading: boolean;
@@ -37,6 +39,14 @@ export function useAppKeyboardShortcuts(handlers: AppKeyboardShortcutsHandlers):
       const mod = e.ctrlKey || e.metaKey;
       const target = e.target;
       const inField = isEditableTarget(target);
+
+      // Alt+W / Alt+Shift+W — fermer onglet(s) (évite Ctrl+W réservé par le navigateur)
+      if (e.altKey && !mod && (e.key === 'w' || e.key === 'W')) {
+        e.preventDefault();
+        if (e.shiftKey) h.onCloseAllSessionTabs?.();
+        else h.onCloseActiveSessionTab?.();
+        return;
+      }
 
       if (mod && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault();

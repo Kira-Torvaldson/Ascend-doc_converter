@@ -32,6 +32,7 @@ export interface ConversionSidebarProps {
   favoritePairs: FormatPair[];
   onApplyFormatPair: (source: FormatType, target: FormatType) => void;
   onToggleFavoritePair: (source: FormatType, target: FormatType) => void;
+  formatsLocked?: boolean;
 }
 
 export const ConversionSidebar: React.FC<ConversionSidebarProps> = (props) => {
@@ -58,6 +59,7 @@ export const ConversionSidebar: React.FC<ConversionSidebarProps> = (props) => {
     favoritePairs,
     onApplyFormatPair,
     onToggleFavoritePair,
+    formatsLocked = false,
   } = props;
 
   return (
@@ -84,12 +86,14 @@ export const ConversionSidebar: React.FC<ConversionSidebarProps> = (props) => {
             label={t('sidebar.sourceFormat')}
             value={sourceFormat}
             onChange={onSourceFormatChange}
+            disabled={formatsLocked}
           />
           <FormatSelector
             id="format-target"
             label={t('sidebar.targetFormat')}
             value={targetFormat}
             onChange={onTargetFormatChange}
+            disabled={formatsLocked}
           />
           <FormatPairsBar
             sourceFormat={sourceFormat}
@@ -98,6 +102,7 @@ export const ConversionSidebar: React.FC<ConversionSidebarProps> = (props) => {
             favoritePairs={favoritePairs}
             onApplyPair={onApplyFormatPair}
             onToggleFavorite={onToggleFavoritePair}
+            applyDisabled={formatsLocked}
           />
           {!isSupportedUiConversion(sourceFormat, targetFormat) ? (
             <div className="conversion-warning" role="status">

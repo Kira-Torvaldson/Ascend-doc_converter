@@ -62,10 +62,19 @@ export interface AppConfirmModalsProps {
   onCloseCloseSessionTab: () => void;
   onConfirmCloseSessionTab: () => void;
 
+  showCloseAllSessionTabsModal: boolean;
+  closeAllSessionTabsMode?: 'all' | 'others';
+  onCloseCloseAllSessionTabs: () => void;
+  onConfirmCloseAllSessionTabs: () => void;
+
   showClearSourceModal: boolean;
   onCloseClearSource: () => void;
   onConfirmClearSourceOnly: () => void;
   onConfirmClearSourceAndResult: () => void;
+
+  showReplaceSourceModal: boolean;
+  onCloseReplaceSource: () => void;
+  onConfirmReplaceSource: () => void;
 
   showConversionModal: boolean;
   confirmationToken: string | null;
@@ -115,10 +124,17 @@ export const AppConfirmModals: React.FC<AppConfirmModalsProps> = (props) => {
     showCloseSessionTabModal,
     onCloseCloseSessionTab,
     onConfirmCloseSessionTab,
+    showCloseAllSessionTabsModal,
+    closeAllSessionTabsMode = 'all',
+    onCloseCloseAllSessionTabs,
+    onConfirmCloseAllSessionTabs,
     showClearSourceModal,
     onCloseClearSource,
     onConfirmClearSourceOnly,
     onConfirmClearSourceAndResult,
+    showReplaceSourceModal,
+    onCloseReplaceSource,
+    onConfirmReplaceSource,
     showConversionModal,
     confirmationToken,
     pendingConversion,
@@ -247,6 +263,29 @@ export const AppConfirmModals: React.FC<AppConfirmModalsProps> = (props) => {
       />
 
       <Modal
+        isOpen={showCloseAllSessionTabsModal}
+        onClose={onCloseCloseAllSessionTabs}
+        title={
+          closeAllSessionTabsMode === 'others'
+            ? t('modal.closeOtherSessionTabs.title')
+            : t('modal.closeAllSessionTabs.title')
+        }
+        message={
+          closeAllSessionTabsMode === 'others'
+            ? t('modal.closeOtherSessionTabs.message')
+            : t('modal.closeAllSessionTabs.message')
+        }
+        confirmText={
+          closeAllSessionTabsMode === 'others'
+            ? t('modal.closeOtherSessionTabs.confirm')
+            : t('modal.closeAllSessionTabs.confirm')
+        }
+        cancelText={t('common.cancel')}
+        type="warning"
+        onConfirm={onConfirmCloseAllSessionTabs}
+      />
+
+      <Modal
         isOpen={showClearSourceModal}
         onClose={onCloseClearSource}
         title={t('modal.clearSource.title')}
@@ -266,6 +305,17 @@ export const AppConfirmModals: React.FC<AppConfirmModalsProps> = (props) => {
             </button>
           </>
         }
+      />
+
+      <Modal
+        isOpen={showReplaceSourceModal}
+        onClose={onCloseReplaceSource}
+        title={t('modal.replaceSource.title')}
+        message={t('modal.replaceSource.message')}
+        confirmText={t('modal.replaceSource.confirm')}
+        cancelText={t('common.cancel')}
+        type="warning"
+        onConfirm={onConfirmReplaceSource}
       />
 
       <Modal

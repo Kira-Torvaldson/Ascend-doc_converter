@@ -43,6 +43,17 @@ export function isSupportedUiConversion(source: FormatType, target: FormatType):
   );
 }
 
+/** true si la conversion passe par /api/convert (token requis). */
+export function conversionNeedsConfirmationToken(source: FormatType, target: FormatType): boolean {
+  if (source === 'asciidoc' && target === 'markdown') return false;
+  if (source === 'markdown' && target === 'asciidoc') return false;
+  if (source === 'markdown' && (target === 'html' || target === 'txt')) return false;
+  if (source === 'txt' && target === 'markdown') return false;
+  if (source === 'txt' && target === 'html') return false;
+  if (source === 'html') return false;
+  return true;
+}
+
 export function pairKey(pair: FormatPair): string {
   return `${pair.source}->${pair.target}`;
 }
@@ -123,7 +134,10 @@ export const SUPPORTED_CONVERSION_HINT =
  * (that buffer holds the source). Use the dedicated otherOutput buffer instead.
  */
 export function resultUsesOtherBuffer(source: FormatType, target: FormatType): boolean {
-  return source === 'markdown' && target !== 'asciidoc' && target !== 'markdown';
+  if (source === target) return false;
+  if (source === 'markdown' && target !== 'asciidoc') return true;
+  if (source !== 'markdown' && target === 'asciidoc') return true;
+  return false;
 }
 
 export function readResultBuffer(
@@ -131,9 +145,85 @@ export function readResultBuffer(
   target: FormatType,
   buffers: { adocInput: string; mdOutput: string; otherOutput: string }
 ): string {
-  if (target === 'asciidoc') return buffers.adocInput;
-  if (resultUsesOtherBuffer(source, target)) return buffers.otherOutput;
-  return buffers.mdOutput;
+  return buffers[resultBufferField(source, target)];
+}
+
+export function sourceBufferField(source: FormatType): 'adocInput' | 'mdOutput' {
+  return source === 'markdown' ? 'mdOutput' : 'adocInput';
+}
+
+export function resultBufferField(
+  source: FormatType,
+  target: FormatType
+): 'adocInput' | 'mdOutput' | 'otherOutput' {
+  if (resultUsesOtherBuffer(source, target)) return 'otherOutput';
+  if (target === 'asciidoc') return 'adocInput';
+  return 'mdOutput';
+}
+
+export function resultWriteWouldClobberSource(
+  writeSource: FormatType,
+  writeTarget: FormatType,
+  liveSource: FormatType
+): boolean {
+  return resultBufferField(writeSource, writeTarget) === sourceBufferField(liveSource);
+}
+
+export function applyResultToBuffers<
+  T extends { adocInput: string; mdOutput: string; otherOutput: string }
+>(buffers: T, source: FormatType, target: FormatType, content: string): T {
+  const field = resultBufferField(source, target);
+  return { ...buffers, [field]: content };
+}
+
+/** Restore source + result and clear unused buffers (no leftover ghosts). */
+export function applyHistoryToBuffers(
+  source: FormatType,
+  target: FormatType,
+  sourceContent: string,
+  resultContent: string
+): { adocInput: string; mdOutput: string; otherOutput: string } {
+  const next = { adocInput: '', mdOutput: '', otherOutput: '' };
+  next[sourceBufferField(source)] = sourceContent;
+  next[resultBufferField(source, target)] = resultContent;
+  return next;
+}
+
+export type ConversionResultDest = 'live' | 'tab' | 'skip';
+
+export function decideConversionResultDest(input: {
+  originTabId: string;
+  liveTabId: string;
+  writeSource: FormatType;
+  writeTarget: FormatType;
+  liveSource: FormatType;
+}): ConversionResultDest {
+  if (input.liveTabId !== input.originTabId) return 'tab';
+  if (resultWriteWouldClobberSource(input.writeSource, input.writeTarget, input.liveSource)) {
+    return 'skip';
+  }
+  return 'live';
+}
+
+export type ConvertRequestSnap = {
+  tabId: string;
+  sourceText: string;
+  sourceFormat: FormatType;
+  targetFormat: FormatType;
+};
+
+/** Prefer the confirm-before-convert snapshot so token + body stay aligned. */
+export function resolveConvertRequestSnap(
+  preferred: ConvertRequestSnap | null | undefined,
+  live: ConvertRequestSnap
+): ConvertRequestSnap {
+  if (!preferred) return live;
+  return {
+    tabId: preferred.tabId,
+    sourceText: preferred.sourceText,
+    sourceFormat: preferred.sourceFormat,
+    targetFormat: preferred.targetFormat,
+  };
 }
 
 export function writeResultBuffer(
@@ -146,11 +236,12 @@ export function writeResultBuffer(
     setOtherOutput: (v: string) => void;
   }
 ): void {
-  if (target === 'asciidoc') {
+  const field = resultBufferField(source, target);
+  if (field === 'adocInput') {
     setters.setAdocInput(content);
     return;
   }
-  if (resultUsesOtherBuffer(source, target)) {
+  if (field === 'otherOutput') {
     setters.setOtherOutput(content);
     return;
   }

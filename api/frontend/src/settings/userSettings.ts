@@ -288,6 +288,10 @@ export type UserSettings = {
     syntaxHighlight: boolean;
     /** Synchroniser le défilement source ↔ résultat (proportionnel). */
     linkedScroll: boolean;
+    /** Restaurer les onglets de session au rechargement. */
+    restoreSessionTabs: boolean;
+    /** Convertir automatiquement après une pause de frappe. */
+    autoConvertOnIdle: boolean;
     /** Ids de commandes épinglées dans le header (à côté de Ctrl+K). */
     pinnedCommandIds: string[];
   };
@@ -588,6 +592,8 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     sidebarPosition: 'left',
     syntaxHighlight: false,
     linkedScroll: false,
+    restoreSessionTabs: true,
+    autoConvertOnIdle: false,
     pinnedCommandIds: [...DEFAULT_PINNED_COMMAND_IDS],
   },
 };
@@ -680,6 +686,8 @@ export function normalizeUserSettings(parsed: unknown): UserSettings {
       sidebarPosition: normalizeSidebarPosition(u.sidebarPosition),
       syntaxHighlight: normalizeBool(u.syntaxHighlight, d.ui.syntaxHighlight),
       linkedScroll: normalizeBool(u.linkedScroll, d.ui.linkedScroll),
+      restoreSessionTabs: normalizeBool(u.restoreSessionTabs, d.ui.restoreSessionTabs),
+      autoConvertOnIdle: normalizeBool(u.autoConvertOnIdle, d.ui.autoConvertOnIdle),
       pinnedCommandIds: normalizePinnedCommandIds(u.pinnedCommandIds),
     },
   };
@@ -764,6 +772,8 @@ export function areUserSettingsEqual(a: UserSettings, b: UserSettings): boolean 
     a.ui.sidebarPosition === b.ui.sidebarPosition &&
     a.ui.syntaxHighlight === b.ui.syntaxHighlight &&
     a.ui.linkedScroll === b.ui.linkedScroll &&
+    a.ui.restoreSessionTabs === b.ui.restoreSessionTabs &&
+    a.ui.autoConvertOnIdle === b.ui.autoConvertOnIdle &&
     pinnedCommandIdsEqual(a.ui.pinnedCommandIds, b.ui.pinnedCommandIds)
   );
 }
@@ -802,6 +812,8 @@ export function resetInterfaceUiSettings(ui: UserSettings['ui']): UserSettings['
     sidebarPosition: d.sidebarPosition,
     syntaxHighlight: d.syntaxHighlight,
     linkedScroll: d.linkedScroll,
+    restoreSessionTabs: d.restoreSessionTabs,
+    autoConvertOnIdle: d.autoConvertOnIdle,
     pinnedCommandIds: [...d.pinnedCommandIds],
   };
 }

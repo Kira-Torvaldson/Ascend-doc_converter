@@ -14,6 +14,8 @@ export const SHORTCUT_TIP = {
   clearSource: 'Ctrl + Maj + K',
   commandPalette: 'Ctrl + K',
   help: 'Ctrl + /',
+  closeTab: 'Alt + W',
+  closeAllTabs: 'Alt + Maj + W',
 } as const;
 
 export type ShortcutTipId = keyof typeof SHORTCUT_TIP;

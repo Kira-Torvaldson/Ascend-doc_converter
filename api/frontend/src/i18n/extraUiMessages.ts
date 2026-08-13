@@ -29,6 +29,9 @@ export const EXTRA_FR = {
 
   'conversion.history.hint':
     "L’historique est activé par défaut pour les nouvelles installations. Décochez « Conserver l’historique » pour le désactiver.",
+  'conversion.autoConvert': 'Conversion auto après pause',
+  'conversion.autoConvert.hint':
+    'Lance la conversion ~3 s après la dernière frappe (paires simples). Inactif si « Confirmer avant conversion » est coché.',
   'conversion.warnings.heading': 'Avertissements UI',
   'conversion.warnings.showBanner': "Afficher la bannière d’avertissements",
   'conversion.warnings.detailLevel': 'Niveau de détail',
@@ -105,6 +108,7 @@ export const EXTRA_FR = {
   'iface.linkedScroll': 'Scroll lié source ↔ résultat',
   'iface.linkedScroll.on': 'Scroll lié activé — cliquer pour désactiver',
   'iface.linkedScroll.off': 'Lier le défilement source ↔ résultat',
+  'iface.restoreSessionTabs': 'Restaurer les onglets au rechargement',
   'iface.pinnedCommands': 'Actions épinglées (header)',
   'iface.pinnedCommands.hint': 'Jusqu’à {max} commandes à côté de Ctrl+K.',
   'iface.liteMode': 'Mode léger',
@@ -134,9 +138,11 @@ export const EXTRA_FR = {
   'sessionTabs.close': 'Fermer {title}',
   'sessionTabs.max': 'Maximum {max} onglets',
   'sessionTabs.rename': 'Renommer l’onglet',
-  'sessionTabs.renameHint': 'Double-clic pour renommer',
-  'sessionTabs.menuHint': 'Clic droit : renommer, dupliquer, fermer',
+  'sessionTabs.menuHint': 'Clic droit · molette · Alt+W',
   'sessionTabs.duplicate': 'Dupliquer l’onglet',
+  'sessionTabs.closeOthers': 'Fermer les autres',
+  'sessionTabs.closeAll': 'Tout fermer',
+  'sessionTabs.closeActive': 'Fermer l’onglet actif',
 
   'data.export': 'Exporter les préférences',
   'data.import': 'Importer…',
@@ -201,6 +207,9 @@ export const EXTRA_EN: Record<ExtraMessageKey, string> = {
 
   'conversion.history.hint':
     'History is enabled by default for new installs. Uncheck “Keep history” to disable it.',
+  'conversion.autoConvert': 'Auto-convert after idle',
+  'conversion.autoConvert.hint':
+    'Runs conversion ~3 s after you stop typing (simple pairs only). Inactive if “Confirm before conversion” is checked.',
   'conversion.warnings.heading': 'UI warnings',
   'conversion.warnings.showBanner': 'Show warnings banner',
   'conversion.warnings.detailLevel': 'Detail level',
@@ -277,6 +286,7 @@ export const EXTRA_EN: Record<ExtraMessageKey, string> = {
   'iface.linkedScroll': 'Linked source ↔ result scroll',
   'iface.linkedScroll.on': 'Linked scroll on — click to disable',
   'iface.linkedScroll.off': 'Link source ↔ result scrolling',
+  'iface.restoreSessionTabs': 'Restore tabs on reload',
   'iface.pinnedCommands': 'Pinned header actions',
   'iface.pinnedCommands.hint': 'Up to {max} commands next to Ctrl+K.',
   'iface.liteMode': 'Lite mode',
@@ -306,9 +316,11 @@ export const EXTRA_EN: Record<ExtraMessageKey, string> = {
   'sessionTabs.close': 'Close {title}',
   'sessionTabs.max': 'Maximum {max} tabs',
   'sessionTabs.rename': 'Rename tab',
-  'sessionTabs.renameHint': 'Double-click to rename',
-  'sessionTabs.menuHint': 'Right-click: rename, duplicate, close',
+  'sessionTabs.menuHint': 'Right-click · middle-click · Alt+W',
   'sessionTabs.duplicate': 'Duplicate tab',
+  'sessionTabs.closeOthers': 'Close others',
+  'sessionTabs.closeAll': 'Close all',
+  'sessionTabs.closeActive': 'Close active tab',
 
   'data.export': 'Export preferences',
   'data.import': 'Import…',
@@ -371,6 +383,9 @@ export const EXTRA_ES: Record<ExtraMessageKey, string> = {
 
   'conversion.history.hint':
     'El historial está activado por defecto en instalaciones nuevas. Desmarque «Conservar el historial» para desactivarlo.',
+  'conversion.autoConvert': 'Conversión auto tras pausa',
+  'conversion.autoConvert.hint':
+    'Convierte ~3 s después de dejar de escribir (pares simples). Inactivo si «Confirmar antes de convertir» está marcado.',
   'conversion.warnings.heading': 'Avisos de UI',
   'conversion.warnings.showBanner': 'Mostrar el banner de avisos',
   'conversion.warnings.detailLevel': 'Nivel de detalle',
@@ -447,6 +462,7 @@ export const EXTRA_ES: Record<ExtraMessageKey, string> = {
   'iface.linkedScroll': 'Desplazamiento vinculado origen ↔ resultado',
   'iface.linkedScroll.on': 'Desplazamiento vinculado activado — clic para desactivar',
   'iface.linkedScroll.off': 'Vincular desplazamiento origen ↔ resultado',
+  'iface.restoreSessionTabs': 'Restaurar pestañas al recargar',
   'iface.pinnedCommands': 'Acciones fijadas (header)',
   'iface.pinnedCommands.hint': 'Hasta {max} comandos junto a Ctrl+K.',
   'iface.liteMode': 'Modo ligero',
@@ -476,9 +492,11 @@ export const EXTRA_ES: Record<ExtraMessageKey, string> = {
   'sessionTabs.close': 'Cerrar {title}',
   'sessionTabs.max': 'Máximo {max} pestañas',
   'sessionTabs.rename': 'Renombrar pestaña',
-  'sessionTabs.renameHint': 'Doble clic para renombrar',
-  'sessionTabs.menuHint': 'Clic derecho: renombrar, duplicar, cerrar',
+  'sessionTabs.menuHint': 'Clic derecho · clic rueda · Alt+W',
   'sessionTabs.duplicate': 'Duplicar pestaña',
+  'sessionTabs.closeOthers': 'Cerrar las demás',
+  'sessionTabs.closeAll': 'Cerrar todas',
+  'sessionTabs.closeActive': 'Cerrar pestaña activa',
 
   'data.export': 'Exportar preferencias',
   'data.import': 'Importar…',
@@ -541,6 +559,9 @@ export const EXTRA_DE: Record<ExtraMessageKey, string> = {
 
   'conversion.history.hint':
     'Der Verlauf ist für Neuinstallationen standardmäßig aktiv. „Verlauf behalten“ deaktivieren zum Abschalten.',
+  'conversion.autoConvert': 'Auto-Konvertierung nach Pause',
+  'conversion.autoConvert.hint':
+    'Startet die Konvertierung ~3 s nach der letzten Eingabe (nur einfache Paare). Inaktiv, wenn „Vor Konvertierung bestätigen“ aktiv ist.',
   'conversion.warnings.heading': 'UI-Warnungen',
   'conversion.warnings.showBanner': 'Warnungsbanner anzeigen',
   'conversion.warnings.detailLevel': 'Detailstufe',
@@ -617,6 +638,7 @@ export const EXTRA_DE: Record<ExtraMessageKey, string> = {
   'iface.linkedScroll': 'Gekoppeltes Scrollen Quelle ↔ Ergebnis',
   'iface.linkedScroll.on': 'Gekoppeltes Scrollen an — klicken zum Deaktivieren',
   'iface.linkedScroll.off': 'Scrollen Quelle ↔ Ergebnis koppeln',
+  'iface.restoreSessionTabs': 'Tabs beim Neuladen wiederherstellen',
   'iface.pinnedCommands': 'Angepinnte Header-Aktionen',
   'iface.pinnedCommands.hint': 'Bis zu {max} Befehle neben Ctrl+K.',
   'iface.liteMode': 'Leichtmodus',
@@ -646,9 +668,11 @@ export const EXTRA_DE: Record<ExtraMessageKey, string> = {
   'sessionTabs.close': '{title} schließen',
   'sessionTabs.max': 'Maximal {max} Tabs',
   'sessionTabs.rename': 'Tab umbenennen',
-  'sessionTabs.renameHint': 'Doppelklick zum Umbenennen',
-  'sessionTabs.menuHint': 'Rechtsklick: umbenennen, duplizieren, schließen',
+  'sessionTabs.menuHint': 'Rechtsklick · Mittelklick · Alt+W',
   'sessionTabs.duplicate': 'Tab duplizieren',
+  'sessionTabs.closeOthers': 'Andere schließen',
+  'sessionTabs.closeAll': 'Alle schließen',
+  'sessionTabs.closeActive': 'Aktiven Tab schließen',
 
   'data.export': 'Einstellungen exportieren',
   'data.import': 'Importieren…',

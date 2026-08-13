@@ -22,6 +22,7 @@ interface FormatPairsBarProps {
   favoritePairs: FormatPair[];
   onApplyPair: (source: FormatType, target: FormatType) => void;
   onToggleFavorite: (source: FormatType, target: FormatType) => void;
+  applyDisabled?: boolean;
 }
 
 export const FormatPairsBar: React.FC<FormatPairsBarProps> = ({
@@ -31,6 +32,7 @@ export const FormatPairsBar: React.FC<FormatPairsBarProps> = ({
   favoritePairs,
   onApplyPair,
   onToggleFavorite,
+  applyDisabled = false,
 }) => {
   const t = useT();
   const currentSupported = isSupportedUiConversion(sourceFormat, targetFormat);
@@ -93,7 +95,11 @@ export const FormatPairsBar: React.FC<FormatPairsBarProps> = ({
                 key={pairKey(pair)}
                 type="button"
                 className={`format-pairs-link${active ? ' is-active' : ''}${pair.favorite ? ' is-favorite' : ''}`}
-                onClick={() => onApplyPair(pair.source, pair.target)}
+                onClick={() => {
+                  if (applyDisabled) return;
+                  onApplyPair(pair.source, pair.target);
+                }}
+                disabled={applyDisabled}
                 data-tooltip={t('sidebar.pairs.apply', { pair: label })}
                 aria-label={t('sidebar.pairs.apply', { pair: label })}
                 aria-pressed={active}

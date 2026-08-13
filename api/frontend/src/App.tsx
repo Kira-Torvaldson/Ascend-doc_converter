@@ -9,8 +9,7 @@
  * MAIN ARCHITECTURE:
  * ------------------
  * 1. Conversion utility functions (imported from ./converters)
- *    - convertAsciiDocToMarkdown: AsciiDoc → Markdown conversion via downdoc
- *    - convertMarkdownToAsciiDoc: Markdown → AsciiDoc conversion via Pandoc
+ *    - convertText: conversions via the generic converter
  *    - requestConfirmationToken: Secure confirmation token request
  *    - convertText: Generic multi-format conversion function
  * 
@@ -52,8 +51,6 @@
 
 import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect, startTransition, useDeferredValue } from "react";
 import {
-  convertAsciiDocToMarkdown,
-  convertMarkdownToAsciiDoc,
   convertText,
   requestConfirmationToken
 } from "./converters";
@@ -93,7 +90,15 @@ import {
   isAcceptedSourceFile,
   readFileAsUtf8,
 } from "./utils/sourceFile";
-import { clearSessionDraft, loadSessionWorkspace, persistSessionWorkspace, createEmptyTab, snapshotFromBuffers, reorderSessionTabs, MAX_SESSION_TABS, type SessionTabSnapshot } from "./utils/sessionDraft";
+import { clearSessionDraft, isReplaceSourceDirty, MAX_CONTENT_CHARS, MAX_SESSION_TABS, type SessionTabSnapshot } from "./utils/sessionDraft";
+import {
+  AUTO_CONVERT_IDLE_MS,
+  bumpAutoConvertFail,
+  conversionOptionsStamp,
+  decideAutoConvert,
+  shouldMarkTabCleanAfterConvert,
+  sourceAutoConvertKey,
+} from "./utils/autoConvert";
 import {
   CONVERSION_PROFILES,
   MAX_ACTIVE_PROFILES,
@@ -102,10 +107,22 @@ import {
 } from "./utils/conversionProfiles";
 import { renderPreviewHtml } from "./utils/renderPreview";
 import {
+  buildConversionHistoryItem,
+  loadConversionHistory,
+  persistConversionHistory,
+  prependConversionHistory,
+  shouldRecordConversionHistory,
+} from "./utils/conversionHistory";
+import {
   isSupportedUiConversion,
+  conversionNeedsConfirmationToken,
   SUPPORTED_CONVERSION_HINT,
   readResultBuffer,
   writeResultBuffer,
+  applyResultToBuffers,
+  applyHistoryToBuffers,
+  decideConversionResultDest,
+  resolveConvertRequestSnap,
   supportsRichPreview,
   resultUsesOtherBuffer,
   recordRecentPair,
@@ -124,9 +141,16 @@ import { createZipBlob } from "./utils/simpleZip";
 import {
   filterBatchableFolderFiles,
   readAndConvertFolderFile,
-  withOutputExtension,
+  estimateFolderBatch,
+  formatBatchDurationLabel,
+  getBatchFormatLabels,
+  folderFileKey,
+  folderFileLabel,
+  markFolderBatchAborted,
   type FolderBatchItem,
 } from "./utils/folderBatchConvert";
+import { useFolderBatch } from "./hooks/useFolderBatch";
+import { createSessionBootstrap, useSessionTabs } from "./hooks/useSessionTabs";
 import packageJson from "../package.json";
 import { fetchConversionLimits, fetchConversionMetrics } from "./converters/api";
 import { formatConversionErrorForUi, getHintForCode } from "./converters/error-code-messages";
@@ -183,17 +207,6 @@ const VALID_FORMAT_TYPES: FormatType[] = [
 function pickFormatType(value: string | undefined, fallback: FormatType): FormatType {
   if (value && (VALID_FORMAT_TYPES as string[]).includes(value)) return value as FormatType;
   return fallback;
-}
-
-/** true si la conversion passe par /api/convert (token requis). */
-function conversionNeedsConfirmationToken(source: FormatType, target: FormatType): boolean {
-  if (source === 'asciidoc' && target === 'markdown') return false;
-  if (source === 'markdown' && target === 'asciidoc') return false;
-  if (source === 'markdown' && (target === 'html' || target === 'txt')) return false; // /api/from-markdown
-  if (source === 'txt' && target === 'markdown') return false;
-  if (source === 'txt' && target === 'html') return false; // /api/from-text
-  if (source === 'html') return false; // /api/from-html
-  return true;
 }
 
 /** Format destination alternatif si collision source === cible. */
@@ -285,12 +298,8 @@ function App() {
   // These states store the content displayed in source and destination panels
   // IMPORTANT: Source content can be in adocInput OR mdOutput depending on format
   
-  const [sessionBootstrap] = useState(() => loadSessionWorkspace());
-  const [sessionTabs, setSessionTabs] = useState<SessionTabSnapshot[]>(() => sessionBootstrap.tabs);
-  const [activeSessionTabId, setActiveSessionTabId] = useState(() => sessionBootstrap.activeTabId);
-  const [dirtySessionTabIds, setDirtySessionTabIds] = useState<Set<string>>(() => new Set());
-  const activeBootstrapTab =
-    sessionBootstrap.tabs.find((t) => t.id === sessionBootstrap.activeTabId) ?? sessionBootstrap.tabs[0];
+  const [sessionBootstrap] = useState(() => createSessionBootstrap());
+  const activeBootstrapTab = sessionBootstrap.activeTab;
 
   /** Source panel content (AsciiDoc or other format according to sourceFormat) */
   const [adocInput, setAdocInput] = useState<string>(() => activeBootstrapTab?.adocInput ?? "");
@@ -316,6 +325,7 @@ function App() {
   
   /** Normalized conversion UI state for current attempt lifecycle. */
   const [conversionUiState, setConversionUiState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [autoConvertPending, setAutoConvertPending] = useState(false);
 
   /**
    * Last standardized backend ConversionResult received (when provided by backend).
@@ -348,11 +358,22 @@ function App() {
   
   /** List of files from selected folder */
   const [folderFiles, setFolderFiles] = useState<File[]>([]);
-  const [folderBatchOpen, setFolderBatchOpen] = useState(false);
-  const [folderBatchRunning, setFolderBatchRunning] = useState(false);
-  const [folderBatchItems, setFolderBatchItems] = useState<FolderBatchItem[]>([]);
-  const [folderBatchIndex, setFolderBatchIndex] = useState(0);
-  const folderBatchAbortRef = useRef<AbortController | null>(null);
+  const {
+    open: folderBatchOpen,
+    running: folderBatchRunning,
+    items: folderBatchItems,
+    currentIndex: folderBatchIndex,
+    cancel: cancelFolderBatch,
+    close: closeFolderBatch,
+    downloadZip: downloadFolderBatchZip,
+    downloadCsvReport: downloadFolderBatchReport,
+    beginRun: beginFolderBatch,
+    finishRun: finishFolderBatch,
+    setItems: setFolderBatchItems,
+    setCurrentIndex: setFolderBatchIndex,
+    canDownloadZip: folderBatchCanZip,
+    canDownloadReport: folderBatchCanReport,
+  } = useFolderBatch();
   
   /** Index of currently selected file in list (-1 = none) */
   const [selectedFileIndex, setSelectedFileIndex] = useState<number>(-1);
@@ -393,15 +414,20 @@ function App() {
   /** Confirm before starting a conversion (user preference) */
   const [showConfirmConvertModal, setShowConfirmConvertModal] = useState<boolean>(false);
 
+  /** Confirm replacing dirty source (dossier, glisser-déposer, Ouvrir). */
+  const [showReplaceSourceModal, setShowReplaceSourceModal] = useState(false);
+  const [pendingSourceReplace, setPendingSourceReplace] = useState<
+    | { kind: 'folder'; index: number }
+    | { kind: 'file'; file: File; alignFormat?: boolean }
+    | { kind: 'history'; item: ConversionHistoryItem }
+    | null
+  >(null);
+
   /** Confirm wipe of local browser data */
   const [showClearLocalDataModal, setShowClearLocalDataModal] = useState<boolean>(false);
 
   /** Clear entire conversion history */
   const [showClearHistoryModal, setShowClearHistoryModal] = useState<boolean>(false);
-
-  /** Confirm closing a dirty session tab */
-  const [showCloseSessionTabModal, setShowCloseSessionTabModal] = useState<boolean>(false);
-  const [pendingCloseSessionTabId, setPendingCloseSessionTabId] = useState<string | null>(null);
 
   /** Shows help modal for keyboard shortcuts */
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
@@ -417,17 +443,9 @@ function App() {
   // ==========================================================================
   
   /** History of conversions (stored in localStorage) */
-  const [conversionHistory, setConversionHistory] = useState<ConversionHistoryItem[]>(() => {
-    try {
-      const stored = localStorage.getItem('ascend_conversion_history');
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (e) {
-      console.error('Error loading conversion history:', e);
-    }
-    return [];
-  });
+  const [conversionHistory, setConversionHistory] = useState<ConversionHistoryItem[]>(
+    () => loadConversionHistory()
+  );
 
   // ==========================================================================
   // STATES: ORIGINAL CONTENT BACKUP (for restoration)
@@ -468,6 +486,8 @@ function App() {
     fromFormat: FormatType;
     toFormat: FormatType;
     token: string;
+    sourceText: string;
+    tabId: string;
   } | null>(null);
 
   // ==========================================================================
@@ -639,7 +659,7 @@ function App() {
   
   /** Profils de conversion actifs (max 2), session puis profil par défaut */
   const [activeProfileIds, setActiveProfileIds] = useState<string[]>(() => {
-    const fromSession = sanitizeActiveProfileIds(sessionBootstrap.activeProfileIds);
+    const fromSession = sanitizeActiveProfileIds(sessionBootstrap.workspace.activeProfileIds);
     if (fromSession.length > 0) return fromSession;
     const defaultId = loadUserSettings().conversion.defaultProfileId;
     return sanitizeActiveProfileIds(defaultId ? [defaultId] : []);
@@ -649,10 +669,13 @@ function App() {
 
   /** Currently configured conversion options */
   const [conversionOptions, setConversionOptions] = useState<ConversionOptions>(() => {
-    if (sessionBootstrap.conversionOptions && Object.keys(sessionBootstrap.conversionOptions).length > 0) {
-      return sessionBootstrap.conversionOptions;
+    if (
+      sessionBootstrap.workspace.conversionOptions &&
+      Object.keys(sessionBootstrap.workspace.conversionOptions).length > 0
+    ) {
+      return sessionBootstrap.workspace.conversionOptions;
     }
-    const fromSession = sanitizeActiveProfileIds(sessionBootstrap.activeProfileIds);
+    const fromSession = sanitizeActiveProfileIds(sessionBootstrap.workspace.activeProfileIds);
     const defaultId = loadUserSettings().conversion.defaultProfileId;
     const ids = fromSession.length > 0
       ? fromSession
@@ -802,6 +825,250 @@ function App() {
       : userSettings.profile.uiLanguage;
     document.documentElement.lang = lang;
   }, [settingsOpen, draftSettings.profile.uiLanguage, userSettings.profile.uiLanguage]);
+
+  const lastAutoConvertKeyRef = useRef(
+    sourceAutoConvertKey(
+      sourceFormat,
+      targetFormat,
+      sourceFormat === 'markdown' ? mdOutput : adocInput
+    )
+  );
+  const lastAutoConvertOptionsRef = useRef('');
+  const convertSnapshotKeyRef = useRef('');
+  const convertSnapshotStampRef = useRef('');
+  const autoConvertFailRef = useRef({ key: '', count: 0 });
+  const conversionStampRef = useRef('');
+  conversionStampRef.current = conversionOptionsStamp(
+    conversionOptions,
+    userSettings.conversion.defaultTocEnabled,
+    userSettings.conversion.autoApplyUserToMetadata
+  );
+  if (!lastAutoConvertOptionsRef.current) {
+    lastAutoConvertOptionsRef.current = conversionStampRef.current;
+  }
+
+  const applySessionTabToEditors = useCallback((tab: SessionTabSnapshot) => {
+    setAdocInput(tab.adocInput);
+    setMdOutput(tab.mdOutput);
+    setOtherOutput(tab.otherOutput);
+    setSourceFormat(tab.sourceFormat);
+    setTargetFormat(tab.targetFormat);
+    setCurrentFileName(tab.currentFileName);
+    setSourceModified(false);
+    setResultModified(false);
+    setIsEditingResult(false);
+    setJustConverted(false);
+    setLastBackendConversionResult(null);
+    setStatus('');
+    setConversionUiState('idle');
+    lastAutoConvertKeyRef.current = sourceAutoConvertKey(
+      tab.sourceFormat,
+      tab.targetFormat,
+      tab.sourceFormat === 'markdown' ? tab.mdOutput : tab.adocInput
+    );
+    lastAutoConvertOptionsRef.current = conversionStampRef.current;
+    convertSnapshotKeyRef.current = lastAutoConvertKeyRef.current;
+    convertSnapshotStampRef.current = conversionStampRef.current;
+    autoConvertFailRef.current = { key: '', count: 0 };
+    setFolderFiles([]);
+    setSelectedFileIndex(-1);
+    setImportedFiles([]);
+  }, []);
+
+  const {
+    sessionTabs,
+    activeSessionTabId,
+    dirtySessionTabIds,
+    showCloseSessionTabModal,
+    setShowCloseSessionTabModal,
+    setPendingCloseSessionTabId,
+    showCloseAllSessionTabsModal,
+    setShowCloseAllSessionTabsModal,
+    pendingCloseOthersKeepId,
+    setPendingCloseOthersKeepId,
+    selectSessionTab,
+    addSessionTab,
+    closeSessionTab,
+    confirmCloseSessionTab,
+    closeOtherSessionTabs,
+    requestCloseAllSessionTabs,
+    confirmCloseAllSessionTabs,
+    renameSessionTab,
+    duplicateSessionTab,
+    reorderSessionTab,
+    resetSessionTabs,
+    markActiveTabClean,
+    markTabClean,
+    patchSessionTabContent,
+  } = useSessionTabs(sessionBootstrap, {
+    buffers: {
+      adocInput,
+      mdOutput,
+      otherOutput,
+      sourceFormat,
+      targetFormat,
+      currentFileName,
+    },
+    onApplyTab: applySessionTabToEditors,
+    sourceModified,
+    resultModified,
+    conversionOptions,
+    activeProfileIds,
+    restoreSessionTabs: userSettings.ui.restoreSessionTabs !== false,
+    onSessionRestored: (count) => showSnackbar(t('snack.sessionRestored', { count })),
+    onSessionLoadIssue: (issue) => {
+      if (issue.kind === 'corrupted') {
+        showSnackbar(t('snack.sessionCorrupt'));
+        return;
+      }
+      showSnackbar(t('snack.sessionLoadTruncated', { count: issue.truncatedTabCount }));
+    },
+    onPersistIssue: (result) => {
+      if (!result.ok) {
+        showSnackbar(t('snack.sessionPersistFail'));
+        return;
+      }
+      if (result.truncated) {
+        showSnackbar(t('snack.sessionTruncated', { count: result.truncatedTabCount }));
+      }
+    },
+  });
+
+  const liveEditorRef = useRef({
+    sourceFormat,
+    targetFormat,
+    activeSessionTabId,
+    sourceText: sourceFormat === 'markdown' ? mdOutput : adocInput,
+  });
+  liveEditorRef.current = {
+    sourceFormat,
+    targetFormat,
+    activeSessionTabId,
+    sourceText: sourceFormat === 'markdown' ? mdOutput : adocInput,
+  };
+
+  const convertOriginRef = useRef<{
+    tabId: string;
+    sourceFormat: FormatType;
+    targetFormat: FormatType;
+    sourceText: string;
+  } | null>(null);
+  const lastOutputDestRef = useRef<'live' | 'tab' | 'skip' | null>(null);
+  const pendingConfirmConvertRef = useRef<{
+    tabId: string;
+    sourceText: string;
+    sourceFormat: FormatType;
+    targetFormat: FormatType;
+  } | null>(null);
+
+  const beginConvertAttempt = useCallback((
+    from: FormatType,
+    to: FormatType,
+    sourceText: string,
+    tabId?: string
+  ) => {
+    convertSnapshotKeyRef.current = sourceAutoConvertKey(from, to, sourceText);
+    convertSnapshotStampRef.current = conversionStampRef.current;
+    convertOriginRef.current = {
+      tabId: tabId ?? liveEditorRef.current.activeSessionTabId,
+      sourceFormat: from,
+      targetFormat: to,
+      sourceText,
+    };
+    lastOutputDestRef.current = null;
+  }, []);
+
+  const recordConversionHistory = useCallback(
+    (input: {
+      fromFormat: FormatType;
+      toFormat: FormatType;
+      sourceContent: string;
+      resultContent: string;
+    }) => {
+      if (!userSettings.conversion.saveConversionHistory) return;
+      const historyItem = buildConversionHistoryItem({
+        ...input,
+        conversionOptions,
+        activeProfileIds: sanitizeActiveProfileIds(activeProfileIds),
+      });
+      if (!historyItem) return;
+      const limit = userSettings.conversion.historyLimit || 50;
+      setConversionHistory((prev) => {
+        const next = prependConversionHistory(prev, historyItem, limit);
+        persistConversionHistory(next);
+        return next;
+      });
+    },
+    [
+      userSettings.conversion.saveConversionHistory,
+      userSettings.conversion.historyLimit,
+      conversionOptions,
+      activeProfileIds,
+    ]
+  );
+
+  const deliverConversionOutput = useCallback(
+    (raw: string) => {
+      const origin = convertOriginRef.current;
+      const live = liveEditorRef.current;
+      const next = appendDocumentSignature(raw, userSettings.profile);
+      const record = (
+        from: FormatType,
+        to: FormatType,
+        sourceContent: string,
+        dest: 'live' | 'tab' | 'skip' | null
+      ) => {
+        if (!shouldRecordConversionHistory(dest)) return;
+        recordConversionHistory({
+          fromFormat: from,
+          toFormat: to,
+          sourceContent,
+          resultContent: next,
+        });
+      };
+      if (!origin) {
+        lastOutputDestRef.current = 'live';
+        writeResultBuffer(live.sourceFormat, live.targetFormat, next, {
+          setAdocInput,
+          setMdOutput,
+          setOtherOutput,
+        });
+        record(live.sourceFormat, live.targetFormat, live.sourceText, 'live');
+        return;
+      }
+      const dest = decideConversionResultDest({
+        originTabId: origin.tabId,
+        liveTabId: live.activeSessionTabId,
+        writeSource: origin.sourceFormat,
+        writeTarget: origin.targetFormat,
+        liveSource: live.sourceFormat,
+      });
+      lastOutputDestRef.current = dest;
+      if (dest === 'tab') {
+        patchSessionTabContent(origin.tabId, (tab) =>
+          applyResultToBuffers(tab, origin.sourceFormat, origin.targetFormat, next)
+        );
+        record(origin.sourceFormat, origin.targetFormat, origin.sourceText, dest);
+        showSnackbar(t('snack.convertAppliedOtherTab'));
+        return;
+      }
+      if (dest === 'skip') {
+        showSnackbar(t('snack.convertResultSkipped'));
+        return;
+      }
+      writeResultBuffer(origin.sourceFormat, origin.targetFormat, next, {
+        setAdocInput,
+        setMdOutput,
+        setOtherOutput,
+      });
+      record(origin.sourceFormat, origin.targetFormat, origin.sourceText, dest);
+    },
+    [userSettings.profile, patchSessionTabContent, showSnackbar, t, recordConversionHistory]
+  );
+
+  const loadingHere =
+    loading &&
+    (!convertOriginRef.current || convertOriginRef.current.tabId === activeSessionTabId);
 
   const otherOptionsCategories = useMemo(() => {
     const items: Array<{ value: string; label: string }> = [];
@@ -1188,11 +1455,7 @@ function App() {
       setConversionHistory((prev) => {
         if (prev.length <= limit) return prev;
         const trimmed = prev.slice(0, limit);
-        try {
-          localStorage.setItem('ascend_conversion_history', JSON.stringify(trimmed));
-        } catch {
-          /* ignore */
-        }
+        persistConversionHistory(trimmed);
         return trimmed;
       });
     }
@@ -1347,28 +1610,14 @@ function App() {
     setConversionHistory([]);
     setActiveProfileIds([]);
     setConversionOptions({});
-    {
-      const fresh = createEmptyTab(0);
-      setSessionTabs([fresh]);
-      setActiveSessionTabId(fresh.id);
-      setDirtySessionTabIds(new Set());
-      setAdocInput('');
-      setMdOutput('');
-      setOtherOutput('');
-      setSourceFormat('asciidoc');
-      setTargetFormat('markdown');
-      setCurrentFileName(null);
-      setSourceModified(false);
-      setResultModified(false);
-      setIsEditingResult(false);
-    }
+    resetSessionTabs();
     setSidebarCollapsed(false);
     setActiveSettingsSection(DEFAULT_SETTINGS_SECTION);
     applyUiPreferencesToDocument(defaults.ui, null);
     setShowClearLocalDataModal(false);
     setStatus(t('status.localCleared'));
     showSnackbar(t('snack.localCleared'));
-  }, [applyUiPreferencesToDocument, showSnackbar]);
+  }, [applyUiPreferencesToDocument, resetSessionTabs, showSnackbar, t]);
   
   // ==========================================================================
   // STATES: NOTIFICATIONS
@@ -1431,245 +1680,6 @@ function App() {
   useEffect(() => {
     setWarningsDismissed(false);
   }, [lastBackendConversionResult]);
-
-  useEffect(() => {
-    if (sourceModified || resultModified) {
-      setDirtySessionTabIds((prev) => {
-        if (prev.has(activeSessionTabId)) return prev;
-        const next = new Set(prev);
-        next.add(activeSessionTabId);
-        return next;
-      });
-    }
-  }, [sourceModified, resultModified, activeSessionTabId]);
-
-  const sessionBuffersRef = useRef({
-    adocInput,
-    mdOutput,
-    otherOutput,
-    sourceFormat,
-    targetFormat,
-    currentFileName,
-    activeSessionTabId,
-  });
-  sessionBuffersRef.current = {
-    adocInput,
-    mdOutput,
-    otherOutput,
-    sourceFormat,
-    targetFormat,
-    currentFileName,
-    activeSessionTabId,
-  };
-  const sessionTabsRef = useRef(sessionTabs);
-  sessionTabsRef.current = sessionTabs;
-
-  const applySessionTabToEditors = useCallback((tab: SessionTabSnapshot) => {
-    setAdocInput(tab.adocInput);
-    setMdOutput(tab.mdOutput);
-    setOtherOutput(tab.otherOutput);
-    setSourceFormat(tab.sourceFormat);
-    setTargetFormat(tab.targetFormat);
-    setCurrentFileName(tab.currentFileName);
-    setSourceModified(false);
-    setResultModified(false);
-    setIsEditingResult(false);
-    setJustConverted(false);
-    setLastBackendConversionResult(null);
-    setStatus('');
-    setConversionUiState('idle');
-  }, []);
-
-  const commitActiveTabSnapshot = useCallback((tabs: SessionTabSnapshot[]): SessionTabSnapshot[] => {
-    const b = sessionBuffersRef.current;
-    return tabs.map((tab, i) =>
-      tab.id === b.activeSessionTabId
-        ? snapshotFromBuffers({
-            id: tab.id,
-            title: tab.title,
-            titleLocked: tab.titleLocked,
-            adocInput: b.adocInput,
-            mdOutput: b.mdOutput,
-            otherOutput: b.otherOutput,
-            sourceFormat: b.sourceFormat,
-            targetFormat: b.targetFormat,
-            currentFileName: b.currentFileName,
-            index: i,
-          })
-        : tab
-    );
-  }, []);
-
-  const selectSessionTab = useCallback(
-    (nextId: string) => {
-      if (nextId === activeSessionTabId) return;
-      const committed = commitActiveTabSnapshot(sessionTabsRef.current);
-      const next = committed.find((t) => t.id === nextId);
-      if (!next) return;
-      sessionTabsRef.current = committed;
-      setSessionTabs(committed);
-      setActiveSessionTabId(nextId);
-      applySessionTabToEditors(next);
-    },
-    [activeSessionTabId, applySessionTabToEditors, commitActiveTabSnapshot]
-  );
-
-  const addSessionTab = useCallback(() => {
-    if (sessionTabsRef.current.length >= MAX_SESSION_TABS) return;
-    const committed = commitActiveTabSnapshot(sessionTabsRef.current);
-    const tab = createEmptyTab(committed.length);
-    const nextTabs = [...committed, tab];
-    sessionTabsRef.current = nextTabs;
-    setSessionTabs(nextTabs);
-    setActiveSessionTabId(tab.id);
-    applySessionTabToEditors(tab);
-  }, [applySessionTabToEditors, commitActiveTabSnapshot]);
-
-  const closeSessionTab = useCallback(
-    (id: string) => {
-      if (dirtySessionTabIds.has(id)) {
-        setPendingCloseSessionTabId(id);
-        setShowCloseSessionTabModal(true);
-        return;
-      }
-      const committed = commitActiveTabSnapshot(sessionTabsRef.current);
-      if (committed.length <= 1) {
-        const fresh = createEmptyTab(0);
-        sessionTabsRef.current = [fresh];
-        setSessionTabs([fresh]);
-        setActiveSessionTabId(fresh.id);
-        applySessionTabToEditors(fresh);
-        setDirtySessionTabIds(new Set());
-        return;
-      }
-      const idx = committed.findIndex((t) => t.id === id);
-      if (idx < 0) return;
-      const nextTabs = committed.filter((t) => t.id !== id);
-      const fallback = nextTabs[Math.max(0, idx - 1)] ?? nextTabs[0];
-      sessionTabsRef.current = nextTabs;
-      setSessionTabs(nextTabs);
-      setDirtySessionTabIds((prev) => {
-        const n = new Set(prev);
-        n.delete(id);
-        return n;
-      });
-      if (id === activeSessionTabId) {
-        setActiveSessionTabId(fallback.id);
-        applySessionTabToEditors(fallback);
-      }
-    },
-    [activeSessionTabId, applySessionTabToEditors, commitActiveTabSnapshot, dirtySessionTabIds]
-  );
-
-  const confirmCloseSessionTab = useCallback(() => {
-    const id = pendingCloseSessionTabId;
-    if (!id) {
-      setShowCloseSessionTabModal(false);
-      return;
-    }
-    setShowCloseSessionTabModal(false);
-    setPendingCloseSessionTabId(null);
-    setDirtySessionTabIds((prev) => {
-      const n = new Set(prev);
-      n.delete(id);
-      return n;
-    });
-    const committed = commitActiveTabSnapshot(sessionTabsRef.current);
-    if (committed.length <= 1) {
-      const fresh = createEmptyTab(0);
-      sessionTabsRef.current = [fresh];
-      setSessionTabs([fresh]);
-      setActiveSessionTabId(fresh.id);
-      applySessionTabToEditors(fresh);
-      setDirtySessionTabIds(new Set());
-      return;
-    }
-    const idx = committed.findIndex((t) => t.id === id);
-    if (idx < 0) return;
-    const nextTabs = committed.filter((t) => t.id !== id);
-    const fallback = nextTabs[Math.max(0, idx - 1)] ?? nextTabs[0];
-    sessionTabsRef.current = nextTabs;
-    setSessionTabs(nextTabs);
-    if (id === activeSessionTabId) {
-      setActiveSessionTabId(fallback.id);
-      applySessionTabToEditors(fallback);
-    }
-  }, [activeSessionTabId, applySessionTabToEditors, commitActiveTabSnapshot, pendingCloseSessionTabId]);
-
-  const renameSessionTab = useCallback((id: string, title: string) => {
-    const nextTitle = title.trim().slice(0, 40);
-    if (!nextTitle) return;
-    const committed = commitActiveTabSnapshot(sessionTabsRef.current);
-    const nextTabs = committed.map((tab) =>
-      tab.id === id ? { ...tab, title: nextTitle, titleLocked: true } : tab
-    );
-    sessionTabsRef.current = nextTabs;
-    setSessionTabs(nextTabs);
-  }, [commitActiveTabSnapshot]);
-
-  const duplicateSessionTab = useCallback(
-    (id: string) => {
-      if (sessionTabsRef.current.length >= MAX_SESSION_TABS) return;
-      const committed = commitActiveTabSnapshot(sessionTabsRef.current);
-      const idx = committed.findIndex((t) => t.id === id);
-      if (idx < 0) return;
-      const src = committed[idx];
-      const copy = createEmptyTab(committed.length);
-      const duplicated: SessionTabSnapshot = {
-        ...src,
-        id: copy.id,
-        title: `${src.title}`.slice(0, 34) + ' *',
-        titleLocked: true,
-      };
-      const nextTabs = [
-        ...committed.slice(0, idx + 1),
-        duplicated,
-        ...committed.slice(idx + 1),
-      ].slice(0, MAX_SESSION_TABS);
-      sessionTabsRef.current = nextTabs;
-      setSessionTabs(nextTabs);
-      setActiveSessionTabId(duplicated.id);
-      applySessionTabToEditors(duplicated);
-    },
-    [applySessionTabToEditors, commitActiveTabSnapshot]
-  );
-
-  const reorderSessionTab = useCallback(
-    (fromIndex: number, toIndex: number) => {
-      const committed = commitActiveTabSnapshot(sessionTabsRef.current);
-      const nextTabs = reorderSessionTabs(committed, fromIndex, toIndex);
-      if (nextTabs === committed) return;
-      sessionTabsRef.current = nextTabs;
-      setSessionTabs(nextTabs);
-    },
-    [commitActiveTabSnapshot]
-  );
-
-  useEffect(() => {
-    const t = window.setTimeout(() => {
-      const tabs = commitActiveTabSnapshot(sessionTabsRef.current);
-      sessionTabsRef.current = tabs;
-      setSessionTabs(tabs);
-      persistSessionWorkspace({
-        tabs,
-        activeTabId: activeSessionTabId,
-        conversionOptions,
-        activeProfileIds,
-      });
-    }, 400);
-    return () => window.clearTimeout(t);
-  }, [
-    adocInput,
-    mdOutput,
-    otherOutput,
-    sourceFormat,
-    targetFormat,
-    conversionOptions,
-    activeProfileIds,
-    currentFileName,
-    activeSessionTabId,
-    commitActiveTabSnapshot,
-  ]);
 
   const conversionWarnings = useMemo(() => {
     const sourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
@@ -1737,6 +1747,7 @@ function App() {
     mdOutput,
     otherOutput,
   });
+
   const deferredSourceForHeadings = useDeferredValue(sourceTextForUi);
   const deferredSourceForResultMeta = useDeferredValue(sourceTextForUi);
 
@@ -1815,6 +1826,18 @@ function App() {
       message += t('snack.convertWarningsPart', { count: warnCount });
     }
     showSnackbar(message);
+    const snapshotKey =
+      convertSnapshotKeyRef.current ||
+      sourceAutoConvertKey(sourceFormat, targetFormat, sourceText);
+    const snapshotStamp =
+      convertSnapshotStampRef.current || conversionStampRef.current;
+    lastAutoConvertKeyRef.current = snapshotKey;
+    lastAutoConvertOptionsRef.current = snapshotStamp;
+    const liveKey = sourceAutoConvertKey(sourceFormat, targetFormat, sourceText);
+    if (shouldMarkTabCleanAfterConvert(liveKey, snapshotKey)) {
+      markActiveTabClean();
+    }
+    autoConvertFailRef.current = { key: '', count: 0 };
   }, [
     conversionUiState,
     sourceFormat,
@@ -1826,6 +1849,7 @@ function App() {
     conversionWarnings.length,
     showSnackbar,
     t,
+    markActiveTabClean,
   ]);
 
   // Quitter l’aperçu quand le format cible n’a plus de preview riche.
@@ -1919,11 +1943,6 @@ function App() {
    * --------------------
    * If the window has no position yet (0, 0), it is centered on open.
    *
-   * DEBUGGING:
-   * ----------
-   * Logs are output to the console to understand why the window does not open
-   * (see console.log in the code).
-   *
    * DEPENDENCIES:
    * -------------
    * Re-runs when: navigationEnabled, sourceFormat, targetFormat, adocInput,
@@ -1961,22 +1980,8 @@ function App() {
       
       const hasText = text.trim().length > 0;
       const hasHeadings = headings.length > 0;
-      
-      // Debug: display values to understand why window doesn't open
-      console.log('Navigation Debug:', {
-        navigationEnabled,
-        sourceFormat,
-        hasText,
-        hasHeadings,
-        headingsCount: headings.length,
-        textLength: text.length,
-        adocInputLength: adocInput.length,
-        mdOutputLength: mdOutput.length
-      });
-      
+
       if (hasText && hasHeadings) {
-        console.log('Opening navigation window');
-        // Center window on opening if it doesn't have a position yet
         if (navigationWindowPosition.x === 0 && navigationWindowPosition.y === 0) {
           setNavigationWindowPosition({
             x: (window.innerWidth - navigationWindowSize.width) / 2,
@@ -1986,11 +1991,9 @@ function App() {
         setNavigationWindowMinimized(false);
         setNavigationWindowOpen(true);
       } else {
-        console.log('Closing navigation window - conditions not met');
         setNavigationWindowOpen(false);
       }
     } else {
-      console.log('Closing navigation window - navigation disabled or incorrect format');
       setNavigationWindowOpen(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2034,14 +2037,22 @@ function App() {
       }
       if (nextFormat === 'markdown') {
         setMdOutput(text);
+        setAdocInput('');
       } else {
         setAdocInput(text);
+        setMdOutput('');
       }
+      setOtherOutput('');
       setCurrentFileName(file.name);
       setImportedFiles([file]);
-      setSourceModified(true);
+      setSourceModified(false);
+      markActiveTabClean();
       setStatus(t('snack.fileLoaded', { name: file.name }));
-      showSnackbar(t('snack.fileLoaded', { name: file.name }));
+      if (text.length > MAX_CONTENT_CHARS) {
+        showSnackbar(t('snack.sessionTooLarge'));
+      } else {
+        showSnackbar(t('snack.fileLoaded', { name: file.name }));
+      }
     } catch {
       setStatus(t('snack.fileReadError'));
       setNotification({
@@ -2050,18 +2061,53 @@ function App() {
         visible: true,
       });
     }
-  }, [sourceFormat, targetFormat, showSnackbar]);
+  }, [sourceFormat, targetFormat, showSnackbar, t, markActiveTabClean]);
+
+  const requestLoadSourceFile = useCallback(
+    (file: File, options?: { alignFormat?: boolean }) => {
+      if (!isAcceptedSourceFile(file)) {
+        setStatus(t('snack.formatsAccepted'));
+        setNotification({
+          message: 'Formats acceptés : .adoc, .asciidoc, .md, .txt, .html',
+          type: 'error',
+          visible: true,
+        });
+        return;
+      }
+      const isDirty = isReplaceSourceDirty({
+        sourceModified,
+        resultModified,
+        isEditingResult,
+        dirtyTab: dirtySessionTabIds.has(activeSessionTabId),
+      });
+      if (isDirty) {
+        setPendingSourceReplace({ kind: 'file', file, alignFormat: options?.alignFormat });
+        setShowReplaceSourceModal(true);
+        return;
+      }
+      void loadSourceFile(file, options);
+    },
+    [
+      sourceModified,
+      resultModified,
+      isEditingResult,
+      dirtySessionTabIds,
+      activeSessionTabId,
+      loadSourceFile,
+      t,
+    ]
+  );
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    void loadSourceFile(file, { alignFormat: true });
+    requestLoadSourceFile(file, { alignFormat: true });
     event.target.value = '';
   };
 
   const handleDropSourceFile = useCallback((file: File) => {
-    void loadSourceFile(file, { alignFormat: true });
-  }, [loadSourceFile]);
+    requestLoadSourceFile(file, { alignFormat: true });
+  }, [requestLoadSourceFile]);
 
   /**
    * Handles import of a complete folder
@@ -2097,29 +2143,6 @@ function App() {
     setStatus(t('snack.folderLoaded', { count: textFiles.length }));
   };
 
-  const cancelFolderBatch = useCallback(() => {
-    folderBatchAbortRef.current?.abort();
-    folderBatchAbortRef.current = null;
-    setFolderBatchRunning(false);
-  }, []);
-
-  const downloadFolderBatchZip = useCallback(() => {
-    const entries = folderBatchItems
-      .filter((item) => item.status === 'success' && item.result)
-      .map((item) => ({
-        name: withOutputExtension(item.fileName, targetFormat),
-        content: item.result as string,
-      }));
-    if (entries.length === 0) return;
-    const blob = createZipBlob(entries);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ascend-batch-${targetFormat}.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [folderBatchItems, targetFormat]);
-
   const startFolderBatch = useCallback(async () => {
     if (folderBatchRunning || loading || folderFiles.length === 0) return;
     if (!isSupportedUiConversion(sourceFormat, targetFormat) && folderFiles.length === 0) return;
@@ -2135,30 +2158,32 @@ function App() {
       return;
     }
 
+    const preEstimate = estimateFolderBatch(folderFiles, targetFormat);
+    showSnackbar(
+      t('batch.starting', {
+        count: eligible.length,
+        duration: formatBatchDurationLabel(preEstimate.estimatedSeconds, getBatchFormatLabels((key) => t(key))),
+      })
+    );
+
     const initial: FolderBatchItem[] = [
-      ...eligible.map((file) => ({
-        id: `${file.name}-${file.size}-${file.lastModified}`,
-        fileName: file.name,
+      ...eligible.map((file, index) => ({
+        id: folderFileKey(file, index),
+        fileName: folderFileLabel(file),
         status: 'pending' as const,
       })),
-      ...skipped.map(({ file, reason }) => ({
-        id: `${file.name}-${file.size}-${file.lastModified}-skip`,
-        fileName: file.name,
+      ...skipped.map(({ file, reason }, index) => ({
+        id: `${folderFileKey(file, eligible.length + index)}:skip`,
+        fileName: folderFileLabel(file),
         status: 'skipped' as const,
         message: reason,
       })),
     ];
 
-    folderBatchAbortRef.current?.abort();
-    const abort = new AbortController();
-    folderBatchAbortRef.current = abort;
-
-    setFolderBatchItems(initial);
-    setFolderBatchIndex(0);
-    setFolderBatchOpen(true);
-    setFolderBatchRunning(true);
-    setLoading(true);
-    setConversionUiState('loading');
+    const abort = beginFolderBatch(initial);
+    const batchOriginTabId = liveEditorRef.current.activeSessionTabId;
+    const batchOriginSourceText = liveEditorRef.current.sourceText;
+    const batchOriginSourceFormat = liveEditorRef.current.sourceFormat;
 
     let opts = conversionOptions;
     if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
@@ -2177,7 +2202,7 @@ function App() {
     for (let i = 0; i < eligible.length; i++) {
       if (abort.signal.aborted) break;
       const file = eligible[i];
-      const itemId = `${file.name}-${file.size}-${file.lastModified}`;
+      const itemId = folderFileKey(file, i);
       setFolderBatchIndex(i);
       setFolderBatchItems((prev) =>
         prev.map((item) => (item.id === itemId ? { ...item, status: 'running' } : item))
@@ -2191,7 +2216,14 @@ function App() {
         needsToken: conversionNeedsConfirmationToken,
         signal: abort.signal,
         timeoutMs: conversionTimeoutMs,
+        id: itemId,
+        index: i,
       });
+
+      if (abort.signal.aborted) {
+        setFolderBatchItems((prev) => markFolderBatchAborted(prev));
+        break;
+      }
 
       const nextItem: FolderBatchItem = {
         ...converted,
@@ -2205,12 +2237,9 @@ function App() {
       if (nextItem.status === 'success') lastSuccess = nextItem;
     }
 
-    setFolderBatchRunning(false);
-    setLoading(false);
-    folderBatchAbortRef.current = null;
+    finishFolderBatch();
 
     if (abort.signal.aborted) {
-      setConversionUiState('idle');
       setStatus(t('batch.cancelled'));
       return;
     }
@@ -2218,40 +2247,76 @@ function App() {
     const ok = results.filter((r) => r.status === 'success').length;
     const err = results.filter((r) => r.status === 'error').length;
     setStatus(t('batch.done', { ok, err, skip: results.filter((r) => r.status === 'skipped').length }));
-    setConversionUiState(ok > 0 ? 'success' : 'error');
 
     if (lastSuccess?.result) {
-      if (lastSuccess.sourceFormat) {
-        setSourceFormat(lastSuccess.sourceFormat);
-      }
-      const lastFile = eligible.find(
-        (f) => `${f.name}-${f.size}-${f.lastModified}` === lastSuccess?.id
-      );
+      const writeSource = lastSuccess.sourceFormat || sourceFormat;
+      const lastFile = eligible.find((f, idx) => folderFileKey(f, idx) === lastSuccess?.id);
+      let sourceText = '';
       if (lastFile && lastSuccess.sourceFormat) {
         try {
-          const text = await readFileAsUtf8(lastFile);
-          if (lastSuccess.sourceFormat === 'markdown') setMdOutput(text);
-          else setAdocInput(text);
-          setCurrentFileName(lastFile.name);
+          sourceText = await readFileAsUtf8(lastFile);
         } catch {
           /* ignore */
         }
       }
-      writeResultBuffer(
-        lastSuccess.sourceFormat || sourceFormat,
-        targetFormat,
-        lastSuccess.result,
-        {
+
+      const applyBatchSuccessToTab = (tab: typeof sessionTabs[number]) => {
+        let next = tab;
+        if (sourceText && lastSuccess.sourceFormat) {
+          next = {
+            ...next,
+            sourceFormat: lastSuccess.sourceFormat,
+            targetFormat,
+            currentFileName: lastFile?.name ?? next.currentFileName,
+            ...(lastSuccess.sourceFormat === 'markdown'
+              ? { mdOutput: sourceText }
+              : { adocInput: sourceText }),
+          };
+        }
+        return applyResultToBuffers(next, writeSource, targetFormat, lastSuccess.result as string);
+      };
+
+      const live = liveEditorRef.current;
+      const originEdited =
+        live.activeSessionTabId === batchOriginTabId &&
+        (live.sourceFormat !== batchOriginSourceFormat ||
+          live.sourceText !== batchOriginSourceText);
+      if (live.activeSessionTabId !== batchOriginTabId) {
+        patchSessionTabContent(batchOriginTabId, applyBatchSuccessToTab);
+        showSnackbar(t('snack.convertAppliedOtherTab'));
+      } else if (originEdited) {
+        showSnackbar(t('snack.batchKeptEdits'));
+      } else {
+        if (lastSuccess.sourceFormat) {
+          setSourceFormat(lastSuccess.sourceFormat);
+        }
+        if (sourceText && lastSuccess.sourceFormat) {
+          if (lastSuccess.sourceFormat === 'markdown') setMdOutput(sourceText);
+          else setAdocInput(sourceText);
+          if (lastFile) setCurrentFileName(lastFile.name);
+          lastAutoConvertKeyRef.current = sourceAutoConvertKey(
+            lastSuccess.sourceFormat,
+            targetFormat,
+            sourceText
+          );
+          lastAutoConvertOptionsRef.current = conversionStampRef.current;
+        }
+        writeResultBuffer(writeSource, targetFormat, lastSuccess.result, {
           setAdocInput,
           setMdOutput,
           setOtherOutput,
-        }
-      );
+        });
+        markActiveTabClean();
+      }
     }
 
     showSnackbar(t('batch.done', { ok, err, skip: results.filter((r) => r.status === 'skipped').length }));
   }, [
     folderBatchRunning,
+    beginFolderBatch,
+    finishFolderBatch,
+    setFolderBatchIndex,
+    setFolderBatchItems,
     loading,
     folderFiles,
     sourceFormat,
@@ -2262,6 +2327,9 @@ function App() {
     conversionTimeoutMs,
     t,
     showSnackbar,
+    markActiveTabClean,
+    markTabClean,
+    patchSessionTabContent,
   ]);
 
   /**
@@ -2274,39 +2342,43 @@ function App() {
    * 
    * ERROR HANDLING: Displays error message if reading fails
    */
-  const handleFileSelect = async (fileIndex: number) => {
-    if (fileIndex < 0 || fileIndex >= folderFiles.length) return;
+  const applyFolderFileToSource = useCallback(
+    (fileIndex: number) => {
+      if (fileIndex < 0 || fileIndex >= folderFiles.length) return;
+      const selectedFile = folderFiles[fileIndex];
+      setSelectedFileIndex(fileIndex);
+      setImportedFiles([selectedFile]);
+      void loadSourceFile(selectedFile, { alignFormat: true });
+    },
+    [folderFiles, loadSourceFile]
+  );
 
-    const selectedFile = folderFiles[fileIndex];
-    setSelectedFileIndex(fileIndex);
-    setImportedFiles([selectedFile]);
-    setCurrentFileName(selectedFile.name);
-
-    // Read selected file
-    try {
-      const reader = new FileReader();
-      reader.onload = () => {
-        let text = typeof reader.result === "string" ? reader.result : "";
-        // Process AsciiDoc content: add :toc: after :experimental: if present
-        if (sourceFormat === 'asciidoc') {
-          text = removeExperimentalTag(text);
-        }
-        // Use sourceFormat to determine where to put text
-        if (sourceFormat === 'markdown') {
-          setMdOutput(text);
-        } else {
-          setAdocInput(text);
-        }
-        setStatus(t('snack.fileLoaded', { name: selectedFile.name }));
-      };
-      reader.onerror = () => {
-        setStatus(t('snack.fileReadNamedError', { name: selectedFile.name }));
-      };
-      reader.readAsText(selectedFile, "utf-8");
-    } catch (e: any) {
-      setStatus(`Erreur lors de la lecture du fichier : ${e.message ?? e}`);
-    }
-  };
+  const handleFileSelect = useCallback(
+    (fileIndex: number) => {
+      if (fileIndex < 0 || fileIndex >= folderFiles.length) return;
+      const isDirty = isReplaceSourceDirty({
+        sourceModified,
+        resultModified,
+        isEditingResult,
+        dirtyTab: dirtySessionTabIds.has(activeSessionTabId),
+      });
+      if (isDirty) {
+        setPendingSourceReplace({ kind: 'folder', index: fileIndex });
+        setShowReplaceSourceModal(true);
+        return;
+      }
+      applyFolderFileToSource(fileIndex);
+    },
+    [
+      folderFiles.length,
+      sourceModified,
+      resultModified,
+      isEditingResult,
+      dirtySessionTabIds,
+      activeSessionTabId,
+      applyFolderFileToSource,
+    ]
+  );
 
   /**
    * Scrolls source textarea to a specific heading
@@ -2505,80 +2577,27 @@ function App() {
   }, [sourceFormat, targetFormat, adocInput, mdOutput, otherOutput]);
 
   /**
-   * Saves current conversion to history
-   */
-  const saveToHistory = useCallback(() => {
-    if (!userSettings.conversion.saveConversionHistory) return;
-    // Get content directly from state
-    const sourceContent = sourceFormat === 'markdown' ? mdOutput : adocInput;
-    const resultContent = readResultBuffer(sourceFormat, targetFormat, {
-      adocInput,
-      mdOutput,
-      otherOutput,
-    });
-    
-    if (!sourceContent.trim() || !resultContent.trim()) {
-      return; // Don't save empty conversions
-    }
-
-    const historyItem: ConversionHistoryItem = {
-      id: Date.now().toString(),
-      timestamp: Date.now(),
-      fromFormat: sourceFormat,
-      toFormat: targetFormat,
-      sourceContent,
-      resultContent,
-      conversionOptions,
-      activeProfileIds: sanitizeActiveProfileIds(activeProfileIds),
-    };
-
-    const limit = userSettings.conversion.historyLimit || 50;
-    setConversionHistory(prev => {
-      const newHistory = [historyItem, ...prev].slice(0, limit);
-      try {
-        localStorage.setItem('ascend_conversion_history', JSON.stringify(newHistory));
-      } catch (e) {
-        console.error('Error saving conversion history:', e);
-      }
-      return newHistory;
-    });
-  }, [
-    userSettings.conversion.saveConversionHistory,
-    userSettings.conversion.historyLimit,
-    sourceFormat,
-    targetFormat,
-    adocInput,
-    mdOutput,
-    otherOutput,
-    conversionOptions,
-    activeProfileIds,
-  ]);
-
-  /**
    * Restores a conversion from history
    */
-  const restoreFromHistory = useCallback((item: ConversionHistoryItem) => {
-    // Set content directly based on format
-    // Process AsciiDoc content: add :toc: after :experimental: if present
-    if (item.fromFormat === 'markdown') {
-      setMdOutput(item.sourceContent);
-    } else {
-      const processedSource = item.fromFormat === 'asciidoc' 
-        ? removeExperimentalTag(item.sourceContent) 
+  const applyHistoryItem = useCallback((item: ConversionHistoryItem) => {
+    const processedSource =
+      item.fromFormat === 'asciidoc'
+        ? removeExperimentalTag(item.sourceContent)
         : item.sourceContent;
-      setAdocInput(processedSource);
-    }
-
     const processedResult =
       item.toFormat === 'asciidoc'
         ? removeExperimentalTag(item.resultContent)
         : item.resultContent;
-    writeResultBuffer(item.fromFormat, item.toFormat, processedResult, {
-      setAdocInput,
-      setMdOutput,
-      setOtherOutput,
-    });
-    
+    const next = applyHistoryToBuffers(
+      item.fromFormat,
+      item.toFormat,
+      processedSource,
+      processedResult
+    );
+    setAdocInput(next.adocInput);
+    setMdOutput(next.mdOutput);
+    setOtherOutput(next.otherOutput);
+
     setSourceFormat(item.fromFormat);
     setTargetFormat(item.toFormat);
     const restoredIds = sanitizeActiveProfileIds(item.activeProfileIds);
@@ -2598,9 +2617,32 @@ function App() {
     setIsEditingResult(false);
     setSourceModified(false);
     setResultModified(false);
+    markActiveTabClean();
     setStatus(t('status.historyRestored'));
     showSnackbar(t('snack.historyRestored'));
-  }, [showSnackbar]);
+  }, [showSnackbar, t, markActiveTabClean]);
+
+  const restoreFromHistory = useCallback((item: ConversionHistoryItem) => {
+    const isDirty = isReplaceSourceDirty({
+      sourceModified,
+      resultModified,
+      isEditingResult,
+      dirtyTab: dirtySessionTabIds.has(activeSessionTabId),
+    });
+    if (isDirty) {
+      setPendingSourceReplace({ kind: 'history', item });
+      setShowReplaceSourceModal(true);
+      return;
+    }
+    applyHistoryItem(item);
+  }, [
+    sourceModified,
+    resultModified,
+    isEditingResult,
+    dirtySessionTabIds,
+    activeSessionTabId,
+    applyHistoryItem,
+  ]);
 
   /**
    * Clears conversion history.
@@ -2727,8 +2769,9 @@ function App() {
     setIsEditingResult(false);
     setResultModified(false);
     setSourceModified(false);
+    markActiveTabClean();
     setShowClearSourceModal(false);
-  }, [sourceFormat, getFormatTitle]);
+  }, [sourceFormat, getFormatTitle, markActiveTabClean]);
 
   /**
    * Clears both source panel AND result panel
@@ -2763,9 +2806,10 @@ function App() {
     setIsEditingResult(false);
     setSourceModified(false);
     setResultModified(false);
+    markActiveTabClean();
     setStatus(t('snack.sourceAndResultCleared', { title: formatTitle }));
     setShowClearSourceModal(false);
-  }, [sourceFormat, targetFormat, getFormatTitle]);
+  }, [sourceFormat, targetFormat, getFormatTitle, markActiveTabClean]);
 
   /**
    * Saves AsciiDoc content to a file
@@ -2822,16 +2866,21 @@ function App() {
    *
    * When the user confirms, confirmAndConvert() is called with the token.
    */
-  const requestConversionConfirmation = useCallback(async () => {
-    // Determine source text according to source format
-    let sourceText = "";
-    if (sourceFormat === 'asciidoc') {
-      sourceText = adocTextAreaRef.current?.value || adocInput;
-    } else if (sourceFormat === 'markdown') {
-      sourceText = mdOutput;
-    } else if (sourceFormat === 'html' || sourceFormat === 'pdf' || sourceFormat === 'yaml' || sourceFormat === 'json' || sourceFormat === 'txt') {
-      sourceText = adocInput;
+  const requestConversionConfirmation = useCallback(async (
+    snap?: {
+      tabId: string;
+      sourceText: string;
+      sourceFormat: FormatType;
+      targetFormat: FormatType;
+    } | null
+  ) => {
+    if (loading || folderBatchRunning || isEditingResult) {
+      return;
     }
+    const from = snap?.sourceFormat ?? sourceFormat;
+    const to = snap?.targetFormat ?? targetFormat;
+    const sourceText = snap?.sourceText ?? (from === 'markdown' ? mdOutput : adocInput);
+    const tabId = snap?.tabId ?? liveEditorRef.current.activeSessionTabId;
 
     if (!sourceText.trim()) {
       setStatus(t('convert.emptyInput'));
@@ -2854,7 +2903,7 @@ function App() {
       return;
     }
 
-    if (sourceFormat === targetFormat) {
+    if (from === to) {
       setStatus(t('convert.sameFormat'));
       setNotification({
         message: "Les formats source et destination sont identiques",
@@ -2873,8 +2922,8 @@ function App() {
       // Calculate size in bytes (approximation for frontend)
       const contentSize = new Blob([sourceText]).size;
       const token = await requestConfirmationToken(
-        sourceFormat,
-        targetFormat,
+        from,
+        to,
         contentSize
       );
 
@@ -2882,9 +2931,11 @@ function App() {
       // Token will be used only if user clicks "Yes"
       setConfirmationToken(token);
       setPendingConversion({
-        fromFormat: sourceFormat,
-        toFormat: targetFormat,
-        token: token
+        fromFormat: from,
+        toFormat: to,
+        token: token,
+        sourceText,
+        tabId,
       });
 
       // STEP 3: Display confirmation modal
@@ -2901,7 +2952,7 @@ function App() {
         visible: true
       });
     }
-  }, [sourceFormat, targetFormat, adocInput, mdOutput, setNotification]);
+  }, [loading, folderBatchRunning, isEditingResult, sourceFormat, targetFormat, adocInput, mdOutput, setNotification, t]);
 
   // Function called when user confirms (clicks "Yes")
   const confirmAndConvert = useCallback(() => {
@@ -2920,17 +2971,8 @@ function App() {
 
     const fromFormat = pendingConversion.fromFormat;
     const toFormat = pendingConversion.toFormat;
-
-    const setOutputByFormat = (result: string) => {
-      writeResultBuffer(fromFormat, toFormat, result, {
-        setAdocInput,
-        setMdOutput,
-        setOtherOutput,
-      });
-    };
-
-    // Source text for the formats frozen in the pending confirmation.
-    const sourceText = fromFormat === 'markdown' ? mdOutput : adocInput;
+    const sourceText = pendingConversion.sourceText;
+    beginConvertAttempt(fromFormat, toFormat, sourceText, pendingConversion.tabId);
 
     let opts = conversionOptions;
     if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
@@ -2952,15 +2994,29 @@ function App() {
     const guardedSetStatus = (value: string) => { if (isActiveAttempt()) setStatus(value); };
     const guardedSetOutput = (value: string) => {
       if (!isActiveAttempt()) return;
-      setOutputByFormat(appendDocumentSignature(value, userSettings.profile));
+      deliverConversionOutput(value);
     };
     const guardedSetLoading = (value: boolean) => { if (isActiveAttempt()) setLoading(value); };
     const guardedSetNotification = (value: { message: string; type: 'success' | 'error'; visible: boolean } | null) => { if (isActiveAttempt()) setNotification(value); };
     const guardedSetShowConversionErrorModal = (value: boolean) => { if (isActiveAttempt()) setShowConversionErrorModal(value); };
     const guardedSetConversionErrorMessage = (value: string) => { if (isActiveAttempt()) setConversionErrorMessage(value); };
     const guardedSetLastBackendConversionResult = (value: any | null) => { if (isActiveAttempt()) setLastBackendConversionResult(value); };
-    const guardedSetConversionUiState = (value: 'idle' | 'loading' | 'success' | 'error') => { if (isActiveAttempt()) setConversionUiState(value); };
-    setJustConverted(true);
+    const guardedSetConversionUiState = (value: 'idle' | 'loading' | 'success' | 'error') => {
+      if (!isActiveAttempt()) return;
+      if (value === 'success' && lastOutputDestRef.current && lastOutputDestRef.current !== 'live') {
+        setConversionUiState('idle');
+        setJustConverted(false);
+        setConfirmationToken(null);
+        setPendingConversion(null);
+        return;
+      }
+      if (value === 'success') setJustConverted(true);
+      if (value === 'success' || value === 'error') {
+        setConfirmationToken(null);
+        setPendingConversion(null);
+      }
+      setConversionUiState(value);
+    };
     convertText(
       sourceText,
       fromFormat,
@@ -2987,134 +3043,23 @@ function App() {
         timeout: t('convert.timeout'),
       }
     );
-    setTimeout(() => {
-      setJustConverted(false);
-      setConfirmationToken(null);
-      setPendingConversion(null);
-    }, 2000);
-  }, [confirmationToken, pendingConversion, conversionOptions, userSettings, adocInput, mdOutput, conversionTimeoutMs, t]);
+  }, [confirmationToken, pendingConversion, conversionOptions, userSettings, conversionTimeoutMs, t, beginConvertAttempt, deliverConversionOutput]);
 
-  // ==========================================================================
-  // EFFECT: SAVE TO HISTORY AFTER SUCCESSFUL CONVERSION
-  // ==========================================================================
-
-  /**
-   * ==========================================================================
-   * EFFECT: AUTOMATIC SAVE TO HISTORY
-   * ==========================================================================
-   * 
-   * This effect automatically saves a conversion to history
-   * when it completes successfully.
-   * 
-   * SAVE CONDITIONS:
-   * ----------------
-   * The conversion is saved if:
-   * 1. loading === false (conversion has finished)
-   * 2. justConverted === true (conversion just finished)
-   * 3. sourceContent.trim() !== "" (source content is not empty)
-   * 4. resultContent.trim() !== "" (result content is not empty)
-   * 
-   * DELAY:
-   * ------
-   * A 500ms delay is used to ensure the result value
-   * is actually set in state before saving.
-   * 
-   * ENTRY STRUCTURE:
-   * ---------------
-   * Each entry contains:
-   * - id: unique identifier (timestamp)
-   * - timestamp: conversion date/time
-   * - fromFormat: source format
-   * - toFormat: destination format
-   * - sourceContent: full source content
-   * - resultContent: full result content
-   * 
-   * LIMIT:
-   * ------
-   * Only the 50 most recent conversions are kept (slice(0, 50)).
-   * Older ones are automatically removed.
-   * 
-   * STORAGE:
-   * -------
-   * The history is stored in localStorage under the key 'ascend_conversion_history'.
-   * If storage fails, a message is written to the console.
-   * 
-   * CONTENT DETERMINATION:
-   * ---------------------
-   * Source and result content are chosen according to formats:
-   * - sourceContent: mdOutput if sourceFormat === 'markdown', otherwise adocInput
-   * - resultContent: adocInput if targetFormat === 'asciidoc', otherwise mdOutput
-   * 
-   * DEPENDENCIES:
-   * -------------
-   * Runs on: loading, justConverted, sourceFormat, targetFormat,
-   *          adocInput, mdOutput change
-   * 
-   * ==========================================================================
-   */
+  // History is recorded in deliverConversionOutput from the origin snapshot.
   useEffect(() => {
     if (!loading && justConverted) {
-      /* 
-        Delay to ensure that the result is properly defined in the state
-        before saving to history
-      */
       const timer = setTimeout(() => {
-        // Determine source and result content based on formats
         const sourceContent = sourceFormat === 'markdown' ? mdOutput : adocInput;
-        const resultContent = readResultBuffer(sourceFormat, targetFormat, {
-          adocInput,
-          mdOutput,
-          otherOutput,
-        });
-
-        // Save only if both contents are not empty and user allows history
-        if (userSettings.conversion.saveConversionHistory && sourceContent.trim() && resultContent.trim()) {
-          const historyItem: ConversionHistoryItem = {
-            id: Date.now().toString(),
-            timestamp: Date.now(),
-            fromFormat: sourceFormat,
-            toFormat: targetFormat,
-            sourceContent,
-            resultContent,
-            conversionOptions,
-            activeProfileIds: sanitizeActiveProfileIds(activeProfileIds),
-          };
-
-          const limit = userSettings.conversion.historyLimit || 50;
-          setConversionHistory(prev => {
-            const newHistory = [historyItem, ...prev].slice(0, limit);
-            try {
-              localStorage.setItem('ascend_conversion_history', JSON.stringify(newHistory));
-            } catch (e) {
-              console.error('Error saving conversion history:', e);
-            }
-            return newHistory;
-          });
+        const liveKey = sourceAutoConvertKey(sourceFormat, targetFormat, sourceContent);
+        if (shouldMarkTabCleanAfterConvert(liveKey, convertSnapshotKeyRef.current)) {
+          setSourceModified(false);
         }
-
-        // Reset modified flags after conversion
-        setSourceModified(false);
         setResultModified(false);
-        // Reset so the navigation window can reopen when conditions are met
         setJustConverted(false);
       }, 500);
-      
-      // Clean up timer when component unmounts or when dependencies change
       return () => clearTimeout(timer);
     }
-  }, [
-    loading,
-    justConverted,
-    sourceFormat,
-    targetFormat,
-    adocInput,
-    mdOutput,
-    otherOutput,
-    conversionOptions,
-    activeProfileIds,
-    userSettings.conversion.saveConversionHistory,
-    userSettings.conversion.historyLimit,
-  ]);
+  }, [loading, justConverted, sourceFormat, targetFormat, adocInput, mdOutput]);
 
   // ==========================================================================
   // ==========================================================================
@@ -3129,7 +3074,7 @@ function App() {
    * For complex conversions (via /convert), requests a confirmation token.
    */
   const handleConvert = useCallback((opts?: { skipConfirm?: boolean }) => {
-    if (loading) {
+    if (loading || folderBatchRunning) {
       return;
     }
     if (isEditingResult) {
@@ -3152,29 +3097,38 @@ function App() {
       return;
     }
 
+    const liveSourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
     if (userSettings.conversion.confirmBeforeConversion && !opts?.skipConfirm) {
+      pendingConfirmConvertRef.current = {
+        tabId: liveEditorRef.current.activeSessionTabId,
+        sourceText: liveSourceText,
+        sourceFormat,
+        targetFormat,
+      };
       setShowConfirmConvertModal(true);
       return;
     }
 
+    const snap = opts?.skipConfirm ? pendingConfirmConvertRef.current : null;
+    pendingConfirmConvertRef.current = null;
+    const request = resolveConvertRequestSnap(snap, {
+      tabId: liveEditorRef.current.activeSessionTabId,
+      sourceText: liveSourceText,
+      sourceFormat,
+      targetFormat,
+    });
+    const from = request.sourceFormat;
+    const to = request.targetFormat;
+    const sourceText = request.sourceText;
+    const originTabId = request.tabId;
+
     // Check if conversion requires a token (/api/convert)
-    const needsToken = conversionNeedsConfirmationToken(sourceFormat, targetFormat);
+    const needsToken = conversionNeedsConfirmationToken(from, to);
 
     if (needsToken) {
-      // Complex conversion: request a token
-    requestConversionConfirmation();
+      requestConversionConfirmation(request);
     } else {
       // Conversion simple : convertir directement
-      // Determine source text according to source format
-      let sourceText = "";
-      if (sourceFormat === 'asciidoc') {
-        sourceText = adocInput;
-      } else if (sourceFormat === 'markdown') {
-        sourceText = mdOutput;
-      } else {
-        // For html, pdf, yaml, json, txt - use adocInput
-        sourceText = adocInput;
-      }
 
       if (!sourceText.trim()) {
         setStatus(t('convert.emptyInput'));
@@ -3197,7 +3151,7 @@ function App() {
         return;
       }
 
-      if (sourceFormat === targetFormat) {
+      if (from === to) {
         setStatus(t('convert.sameFormat'));
         setNotification({
           message: "Les formats source et destination sont identiques",
@@ -3206,14 +3160,6 @@ function App() {
         });
         return;
       }
-
-      const setOutputByFormat = (result: string) => {
-        writeResultBuffer(sourceFormat, targetFormat, result, {
-          setAdocInput,
-          setMdOutput,
-          setOtherOutput,
-        });
-      };
 
       let opts = conversionOptions;
       if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
@@ -3225,6 +3171,7 @@ function App() {
         const metadata = applyProfileToMetadata(opts.metadata, userSettings.profile, 'fillEmpty');
         opts = { ...opts, metadata };
       }
+      beginConvertAttempt(from, to, sourceText, originTabId);
       conversionAbortRef.current?.abort();
       const abortController = new AbortController();
       conversionAbortRef.current = abortController;
@@ -3235,11 +3182,10 @@ function App() {
       const guardedSetStatus = (value: string) => { if (isActiveAttempt()) setStatus(value); };
       const guardedSetOutput = (value: string) => {
         if (!isActiveAttempt()) return;
-        const next = appendDocumentSignature(value, userSettings.profile);
-        if (next.length >= 100_000) {
-          startTransition(() => setOutputByFormat(next));
+        if (value.length >= 100_000) {
+          startTransition(() => deliverConversionOutput(value));
         } else {
-          setOutputByFormat(next);
+          deliverConversionOutput(value);
         }
       };
       const guardedSetLoading = (value: boolean) => { if (isActiveAttempt()) setLoading(value); };
@@ -3247,12 +3193,20 @@ function App() {
       const guardedSetShowConversionErrorModal = (value: boolean) => { if (isActiveAttempt()) setShowConversionErrorModal(value); };
       const guardedSetConversionErrorMessage = (value: string) => { if (isActiveAttempt()) setConversionErrorMessage(value); };
       const guardedSetLastBackendConversionResult = (value: any | null) => { if (isActiveAttempt()) setLastBackendConversionResult(value); };
-      const guardedSetConversionUiState = (value: 'idle' | 'loading' | 'success' | 'error') => { if (isActiveAttempt()) setConversionUiState(value); };
-      setJustConverted(true);
+      const guardedSetConversionUiState = (value: 'idle' | 'loading' | 'success' | 'error') => {
+        if (!isActiveAttempt()) return;
+        if (value === 'success' && lastOutputDestRef.current && lastOutputDestRef.current !== 'live') {
+          setConversionUiState('idle');
+          setJustConverted(false);
+          return;
+        }
+        if (value === 'success') setJustConverted(true);
+        setConversionUiState(value);
+      };
       convertText(
         sourceText,
-        sourceFormat,
-        targetFormat,
+        from,
+        to,
         guardedSetStatus,
         guardedSetOutput,
         guardedSetLoading,
@@ -3276,7 +3230,63 @@ function App() {
         }
       );
     }
-  }, [loading, requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, isEditingResult, conversionTimeoutMs]);
+  }, [loading, folderBatchRunning, requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, isEditingResult, conversionTimeoutMs, beginConvertAttempt, deliverConversionOutput, t]);
+
+  useEffect(() => {
+    const clearPending = () => setAutoConvertPending(false);
+    const sourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
+    const key = sourceAutoConvertKey(sourceFormat, targetFormat, sourceText);
+    const stamp = conversionStampRef.current;
+    const action = decideAutoConvert({
+      enabled: userSettings.ui.autoConvertOnIdle,
+      confirmBeforeConversion: userSettings.conversion.confirmBeforeConversion,
+      busy: loading || folderBatchRunning || isEditingResult,
+      sourceFormat,
+      targetFormat,
+      sourceText,
+      lastKey: lastAutoConvertKeyRef.current,
+      lastStamp: lastAutoConvertOptionsRef.current,
+      currentStamp: stamp,
+      failKey: autoConvertFailRef.current.key,
+      failCount: autoConvertFailRef.current.count,
+      needsConfirmationToken: conversionNeedsConfirmationToken(sourceFormat, targetFormat),
+    });
+    if (action === 'skip') {
+      clearPending();
+      return;
+    }
+    if (action === 'seed-exhausted') {
+      lastAutoConvertKeyRef.current = key;
+      lastAutoConvertOptionsRef.current = stamp;
+      clearPending();
+      return;
+    }
+
+    setAutoConvertPending(true);
+    const timer = window.setTimeout(() => {
+      setAutoConvertPending(false);
+      autoConvertFailRef.current = bumpAutoConvertFail(autoConvertFailRef.current, key);
+      handleConvert();
+    }, AUTO_CONVERT_IDLE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      setAutoConvertPending(false);
+    };
+  }, [
+    userSettings.ui.autoConvertOnIdle,
+    userSettings.conversion.confirmBeforeConversion,
+    adocInput,
+    mdOutput,
+    sourceFormat,
+    targetFormat,
+    loading,
+    folderBatchRunning,
+    isEditingResult,
+    handleConvert,
+    conversionOptions,
+    userSettings.conversion.defaultTocEnabled,
+    userSettings.conversion.autoApplyUserToMetadata,
+  ]);
 
   const toggleHistoryPanel = useCallback(() => {
     if (historyWindowMinimized) {
@@ -3504,9 +3514,11 @@ function App() {
     onOpenDiff: openDiffPanel,
     onToggleFocusMode: toggleFocusMode,
     onOpenCommandPalette: () => setShowCommandPalette((v) => !v),
+    onCloseActiveSessionTab: () => closeSessionTab(activeSessionTabId),
+    onCloseAllSessionTabs: requestCloseAllSessionTabs,
     isEditingResult,
     onOpenSaveModal: () => setShowSaveModal(true),
-    loading,
+    loading: loading || folderBatchRunning,
   });
 
   // Escape quitte le mode focus si aucune overlay/modale n'est ouverte
@@ -3655,6 +3667,7 @@ function App() {
    *       to properly manage content according to formats
    */
   const handleSwap = useCallback(() => {
+    if (loading || folderBatchRunning || isEditingResult) return;
     const newSourceFormat = targetFormat;
     const newTargetFormat = sourceFormat;
 
@@ -3681,16 +3694,30 @@ function App() {
       setMdOutput,
       setOtherOutput,
     });
-  }, [sourceFormat, targetFormat, adocInput, mdOutput, otherOutput]);
+    if (!resultUsesOtherBuffer(newSourceFormat, newTargetFormat)) {
+      setOtherOutput('');
+    }
+    lastAutoConvertKeyRef.current = sourceAutoConvertKey(
+      newSourceFormat,
+      newTargetFormat,
+      currentTargetText
+    );
+    lastAutoConvertOptionsRef.current = conversionStampRef.current;
+    convertSnapshotKeyRef.current = lastAutoConvertKeyRef.current;
+    convertSnapshotStampRef.current = conversionStampRef.current;
+  }, [sourceFormat, targetFormat, adocInput, mdOutput, otherOutput, loading, folderBatchRunning, isEditingResult]);
 
   const applyFormatPair = useCallback(
     (source: FormatType, target: FormatType) => {
+      if (loading || folderBatchRunning || isEditingResult) return;
       if (!isSupportedUiConversion(source, target)) return;
       setSourceFormat(source);
       setTargetFormat(target);
-      setOtherOutput('');
+      if (!resultUsesOtherBuffer(source, target)) {
+        setOtherOutput('');
+      }
     },
-    []
+    [loading, folderBatchRunning, isEditingResult]
   );
 
   const toggleFavoriteFormatPair = useCallback(
@@ -3849,6 +3876,33 @@ function App() {
         run: () => addSessionTab(),
       },
       {
+        id: 'closeTab',
+        label: t('sessionTabs.closeActive'),
+        shortcut: SHORTCUT_TIP.closeTab,
+        keywords: 'fermer onglet close tab',
+        run: () => closeSessionTab(activeSessionTabId),
+      },
+      {
+        id: 'closeOtherTabs',
+        label: t('sessionTabs.closeOthers'),
+        keywords: 'fermer autres close others',
+        disabled: sessionTabs.length <= 1,
+        disabledReason: sessionTabs.length <= 1 ? t('cmd.reason.singleTab') : undefined,
+        run: () => closeOtherSessionTabs(activeSessionTabId),
+      },
+      {
+        id: 'closeAllTabs',
+        label: t('sessionTabs.closeAll'),
+        shortcut: SHORTCUT_TIP.closeAllTabs,
+        keywords: 'fermer tous close all',
+        disabled: sessionTabs.length <= 1 && dirtySessionTabIds.size === 0 && !sourceHas && !resultHas,
+        disabledReason:
+          sessionTabs.length <= 1 && dirtySessionTabIds.size === 0 && !sourceHas && !resultHas
+            ? t('cmd.reason.singleTab')
+            : undefined,
+        run: () => requestCloseAllSessionTabs(),
+      },
+      {
         id: 'copy',
         label: t('common.copy'),
         keywords: 'clipboard',
@@ -3933,6 +3987,8 @@ function App() {
     otherOutput,
     loading,
     sessionTabs.length,
+    activeSessionTabId,
+    dirtySessionTabIds,
     t,
     handleConvert,
     resolveEditorTarget,
@@ -3948,6 +4004,9 @@ function App() {
     handleSwap,
     toggleLinkedScroll,
     addSessionTab,
+    closeSessionTab,
+    closeOtherSessionTabs,
+    requestCloseAllSessionTabs,
     handleCopy,
     handleExport,
     handleExportZip,
@@ -3994,6 +4053,8 @@ function App() {
   const sourceCard = useMemo(() => {
     const setSourceValue = sourceFormat === 'markdown' ? setMdOutput : setAdocInput;
     const sourceRef = sourceFormat === 'markdown' ? mdTextAreaRef : adocTextAreaRef;
+    const batchEstimate =
+      folderFiles.length > 1 ? estimateFolderBatch(folderFiles, targetFormat) : null;
 
     return (
       <SourcePanel
@@ -4007,7 +4068,7 @@ function App() {
         onClear={handleClearSource}
         sourceModified={sourceModified}
         format={sourceFormat}
-        loading={loading}
+        loading={loadingHere}
         currentFileName={currentFileName}
         folderFiles={folderFiles}
         selectedFileIndex={selectedFileIndex}
@@ -4021,10 +4082,11 @@ function App() {
         onTextAreaScroll={onSourceTextAreaScroll}
         onStartFolderBatch={startFolderBatch}
         folderBatchRunning={folderBatchRunning}
+        folderBatchEstimate={batchEstimate}
       />
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceFormat, targetFormat, sourceTextForUi, currentFileName, loading, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, sourceModified, handleClearSource, handleDropSourceFile, handleFolderChange, userSettings.ui.linkedScroll, toggleLinkedScroll, onSourceTextAreaScroll, startFolderBatch, folderBatchRunning]);
+  }, [sourceFormat, targetFormat, sourceTextForUi, currentFileName, loadingHere, folderFiles, selectedFileIndex, handleConvert, getFormatTitle, getFormatPlaceholder, sourceModified, handleClearSource, handleDropSourceFile, handleFolderChange, handleFileSelect, userSettings.ui.linkedScroll, toggleLinkedScroll, onSourceTextAreaScroll, startFolderBatch, folderBatchRunning, t]);
 
   const resultCard = useMemo(() => {
     const setResultValue = (content: string) => {
@@ -4094,7 +4156,7 @@ function App() {
         value={resultTextForUi}
         onChange={setResultValue}
         sourceHasContent={sourceHasContent}
-        loading={loading}
+        loading={loadingHere}
         status={status}
         sourceChars={deferredSourceForResultMeta.length}
         isEditingResult={isEditingResult}
@@ -4120,7 +4182,7 @@ function App() {
       />
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceFormat, targetFormat, resultTextForUi, deferredSourceForResultMeta, status, loading, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear, handleExportZip, resultViewMode, openDiffPanel, togglePreviewWindow, previewWindowOpen, previewWindowMinimized, conversionUiState, t, onResultTextAreaScroll]);
+  }, [sourceFormat, targetFormat, resultTextForUi, deferredSourceForResultMeta, status, loadingHere, copied, isEditingResult, resultModified, getFormatTitle, handleExport, handleClear, handleExportZip, resultViewMode, openDiffPanel, togglePreviewWindow, previewWindowOpen, previewWindowMinimized, conversionUiState, t, onResultTextAreaScroll]);
 
   return (
     <LocaleProvider locale={uiLocale}>
@@ -4198,6 +4260,7 @@ function App() {
         logoSrc={logoSrc}
         onLogoError={() => setLogoSrc(defaultLogo)}
         conversionUiState={conversionUiState}
+        autoConvertPending={autoConvertPending}
         status={status}
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={toggleSidebarCollapsed}
@@ -4491,9 +4554,16 @@ function App() {
         running={folderBatchRunning}
         currentIndex={folderBatchIndex}
         onCancel={cancelFolderBatch}
-        onClose={() => setFolderBatchOpen(false)}
-        onDownloadZip={downloadFolderBatchZip}
-        canDownloadZip={folderBatchItems.some((i) => i.status === 'success')}
+        onClose={closeFolderBatch}
+        onDownloadZip={() => downloadFolderBatchZip(targetFormat)}
+        canDownloadZip={folderBatchCanZip}
+        onDownloadReport={downloadFolderBatchReport}
+        canDownloadReport={folderBatchCanReport}
+        initialEstimateSeconds={
+          folderFiles.length > 1
+            ? estimateFolderBatch(folderFiles, targetFormat).estimatedSeconds
+            : undefined
+        }
       />
 
       <CommandPalette
@@ -4564,21 +4634,29 @@ function App() {
           onCollapse={toggleSidebarCollapsed}
           sourceFormat={sourceFormat}
           targetFormat={targetFormat}
+          formatsLocked={loading || folderBatchRunning || isEditingResult}
           onSourceFormatChange={(newFormat) => {
+            if (loading || folderBatchRunning || isEditingResult) return;
+            const nextTarget =
+              newFormat === targetFormat ? complementaryTargetFormat(newFormat) : targetFormat;
             setSourceFormat(newFormat);
-            setOtherOutput('');
-            // Ne forcer la destination que en cas de collision (même format).
             if (newFormat === targetFormat) {
-              setTargetFormat(complementaryTargetFormat(newFormat));
+              setTargetFormat(nextTarget);
+            }
+            if (!resultUsesOtherBuffer(newFormat, nextTarget)) {
+              setOtherOutput('');
             }
           }}
           onTargetFormatChange={(newFormat) => {
+            if (loading || folderBatchRunning || isEditingResult) return;
+            const nextSource =
+              newFormat === sourceFormat ? complementarySourceFormat(newFormat) : sourceFormat;
             setTargetFormat(newFormat);
-            setOtherOutput('');
-            // Ne forcer la source que en cas de collision (même format).
-            // Avant : choisir HTML/TXT en destination basculait la source en AsciiDoc.
             if (newFormat === sourceFormat) {
-              setSourceFormat(complementarySourceFormat(newFormat));
+              setSourceFormat(nextSource);
+            }
+            if (!resultUsesOtherBuffer(nextSource, newFormat)) {
+              setOtherOutput('');
             }
           }}
           otherOptionsCategory={otherOptionsCategory}
@@ -4631,6 +4709,8 @@ function App() {
             onSelect={selectSessionTab}
             onAdd={addSessionTab}
             onClose={closeSessionTab}
+            onCloseOthers={closeOtherSessionTabs}
+            onCloseAll={requestCloseAllSessionTabs}
             onRename={renameSessionTab}
             onDuplicate={duplicateSessionTab}
             onReorder={reorderSessionTab}
@@ -4676,6 +4756,7 @@ function App() {
               <button
                 type="button"
                 className="swap-button"
+                disabled={loading || folderBatchRunning || isEditingResult}
                 onClick={handleSwap}
                 aria-label={t('convert.swapFormats')}
                 data-tooltip={t('convert.swapFormats')}
@@ -4810,8 +4891,24 @@ function App() {
         showResetSettingsModal={showResetSettingsModal}
         onCloseResetSettings={() => setShowResetSettingsModal(false)}
         onConfirmResetSettings={resetSettingsToDefaults}
+        showReplaceSourceModal={showReplaceSourceModal}
+        onCloseReplaceSource={() => {
+          setShowReplaceSourceModal(false);
+          setPendingSourceReplace(null);
+        }}
+        onConfirmReplaceSource={() => {
+          const pending = pendingSourceReplace;
+          setShowReplaceSourceModal(false);
+          setPendingSourceReplace(null);
+          if (pending?.kind === 'folder') applyFolderFileToSource(pending.index);
+          if (pending?.kind === 'file') void loadSourceFile(pending.file, { alignFormat: pending.alignFormat });
+          if (pending?.kind === 'history') applyHistoryItem(pending.item);
+        }}
         showConfirmConvertModal={showConfirmConvertModal}
-        onCloseConfirmConvert={() => setShowConfirmConvertModal(false)}
+        onCloseConfirmConvert={() => {
+          setShowConfirmConvertModal(false);
+          pendingConfirmConvertRef.current = null;
+        }}
         onConfirmConvert={() => {
           setShowConfirmConvertModal(false);
           handleConvert({ skipConfirm: true });
@@ -4827,12 +4924,17 @@ function App() {
         showEditModal={showEditModal}
         onCloseEditModal={() => setShowEditModal(false)}
         onConfirmEdit={() => {
-          if (targetFormat === 'asciidoc') {
-            setOriginalAdocInput(adocInput);
-          } else if (resultUsesOtherBuffer(sourceFormat, targetFormat)) {
-            setOriginalOtherOutput(otherOutput);
+          const current = readResultBuffer(sourceFormat, targetFormat, {
+            adocInput,
+            mdOutput,
+            otherOutput,
+          });
+          if (resultUsesOtherBuffer(sourceFormat, targetFormat)) {
+            setOriginalOtherOutput(current);
+          } else if (targetFormat === 'asciidoc') {
+            setOriginalAdocInput(current);
           } else {
-            setOriginalMdOutput(mdOutput);
+            setOriginalMdOutput(current);
           }
           setIsEditingResult(true);
         }}
@@ -4840,19 +4942,24 @@ function App() {
         onCloseSaveModal={() => setShowSaveModal(false)}
         onConfirmSave={() => {
           setIsEditingResult(false);
+          setResultModified(false);
+          markActiveTabClean();
           setStatus(t('snack.modsSaved'));
           setTimeout(() => setStatus(''), 3000);
         }}
         showCancelModal={showCancelModal}
         onCloseCancelModal={() => setShowCancelModal(false)}
         onConfirmCancelEdit={() => {
-          if (targetFormat === 'asciidoc') {
-            setAdocInput(originalAdocInput);
-          } else if (resultUsesOtherBuffer(sourceFormat, targetFormat)) {
-            setOtherOutput(originalOtherOutput);
-          } else {
-            setMdOutput(originalMdOutput);
-          }
+          const original = resultUsesOtherBuffer(sourceFormat, targetFormat)
+            ? originalOtherOutput
+            : targetFormat === 'asciidoc'
+              ? originalAdocInput
+              : originalMdOutput;
+          writeResultBuffer(sourceFormat, targetFormat, original, {
+            setAdocInput,
+            setMdOutput,
+            setOtherOutput,
+          });
           setIsEditingResult(false);
           setStatus(t('snack.editCancelled'));
         }}
@@ -4865,6 +4972,13 @@ function App() {
           setPendingCloseSessionTabId(null);
         }}
         onConfirmCloseSessionTab={confirmCloseSessionTab}
+        showCloseAllSessionTabsModal={showCloseAllSessionTabsModal}
+        closeAllSessionTabsMode={pendingCloseOthersKeepId ? 'others' : 'all'}
+        onCloseCloseAllSessionTabs={() => {
+          setShowCloseAllSessionTabsModal(false);
+          setPendingCloseOthersKeepId(null);
+        }}
+        onConfirmCloseAllSessionTabs={confirmCloseAllSessionTabs}
         showClearSourceModal={showClearSourceModal}
         onCloseClearSource={() => setShowClearSourceModal(false)}
         onConfirmClearSourceOnly={confirmClearSource}

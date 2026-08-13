@@ -915,9 +915,27 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                           <input type="checkbox" checked={draftSettings.conversion.autoApplyUserToMetadata} onChange={(e) => setDraftSettings(s => ({ ...s, conversion: { ...s.conversion, autoApplyUserToMetadata: e.target.checked } }))} className="option-checkbox" />
                           <span>{t('conversion.autoMeta')}</span>
                         </label>
+                        <label className="settings-check-card">
+                          <input
+                            type="checkbox"
+                            checked={draftSettings.ui.autoConvertOnIdle}
+                            disabled={draftSettings.conversion.confirmBeforeConversion}
+                            onChange={(e) =>
+                              setDraftSettings((s) => ({
+                                ...s,
+                                ui: { ...s.ui, autoConvertOnIdle: e.target.checked },
+                              }))
+                            }
+                            className="option-checkbox"
+                          />
+                          <span>{t('conversion.autoConvert')}</span>
+                        </label>
                       </div>
                       <p className="option-hint">
                         {t('conversion.history.hint')}
+                      </p>
+                      <p className="option-hint">
+                        {t('conversion.autoConvert.hint')}
                       </p>
 
                       <h5 className="settings-metrics-heading">{t("conversion.warnings.heading")}</h5>
@@ -1458,6 +1476,20 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             <label className="settings-check-card">
                               <input type="checkbox" checked={draftSettings.ui.linkedScroll} onChange={(e) => setDraftSettings(s => ({ ...s, ui: { ...s.ui, linkedScroll: e.target.checked } }))} className="option-checkbox" />
                               <span>{t("iface.linkedScroll")}</span>
+                            </label>
+                            <label className="settings-check-card">
+                              <input
+                                type="checkbox"
+                                checked={draftSettings.ui.restoreSessionTabs}
+                                onChange={(e) =>
+                                  setDraftSettings((s) => ({
+                                    ...s,
+                                    ui: { ...s.ui, restoreSessionTabs: e.target.checked },
+                                  }))
+                                }
+                                className="option-checkbox"
+                              />
+                              <span>{t('iface.restoreSessionTabs')}</span>
                             </label>
                           </div>
                       </section>

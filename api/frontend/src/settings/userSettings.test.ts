@@ -82,6 +82,11 @@ describe('userSettings helpers', () => {
     expect(snackbarDurationToMs('long')).toBe(4500)
   })
 
+  it('normalizes autoConvertOnIdle (off by default)', () => {
+    expect(normalizeUserSettings({}).ui.autoConvertOnIdle).toBe(false)
+    expect(normalizeUserSettings({ ui: { autoConvertOnIdle: true } }).ui.autoConvertOnIdle).toBe(true)
+  })
+
   it('normalizes new interface chrome preferences', () => {
     const normalized = normalizeUserSettings({
       ui: {

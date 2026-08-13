@@ -17,6 +17,8 @@ const SHORTCUT_KEYS = [
   { key: 'shortcuts.history' as const, keys: 'Ctrl + H' },
   { key: 'shortcuts.settings' as const, keys: 'Ctrl + ,' },
   { key: 'shortcuts.clearSource' as const, keys: 'Ctrl + Maj + K' },
+  { key: 'shortcuts.closeTab' as const, keys: 'Alt + W' },
+  { key: 'shortcuts.closeAllTabs' as const, keys: 'Alt + Maj + W' },
   { key: 'shortcuts.help' as const, keys: 'Ctrl + /' },
 ] as const;
 
