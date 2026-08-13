@@ -50,10 +50,6 @@
  */
 
 import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect, startTransition, useDeferredValue } from "react";
-import {
-  convertText,
-  requestConfirmationToken
-} from "./converters";
 import { FormatType, ConversionHistoryItem, ConversionOptions } from "./types";
 import { HistoryModalV2, useNewHistoryModal, type DisplayHistoryEntryShape } from "./components/HistoryModalV2";
 import { buildDisplayHistory } from "./utils/displayHistory";
@@ -79,25 +75,14 @@ import {
   SessionTabsBar,
   AppTaskbar,
 } from "./components";
-import type { PanelActionItem, CommandPaletteItem } from "./components";
-import { removeExperimentalTag } from "./utils/asciidocHelpers";
+import type { PanelActionItem } from "./components";
 import {
   extractConversionWarnings,
   type WarningLocation,
 } from "./utils/conversionWarnings";
+import { type SessionTabSnapshot } from "./utils/sessionDraft";
 import {
-  inferSourceFormatFromFile,
-  isAcceptedSourceFile,
-  readFileAsUtf8,
-} from "./utils/sourceFile";
-import { clearSessionDraft, isReplaceSourceDirty, MAX_CONTENT_CHARS, MAX_SESSION_TABS, type SessionTabSnapshot } from "./utils/sessionDraft";
-import {
-  AUTO_CONVERT_IDLE_MS,
-  bumpAutoConvertFail,
-  conversionOptionsStamp,
-  decideAutoConvert,
   shouldMarkTabCleanAfterConvert,
-  sourceAutoConvertKey,
 } from "./utils/autoConvert";
 import {
   CONVERSION_PROFILES,
@@ -107,22 +92,13 @@ import {
 } from "./utils/conversionProfiles";
 import { renderPreviewHtml } from "./utils/renderPreview";
 import {
-  buildConversionHistoryItem,
   loadConversionHistory,
-  persistConversionHistory,
-  prependConversionHistory,
-  shouldRecordConversionHistory,
 } from "./utils/conversionHistory";
 import {
   isSupportedUiConversion,
-  conversionNeedsConfirmationToken,
-  SUPPORTED_CONVERSION_HINT,
   readResultBuffer,
   writeResultBuffer,
   applyResultToBuffers,
-  applyHistoryToBuffers,
-  decideConversionResultDest,
-  resolveConvertRequestSnap,
   supportsRichPreview,
   resultUsesOtherBuffer,
   recordRecentPair,
@@ -130,27 +106,22 @@ import {
 } from "./utils/conversionPairs";
 import { clampPanelSplitPercent, nearestPanelRatio } from "./utils/panelSplit";
 import {
-  WORKSPACE_PRESETS,
   getWorkspacePreset,
   matchWorkspacePreset,
   type WorkspacePresetId,
 } from "./utils/workspacePresets";
-import { withShortcutId, SHORTCUT_TIP } from "./utils/shortcutTips";
+import { withShortcutId } from "./utils/shortcutTips";
 import { scrollTextareaToLine, syncScrollRatio, countTextLines } from "./utils/editorNavigate";
-import { createZipBlob } from "./utils/simpleZip";
 import {
-  filterBatchableFolderFiles,
-  readAndConvertFolderFile,
   estimateFolderBatch,
-  formatBatchDurationLabel,
-  getBatchFormatLabels,
-  folderFileKey,
-  folderFileLabel,
-  markFolderBatchAborted,
-  type FolderBatchItem,
 } from "./utils/folderBatchConvert";
 import { useFolderBatch } from "./hooks/useFolderBatch";
+import { useFolderBatchStart } from "./hooks/useFolderBatchStart";
+import { useDocumentExport } from "./hooks/useDocumentExport";
 import { createSessionBootstrap, useSessionTabs } from "./hooks/useSessionTabs";
+import { useSourceImport } from "./hooks/useSourceImport";
+import { useConversionFlow } from "./hooks/useConversionFlow";
+import { useAutoConvertState, useAutoConvertIdle } from "./hooks/useAutoConvert";
 import packageJson from "../package.json";
 import { fetchConversionLimits, fetchConversionMetrics } from "./converters/api";
 import { formatConversionErrorForUi, getHintForCode } from "./converters/error-code-messages";
@@ -158,47 +129,33 @@ import defaultLogo from "./assets/ascend-logo.svg";
 import {
   type UserSettings,
   type SettingsValidationErrors,
-  type BackgroundMode,
-  DEFAULT_USER_SETTINGS,
-  USER_SETTINGS_KEY,
   validateUserPrefs,
   loadUserSettings,
   cloneUserSettings,
   areUserSettingsEqual,
   persistUserSettings,
-  buildUserSettingsExport,
-  parseImportedUserSettings,
   resolveThemePreference,
   uiScaleToCssFactor,
   snackbarDurationToMs,
 } from "./settings/userSettings";
-import {
-  appendDocumentSignature,
-  applyProfileToMetadata,
-} from "./settings/profileIdentity";
 import { LocaleProvider } from "./i18n/LocaleContext";
 import { translate, type MessageKey } from "./i18n/messages";
 import {
   applyPageBackgroundToDocument,
-  fileToPageBackgroundDataUrl,
   loadCustomPageBackground,
-  persistCustomPageBackground,
-  SERVER_BG_URL,
 } from "./settings/pageBackground";
 import { useFloatingWindow, useAppKeyboardShortcuts } from "./hooks";
+import { useAppCommands } from "./hooks/useAppCommands";
+import {
+  useUserSettingsPanel,
+  normalizeSettingsSectionId,
+  SIDEBAR_COLLAPSED_KEY,
+  SETTINGS_OPEN_SECTIONS_KEY,
+  SETTINGS_ACTIVE_SECTION_KEY,
+  DEFAULT_SETTINGS_SECTION,
+} from "./hooks/useUserSettingsPanel";
 
 const DEFAULT_MAX_SOURCE_SIZE_MB = 5;
-const SIDEBAR_COLLAPSED_KEY = 'ascend_sidebar_collapsed';
-const SETTINGS_OPEN_SECTIONS_KEY = 'ascend_settings_open_sections';
-const SETTINGS_ACTIVE_SECTION_KEY = 'ascend_settings_active_section';
-const SETTINGS_SECTION_IDS = [
-  'settingsAccount',
-  'settingsConversion',
-  'settingsInterface',
-  'settingsData',
-  'settingsMetrics',
-] as const;
-const DEFAULT_SETTINGS_SECTION = 'settingsAccount';
 
 const VALID_FORMAT_TYPES: FormatType[] = [
   'asciidoc', 'markdown', 'html', 'pdf', 'yaml', 'json', 'txt',
@@ -225,13 +182,6 @@ function complementarySourceFormat(target: FormatType): FormatType {
   if (target === 'html') return 'markdown';
   if (target === 'txt') return 'html';
   return 'asciidoc';
-}
-
-function normalizeSettingsSectionId(id: string): string | null {
-  if (id === 'settingsProfil') return 'settingsAccount';
-  if (id === 'settingsGeneral') return null; // section retirée (P0)
-  if ((SETTINGS_SECTION_IDS as readonly string[]).includes(id)) return id;
-  return null;
 }
 
 function loadSidebarCollapsed(): boolean {
@@ -325,16 +275,12 @@ function App() {
   
   /** Normalized conversion UI state for current attempt lifecycle. */
   const [conversionUiState, setConversionUiState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [autoConvertPending, setAutoConvertPending] = useState(false);
 
   /**
    * Last standardized backend ConversionResult received (when provided by backend).
    * Used as the Step 3 success-path source of truth for the migrated path.
    */
   const [lastBackendConversionResult, setLastBackendConversionResult] = useState<any | null>(null);
-  /** Monotonic attempt id used to ignore stale async callback updates. */
-  const [, setLastAttemptId] = useState<number>(0);
-  const activeAttemptIdRef = useRef<number>(0);
 
   /** Flag to prevent certain actions immediately after conversion */
   const [justConverted, setJustConverted] = useState<boolean>(false);
@@ -411,18 +357,6 @@ function App() {
   /** Confirm reset of settings draft to defaults */
   const [showResetSettingsModal, setShowResetSettingsModal] = useState<boolean>(false);
 
-  /** Confirm before starting a conversion (user preference) */
-  const [showConfirmConvertModal, setShowConfirmConvertModal] = useState<boolean>(false);
-
-  /** Confirm replacing dirty source (dossier, glisser-déposer, Ouvrir). */
-  const [showReplaceSourceModal, setShowReplaceSourceModal] = useState(false);
-  const [pendingSourceReplace, setPendingSourceReplace] = useState<
-    | { kind: 'folder'; index: number }
-    | { kind: 'file'; file: File; alignFormat?: boolean }
-    | { kind: 'history'; item: ConversionHistoryItem }
-    | null
-  >(null);
-
   /** Confirm wipe of local browser data */
   const [showClearLocalDataModal, setShowClearLocalDataModal] = useState<boolean>(false);
 
@@ -461,34 +395,11 @@ function App() {
   /** Backup of HTML/TXT result buffer before editing (source Markdown) */
   const [originalOtherOutput, setOriginalOtherOutput] = useState<string>("");
   
-  // ==========================================================================
-  // STATES: SECURE CONFIRMATION WITH TOKENS
-  // ==========================================================================
-  // Security system for sensitive conversions:
-  // 1. Request token from backend
-  // 2. Display confirmation modal
-  // 3. Send token with conversion request
-  
-  /** Shows confirmation modal for sensitive conversions */
-  const [showConversionModal, setShowConversionModal] = useState<boolean>(false);
-  
   /** Shows error modal when conversion fails */
   const [showConversionErrorModal, setShowConversionErrorModal] = useState<boolean>(false);
   
   /** Error message to display in conversion error modal */
   const [conversionErrorMessage, setConversionErrorMessage] = useState<string>("");
-  
-  /** Confirmation token obtained from backend (single use, time-limited) */
-  const [confirmationToken, setConfirmationToken] = useState<string | null>(null);
-  
-  /** Stores conversion parameters pending confirmation */
-  const [pendingConversion, setPendingConversion] = useState<{
-    fromFormat: FormatType;
-    toFormat: FormatType;
-    token: string;
-    sourceText: string;
-    tabId: string;
-  } | null>(null);
 
   // ==========================================================================
   // STATES: CONVERSION MODES AND FORMATS
@@ -826,26 +737,26 @@ function App() {
     document.documentElement.lang = lang;
   }, [settingsOpen, draftSettings.profile.uiLanguage, userSettings.profile.uiLanguage]);
 
-  const lastAutoConvertKeyRef = useRef(
-    sourceAutoConvertKey(
-      sourceFormat,
-      targetFormat,
-      sourceFormat === 'markdown' ? mdOutput : adocInput
-    )
-  );
-  const lastAutoConvertOptionsRef = useRef('');
-  const convertSnapshotKeyRef = useRef('');
-  const convertSnapshotStampRef = useRef('');
-  const autoConvertFailRef = useRef({ key: '', count: 0 });
-  const conversionStampRef = useRef('');
-  conversionStampRef.current = conversionOptionsStamp(
+  const {
+    autoConvertPending,
+    setAutoConvertPending,
+    lastAutoConvertKeyRef,
+    lastAutoConvertOptionsRef,
+    convertSnapshotKeyRef,
+    convertSnapshotStampRef,
+    autoConvertFailRef,
+    conversionStampRef,
+    seedEditorSnapshot,
+    rememberLivePair,
+    syncAfterSuccessfulConvert,
+  } = useAutoConvertState({
+    sourceFormat,
+    targetFormat,
+    adocInput,
+    mdOutput,
     conversionOptions,
-    userSettings.conversion.defaultTocEnabled,
-    userSettings.conversion.autoApplyUserToMetadata
-  );
-  if (!lastAutoConvertOptionsRef.current) {
-    lastAutoConvertOptionsRef.current = conversionStampRef.current;
-  }
+    userSettings,
+  });
 
   const applySessionTabToEditors = useCallback((tab: SessionTabSnapshot) => {
     setAdocInput(tab.adocInput);
@@ -861,15 +772,12 @@ function App() {
     setLastBackendConversionResult(null);
     setStatus('');
     setConversionUiState('idle');
-    lastAutoConvertKeyRef.current = sourceAutoConvertKey(
+    seedEditorSnapshot(
       tab.sourceFormat,
       tab.targetFormat,
-      tab.sourceFormat === 'markdown' ? tab.mdOutput : tab.adocInput
+      tab.sourceFormat === 'markdown' ? tab.mdOutput : tab.adocInput,
+      true
     );
-    lastAutoConvertOptionsRef.current = conversionStampRef.current;
-    convertSnapshotKeyRef.current = lastAutoConvertKeyRef.current;
-    convertSnapshotStampRef.current = conversionStampRef.current;
-    autoConvertFailRef.current = { key: '', count: 0 };
     setFolderFiles([]);
     setSelectedFileIndex(-1);
     setImportedFiles([]);
@@ -946,129 +854,6 @@ function App() {
     activeSessionTabId,
     sourceText: sourceFormat === 'markdown' ? mdOutput : adocInput,
   };
-
-  const convertOriginRef = useRef<{
-    tabId: string;
-    sourceFormat: FormatType;
-    targetFormat: FormatType;
-    sourceText: string;
-  } | null>(null);
-  const lastOutputDestRef = useRef<'live' | 'tab' | 'skip' | null>(null);
-  const pendingConfirmConvertRef = useRef<{
-    tabId: string;
-    sourceText: string;
-    sourceFormat: FormatType;
-    targetFormat: FormatType;
-  } | null>(null);
-
-  const beginConvertAttempt = useCallback((
-    from: FormatType,
-    to: FormatType,
-    sourceText: string,
-    tabId?: string
-  ) => {
-    convertSnapshotKeyRef.current = sourceAutoConvertKey(from, to, sourceText);
-    convertSnapshotStampRef.current = conversionStampRef.current;
-    convertOriginRef.current = {
-      tabId: tabId ?? liveEditorRef.current.activeSessionTabId,
-      sourceFormat: from,
-      targetFormat: to,
-      sourceText,
-    };
-    lastOutputDestRef.current = null;
-  }, []);
-
-  const recordConversionHistory = useCallback(
-    (input: {
-      fromFormat: FormatType;
-      toFormat: FormatType;
-      sourceContent: string;
-      resultContent: string;
-    }) => {
-      if (!userSettings.conversion.saveConversionHistory) return;
-      const historyItem = buildConversionHistoryItem({
-        ...input,
-        conversionOptions,
-        activeProfileIds: sanitizeActiveProfileIds(activeProfileIds),
-      });
-      if (!historyItem) return;
-      const limit = userSettings.conversion.historyLimit || 50;
-      setConversionHistory((prev) => {
-        const next = prependConversionHistory(prev, historyItem, limit);
-        persistConversionHistory(next);
-        return next;
-      });
-    },
-    [
-      userSettings.conversion.saveConversionHistory,
-      userSettings.conversion.historyLimit,
-      conversionOptions,
-      activeProfileIds,
-    ]
-  );
-
-  const deliverConversionOutput = useCallback(
-    (raw: string) => {
-      const origin = convertOriginRef.current;
-      const live = liveEditorRef.current;
-      const next = appendDocumentSignature(raw, userSettings.profile);
-      const record = (
-        from: FormatType,
-        to: FormatType,
-        sourceContent: string,
-        dest: 'live' | 'tab' | 'skip' | null
-      ) => {
-        if (!shouldRecordConversionHistory(dest)) return;
-        recordConversionHistory({
-          fromFormat: from,
-          toFormat: to,
-          sourceContent,
-          resultContent: next,
-        });
-      };
-      if (!origin) {
-        lastOutputDestRef.current = 'live';
-        writeResultBuffer(live.sourceFormat, live.targetFormat, next, {
-          setAdocInput,
-          setMdOutput,
-          setOtherOutput,
-        });
-        record(live.sourceFormat, live.targetFormat, live.sourceText, 'live');
-        return;
-      }
-      const dest = decideConversionResultDest({
-        originTabId: origin.tabId,
-        liveTabId: live.activeSessionTabId,
-        writeSource: origin.sourceFormat,
-        writeTarget: origin.targetFormat,
-        liveSource: live.sourceFormat,
-      });
-      lastOutputDestRef.current = dest;
-      if (dest === 'tab') {
-        patchSessionTabContent(origin.tabId, (tab) =>
-          applyResultToBuffers(tab, origin.sourceFormat, origin.targetFormat, next)
-        );
-        record(origin.sourceFormat, origin.targetFormat, origin.sourceText, dest);
-        showSnackbar(t('snack.convertAppliedOtherTab'));
-        return;
-      }
-      if (dest === 'skip') {
-        showSnackbar(t('snack.convertResultSkipped'));
-        return;
-      }
-      writeResultBuffer(origin.sourceFormat, origin.targetFormat, next, {
-        setAdocInput,
-        setMdOutput,
-        setOtherOutput,
-      });
-      record(origin.sourceFormat, origin.targetFormat, origin.sourceText, dest);
-    },
-    [userSettings.profile, patchSessionTabContent, showSnackbar, t, recordConversionHistory]
-  );
-
-  const loadingHere =
-    loading &&
-    (!convertOriginRef.current || convertOriginRef.current.tabId === activeSessionTabId);
 
   const otherOptionsCategories = useMemo(() => {
     const items: Array<{ value: string; label: string }> = [];
@@ -1247,93 +1032,58 @@ function App() {
     applyThemeToDocument,
   ]);
 
-  const settingsButtonRef = useRef<HTMLButtonElement>(null);
-
-  const openSettingsPanel = useCallback(() => {
-    setDraftSettings(cloneUserSettings(userSettings));
-    setDraftPageBgImage(pageBgImage);
-    setPageBgError(null);
-    setSettingsErrors({});
-    setSettingsMinimized(false);
-    setSettingsMaximized(false);
-    setSettingsOpen(true);
-  }, [userSettings, pageBgImage, setSettingsMinimized, setSettingsMaximized]);
-
-  const forceCloseSettingsPanel = useCallback(() => {
-    setShowDiscardSettingsModal(false);
-    setSettingsOpen(false);
-    setSettingsMinimized(false);
-    setSettingsMaximized(false);
-    setDraftSettings(cloneUserSettings(userSettings));
-    setDraftPageBgImage(pageBgImage);
-    setPageBgError(null);
-    setSettingsErrors({});
-  }, [userSettings, pageBgImage, setSettingsMinimized, setSettingsMaximized]);
-
-  const closeSettingsPanel = useCallback((opts?: { force?: boolean }) => {
-    const dirty = !areUserSettingsEqual(draftSettings, userSettings);
-    if (!opts?.force && dirty) {
-      setShowDiscardSettingsModal(true);
-      return;
-    }
-    forceCloseSettingsPanel();
-  }, [draftSettings, userSettings, forceCloseSettingsPanel]);
-
-  // Escape closes the settings panel (with dirty confirm); skipped while confirm modal is open
-  useEffect(() => {
-    if (!settingsOpen || settingsMinimized || showDiscardSettingsModal || showResetSettingsModal) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeSettingsPanel();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [settingsOpen, settingsMinimized, showDiscardSettingsModal, showResetSettingsModal, closeSettingsPanel]);
-
-  // Focus dialog on open; restore focus to the gear button on close
-  useEffect(() => {
-    if (!settingsOpen || settingsMinimized) return;
-    const closeBtn = settingsPanelRef.current?.querySelector('.settings-close-btn') as HTMLElement | null;
-    closeBtn?.focus();
-    return () => {
-      settingsButtonRef.current?.focus();
-    };
-  }, [settingsOpen, settingsMinimized]);
-
-  // Focus trap inside settings panel
-  useEffect(() => {
-    if (!settingsOpen || settingsMinimized || showDiscardSettingsModal || showResetSettingsModal) return;
-    const panel = settingsPanelRef.current;
-    if (!panel) return;
-
-    const selector =
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') return;
-      const nodes = Array.from(panel.querySelectorAll<HTMLElement>(selector)).filter(
-        (el) => el.offsetParent !== null || el === document.activeElement
-      );
-      if (nodes.length === 0) return;
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      const active = document.activeElement as HTMLElement | null;
-      if (event.shiftKey) {
-        if (active === first || !panel.contains(active)) {
-          event.preventDefault();
-          last.focus();
-        }
-      } else if (active === last || !panel.contains(active)) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    panel.addEventListener('keydown', onKeyDown);
-    return () => panel.removeEventListener('keydown', onKeyDown);
-  }, [settingsOpen, settingsMinimized, showDiscardSettingsModal, showResetSettingsModal]);
+  const {
+    settingsButtonRef,
+    openSettingsPanel,
+    forceCloseSettingsPanel,
+    closeSettingsPanel,
+    applySettings,
+    fillMetadataFromProfile,
+    resetSettingsToDefaults,
+    requestResetSettings,
+    exportUserSettingsFile,
+    importUserSettingsFile,
+    clearLocalData,
+  } = useUserSettingsPanel({
+    userSettings,
+    draftSettings,
+    pageBgImage,
+    draftPageBgImage,
+    settingsOpen,
+    settingsMinimized,
+    showDiscardSettingsModal,
+    showResetSettingsModal,
+    sourceFormat,
+    targetFormat,
+    activeProfileIds,
+    conversionHistoryLength: conversionHistory.length,
+    settingsPanelRef,
+    t,
+    showSnackbar,
+    pickFormatType,
+    applyUiPreferencesToDocument,
+    resetSessionTabs,
+    setUserSettings,
+    setDraftSettings,
+    setSettingsErrors,
+    setPageBgImage,
+    setDraftPageBgImage,
+    setPageBgError,
+    setSettingsOpen,
+    setSettingsMinimized,
+    setSettingsMaximized,
+    setShowDiscardSettingsModal,
+    setShowResetSettingsModal,
+    setShowClearLocalDataModal,
+    setSourceFormat,
+    setTargetFormat,
+    setConversionOptions,
+    setConversionHistory,
+    setActiveProfileIds,
+    setSidebarCollapsed,
+    setActiveSettingsSection,
+    setStatus,
+  });
 
   // Escape closes navigation window
   useEffect(() => {
@@ -1387,237 +1137,6 @@ function App() {
     });
   };
 
-  const commitSettings = useCallback((opts?: { close?: boolean; notify?: boolean }) => {
-    const errors = validateUserPrefs({
-      displayName: draftSettings.profile.displayName,
-      organization: draftSettings.profile.organization,
-      defaultLanguage: draftSettings.profile.defaultLanguage,
-      signature: draftSettings.profile.signature,
-    });
-    if (Object.keys(errors).length > 0) {
-      setSettingsErrors(errors);
-      return false;
-    }
-    if (draftSettings.ui.backgroundMode === 'custom' && !draftPageBgImage) {
-      setPageBgError('Choisissez une image ou basculez vers un autre fond.');
-      return false;
-    }
-    try {
-      persistCustomPageBackground(draftPageBgImage);
-    } catch (e) {
-      setPageBgError(e instanceof Error ? e.message : 'Enregistrement du fond impossible');
-      return false;
-    }
-    const committed = cloneUserSettings(draftSettings);
-    setPageBgImage(draftPageBgImage);
-    setUserSettings(committed);
-    applyUiPreferencesToDocument(committed.ui, draftPageBgImage);
-    setConversionOptions((prev) => ({
-      ...prev,
-      metadata: applyProfileToMetadata(prev.metadata, committed.profile, 'overwrite'),
-    }));
-    if (
-      committed.conversion.defaultSourceFormat &&
-      committed.conversion.defaultSourceFormat !== userSettings.conversion.defaultSourceFormat
-    ) {
-      setSourceFormat(pickFormatType(committed.conversion.defaultSourceFormat, sourceFormat));
-    }
-    if (
-      committed.conversion.defaultOutputFormat &&
-      committed.conversion.defaultOutputFormat !== userSettings.conversion.defaultOutputFormat
-    ) {
-      const srcFmt = pickFormatType(
-        committed.conversion.defaultSourceFormat || sourceFormat,
-        sourceFormat
-      );
-      const outFmt = pickFormatType(committed.conversion.defaultOutputFormat, targetFormat);
-      if (outFmt !== srcFmt) setTargetFormat(outFmt);
-    }
-
-    // Profil par défaut : n’applique la session courante que s’il n’y a aucun profil actif
-    // (1er démarrage / session vide). Changer le réglage ne remplace pas une sélection en cours.
-    const defaultProfileId = committed.conversion.defaultProfileId;
-    if (
-      activeProfileIds.length === 0 &&
-      defaultProfileId &&
-      CONVERSION_PROFILES.some((p) => p.id === defaultProfileId)
-    ) {
-      const nextIds = sanitizeActiveProfileIds([defaultProfileId]);
-      setActiveProfileIds(nextIds);
-      setConversionOptions((prev) => ({
-        ...rebuildOptionsFromProfiles(nextIds),
-        metadata: applyProfileToMetadata(prev.metadata, committed.profile, 'overwrite'),
-      }));
-    }
-
-    const limit = committed.conversion.historyLimit;
-    if (limit !== userSettings.conversion.historyLimit || conversionHistory.length > limit) {
-      setConversionHistory((prev) => {
-        if (prev.length <= limit) return prev;
-        const trimmed = prev.slice(0, limit);
-        persistConversionHistory(trimmed);
-        return trimmed;
-      });
-    }
-
-    if (
-      committed.ui.sidebarCollapsedByDefault !== userSettings.ui.sidebarCollapsedByDefault
-    ) {
-      setSidebarCollapsed(committed.ui.sidebarCollapsedByDefault);
-      try {
-        localStorage.setItem(
-          SIDEBAR_COLLAPSED_KEY,
-          committed.ui.sidebarCollapsedByDefault ? '1' : '0'
-        );
-      } catch {
-        /* ignore */
-      }
-    }
-
-    setPageBgError(null);
-    setSettingsErrors({});
-    if (opts?.notify) {
-      setStatus(t('status.settingsApplied'));
-      showSnackbar(t('snack.settingsApplied'));
-    }
-    if (opts?.close) {
-      setSettingsMinimized(false);
-      setSettingsMaximized(false);
-      setSettingsOpen(false);
-    }
-    return true;
-  }, [
-    draftSettings,
-    draftPageBgImage,
-    applyUiPreferencesToDocument,
-    sourceFormat,
-    targetFormat,
-    userSettings,
-    activeProfileIds.length,
-    conversionHistory.length,
-    showSnackbar,
-    setSettingsMinimized,
-    setSettingsMaximized,
-  ]);
-
-  /** Enregistre les paramètres sans fermer le panneau. */
-  const applySettings = useCallback(() => {
-    commitSettings({ close: false, notify: true });
-  }, [commitSettings]);
-
-  /** Recopie l’identité du brouillon Compte dans les métadonnées de conversion. */
-  const fillMetadataFromProfile = useCallback(() => {
-    const errors = validateUserPrefs({
-      displayName: draftSettings.profile.displayName,
-      organization: draftSettings.profile.organization,
-      defaultLanguage: draftSettings.profile.defaultLanguage,
-      signature: draftSettings.profile.signature,
-    });
-    if (Object.keys(errors).length > 0) {
-      setSettingsErrors(errors);
-      showSnackbar(t('snack.metadataFixAccount'));
-      return;
-    }
-    setConversionOptions((prev) => ({
-      ...prev,
-      metadata: applyProfileToMetadata(prev.metadata, draftSettings.profile, 'overwrite'),
-    }));
-    showSnackbar(t('snack.metadataFilled'));
-  }, [draftSettings.profile, showSnackbar]);
-
-  /** Remet le brouillon aux défauts (rien coché) — valider avec Appliquer. */
-  const resetSettingsToDefaults = useCallback(() => {
-    setDraftSettings(cloneUserSettings(DEFAULT_USER_SETTINGS));
-    setDraftPageBgImage(null);
-    setPageBgError(null);
-    setSettingsErrors({});
-    setShowResetSettingsModal(false);
-    setStatus(t('snack.draftReset'));
-  }, []);
-
-  const requestResetSettings = useCallback(() => {
-    setShowResetSettingsModal(true);
-  }, []);
-
-  const exportUserSettingsFile = useCallback(() => {
-    const bundle = buildUserSettingsExport(userSettings, pageBgImage);
-    const blob = new Blob([JSON.stringify(bundle, null, 2)], {
-      type: 'application/json;charset=utf-8',
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `ascend-settings-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    showSnackbar(t('snack.prefsExported'));
-  }, [userSettings, pageBgImage, showSnackbar, t]);
-
-  const importUserSettingsFile = useCallback(
-    async (file: File) => {
-      try {
-        const text = await file.text();
-        const parsed = JSON.parse(text);
-        const imported = parseImportedUserSettings(parsed);
-        if (!imported) {
-          showSnackbar(t('snack.prefsInvalid'));
-          return;
-        }
-        setDraftSettings(imported.settings);
-        if (imported.customPageBackground !== undefined) {
-          setDraftPageBgImage(imported.customPageBackground);
-        }
-        setPageBgError(null);
-        setSettingsErrors({});
-        showSnackbar(t('snack.prefsImported'));
-      } catch {
-        showSnackbar(t('snack.prefsImportFail'));
-      }
-    },
-    [showSnackbar]
-  );
-
-  const clearLocalData = useCallback(() => {
-    clearSessionDraft();
-    try {
-      localStorage.removeItem('ascend_conversion_history');
-      localStorage.removeItem(USER_SETTINGS_KEY);
-      localStorage.removeItem(SIDEBAR_COLLAPSED_KEY);
-      localStorage.removeItem(SETTINGS_OPEN_SECTIONS_KEY);
-      localStorage.removeItem(SETTINGS_ACTIVE_SECTION_KEY);
-      localStorage.removeItem('ascend_settings_open_section');
-      localStorage.removeItem('ascend_history_window_geometry');
-      localStorage.removeItem('ascend_history_window_filters');
-      localStorage.removeItem('ascend_history_collapsed_groups');
-    } catch {
-      /* ignore */
-    }
-    try {
-      persistCustomPageBackground(null);
-    } catch {
-      /* ignore */
-    }
-    const defaults = cloneUserSettings(DEFAULT_USER_SETTINGS);
-    persistUserSettings(defaults);
-    setUserSettings(defaults);
-    setDraftSettings(defaults);
-    setDraftPageBgImage(null);
-    setPageBgImage(null);
-    setPageBgError(null);
-    setSettingsErrors({});
-    setConversionHistory([]);
-    setActiveProfileIds([]);
-    setConversionOptions({});
-    resetSessionTabs();
-    setSidebarCollapsed(false);
-    setActiveSettingsSection(DEFAULT_SETTINGS_SECTION);
-    applyUiPreferencesToDocument(defaults.ui, null);
-    setShowClearLocalDataModal(false);
-    setStatus(t('status.localCleared'));
-    showSnackbar(t('snack.localCleared'));
-  }, [applyUiPreferencesToDocument, resetSessionTabs, showSnackbar, t]);
   
   // ==========================================================================
   // STATES: NOTIFICATIONS
@@ -1826,18 +1345,14 @@ function App() {
       message += t('snack.convertWarningsPart', { count: warnCount });
     }
     showSnackbar(message);
-    const snapshotKey =
-      convertSnapshotKeyRef.current ||
-      sourceAutoConvertKey(sourceFormat, targetFormat, sourceText);
-    const snapshotStamp =
-      convertSnapshotStampRef.current || conversionStampRef.current;
-    lastAutoConvertKeyRef.current = snapshotKey;
-    lastAutoConvertOptionsRef.current = snapshotStamp;
-    const liveKey = sourceAutoConvertKey(sourceFormat, targetFormat, sourceText);
+    const { snapshotKey, liveKey } = syncAfterSuccessfulConvert(
+      sourceFormat,
+      targetFormat,
+      sourceText
+    );
     if (shouldMarkTabCleanAfterConvert(liveKey, snapshotKey)) {
       markActiveTabClean();
     }
-    autoConvertFailRef.current = { key: '', count: 0 };
   }, [
     conversionUiState,
     sourceFormat,
@@ -1999,324 +1514,98 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigationEnabled, sourceFormat, targetFormat, adocInput, mdOutput, headings, justConverted, loading]);
 
-  // ==========================================================================
-  // HANDLERS: FILE MANAGEMENT
-  // ==========================================================================
-  
-  const loadSourceFile = useCallback(async (file: File, options?: { alignFormat?: boolean }) => {
-    if (!isAcceptedSourceFile(file)) {
-      setStatus(t('snack.formatsAccepted'));
-      setNotification({
-        message: 'Formats acceptés : .adoc, .asciidoc, .md, .txt, .html',
-        type: 'error',
-        visible: true,
-      });
-      return;
-    }
+  const {
+    showReplaceSourceModal,
+    handleFileChange,
+    handleDropSourceFile,
+    handleFolderChange,
+    handleFileSelect,
+    restoreFromHistory,
+    closeReplaceSource,
+    confirmReplaceSource,
+  } = useSourceImport({
+    sourceFormat,
+    targetFormat,
+    sourceModified,
+    resultModified,
+    isEditingResult,
+    dirtyTab: dirtySessionTabIds.has(activeSessionTabId),
+    folderFiles,
+    t,
+    showSnackbar,
+    markActiveTabClean,
+    setAdocInput,
+    setMdOutput,
+    setOtherOutput,
+    setSourceFormat,
+    setTargetFormat,
+    setCurrentFileName,
+    setImportedFiles,
+    setFolderFiles,
+    setSelectedFileIndex,
+    setSourceModified,
+    setResultModified,
+    setIsEditingResult,
+    setStatus,
+    setNotification,
+    setShowHistoryPanel,
+    setActiveProfileIds,
+    setConversionOptions,
+  });
 
-    let nextFormat = sourceFormat;
-    if (options?.alignFormat) {
-      const inferred = inferSourceFormatFromFile(file);
-      if (inferred) {
-        nextFormat = inferred;
-        if (inferred !== sourceFormat) {
-          setSourceFormat(inferred);
-          if (inferred === targetFormat) {
-            setTargetFormat(inferred === 'asciidoc' ? 'markdown' : 'asciidoc');
-          } else if (inferred !== 'asciidoc' && inferred !== 'markdown') {
-            setTargetFormat('markdown');
-          }
-        }
-      }
-    }
-
-    try {
-      let text = await readFileAsUtf8(file);
-      if (nextFormat === 'asciidoc') {
-        text = removeExperimentalTag(text);
-      }
-      if (nextFormat === 'markdown') {
-        setMdOutput(text);
-        setAdocInput('');
-      } else {
-        setAdocInput(text);
-        setMdOutput('');
-      }
-      setOtherOutput('');
-      setCurrentFileName(file.name);
-      setImportedFiles([file]);
-      setSourceModified(false);
-      markActiveTabClean();
-      setStatus(t('snack.fileLoaded', { name: file.name }));
-      if (text.length > MAX_CONTENT_CHARS) {
-        showSnackbar(t('snack.sessionTooLarge'));
-      } else {
-        showSnackbar(t('snack.fileLoaded', { name: file.name }));
-      }
-    } catch {
-      setStatus(t('snack.fileReadError'));
-      setNotification({
-        message: 'Impossible de lire le fichier',
-        type: 'error',
-        visible: true,
-      });
-    }
-  }, [sourceFormat, targetFormat, showSnackbar, t, markActiveTabClean]);
-
-  const requestLoadSourceFile = useCallback(
-    (file: File, options?: { alignFormat?: boolean }) => {
-      if (!isAcceptedSourceFile(file)) {
-        setStatus(t('snack.formatsAccepted'));
-        setNotification({
-          message: 'Formats acceptés : .adoc, .asciidoc, .md, .txt, .html',
-          type: 'error',
-          visible: true,
-        });
-        return;
-      }
-      const isDirty = isReplaceSourceDirty({
-        sourceModified,
-        resultModified,
-        isEditingResult,
-        dirtyTab: dirtySessionTabIds.has(activeSessionTabId),
-      });
-      if (isDirty) {
-        setPendingSourceReplace({ kind: 'file', file, alignFormat: options?.alignFormat });
-        setShowReplaceSourceModal(true);
-        return;
-      }
-      void loadSourceFile(file, options);
-    },
-    [
-      sourceModified,
-      resultModified,
-      isEditingResult,
-      dirtySessionTabIds,
-      activeSessionTabId,
-      loadSourceFile,
-      t,
-    ]
-  );
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    requestLoadSourceFile(file, { alignFormat: true });
-    event.target.value = '';
-  };
-
-  const handleDropSourceFile = useCallback((file: File) => {
-    requestLoadSourceFile(file, { alignFormat: true });
-  }, [requestLoadSourceFile]);
-
-  /**
-   * Handles import of a complete folder
-   * 
-   * Filters text files (.adoc, .asciidoc, .md, .txt) and stores them
-   * in folderFiles. First file is automatically loaded.
-   * 
-   * @param event - File input change event (with webkitdirectory)
-   * 
-   * ACCEPTED FORMATS: .adoc, .asciidoc, .md, .txt, .html, .htm
-   */
-  const handleFolderChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    const fileArray = Array.from(files);
-    const textFiles = fileArray.filter(file => {
-      return ['.adoc', '.asciidoc', '.md', '.txt', '.html', '.htm'].some(validExt =>
-        file.name.toLowerCase().endsWith(validExt)
-      );
-    });
-
-    if (textFiles.length === 0) {
-      setStatus(t('snack.folderEmpty'));
-      return;
-    }
-
-    // Store folder files and reset selection
-    setFolderFiles(textFiles);
-    setSelectedFileIndex(-1);
-    setImportedFiles([]);
-    setCurrentFileName(null);
-    setStatus(t('snack.folderLoaded', { count: textFiles.length }));
-  };
-
-  const startFolderBatch = useCallback(async () => {
-    if (folderBatchRunning || loading || folderFiles.length === 0) return;
-    if (!isSupportedUiConversion(sourceFormat, targetFormat) && folderFiles.length === 0) return;
-    if (isEditingResult) {
-      setStatus(t('snack.saveEditFirst'));
-      return;
-    }
-
-    const { eligible, skipped } = filterBatchableFolderFiles(folderFiles, targetFormat);
-    if (eligible.length === 0) {
-      setStatus(t('batch.noneEligible'));
-      showSnackbar(t('batch.noneEligible'));
-      return;
-    }
-
-    const preEstimate = estimateFolderBatch(folderFiles, targetFormat);
-    showSnackbar(
-      t('batch.starting', {
-        count: eligible.length,
-        duration: formatBatchDurationLabel(preEstimate.estimatedSeconds, getBatchFormatLabels((key) => t(key))),
-      })
-    );
-
-    const initial: FolderBatchItem[] = [
-      ...eligible.map((file, index) => ({
-        id: folderFileKey(file, index),
-        fileName: folderFileLabel(file),
-        status: 'pending' as const,
-      })),
-      ...skipped.map(({ file, reason }, index) => ({
-        id: `${folderFileKey(file, eligible.length + index)}:skip`,
-        fileName: folderFileLabel(file),
-        status: 'skipped' as const,
-        message: reason,
-      })),
-    ];
-
-    const abort = beginFolderBatch(initial);
-    const batchOriginTabId = liveEditorRef.current.activeSessionTabId;
-    const batchOriginSourceText = liveEditorRef.current.sourceText;
-    const batchOriginSourceFormat = liveEditorRef.current.sourceFormat;
-
-    let opts = conversionOptions;
-    if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
-      opts = { ...opts, rendering: { ...opts.rendering, tableOfContents: { ...opts.rendering.tableOfContents, enabled: true } } };
-    } else if (userSettings.conversion.defaultTocEnabled) {
-      opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
-    }
-    if (userSettings.conversion.autoApplyUserToMetadata) {
-      const metadata = applyProfileToMetadata(opts.metadata, userSettings.profile, 'fillEmpty');
-      opts = { ...opts, metadata };
-    }
-
-    const results: FolderBatchItem[] = [...initial];
-    let lastSuccess: FolderBatchItem | null = null;
-
-    for (let i = 0; i < eligible.length; i++) {
-      if (abort.signal.aborted) break;
-      const file = eligible[i];
-      const itemId = folderFileKey(file, i);
-      setFolderBatchIndex(i);
-      setFolderBatchItems((prev) =>
-        prev.map((item) => (item.id === itemId ? { ...item, status: 'running' } : item))
-      );
-      setStatus(t('batch.progress', { current: i + 1, total: eligible.length }));
-
-      const converted = await readAndConvertFolderFile({
-        file,
-        targetFormat,
-        conversionOptions: opts,
-        needsToken: conversionNeedsConfirmationToken,
-        signal: abort.signal,
-        timeoutMs: conversionTimeoutMs,
-        id: itemId,
-        index: i,
-      });
-
-      if (abort.signal.aborted) {
-        setFolderBatchItems((prev) => markFolderBatchAborted(prev));
-        break;
-      }
-
-      const nextItem: FolderBatchItem = {
-        ...converted,
-        id: itemId,
-        result: converted.result
-          ? appendDocumentSignature(converted.result, userSettings.profile)
-          : converted.result,
-      };
-      results[results.findIndex((r) => r.id === itemId)] = nextItem;
-      setFolderBatchItems((prev) => prev.map((item) => (item.id === itemId ? nextItem : item)));
-      if (nextItem.status === 'success') lastSuccess = nextItem;
-    }
-
-    finishFolderBatch();
-
-    if (abort.signal.aborted) {
-      setStatus(t('batch.cancelled'));
-      return;
-    }
-
-    const ok = results.filter((r) => r.status === 'success').length;
-    const err = results.filter((r) => r.status === 'error').length;
-    setStatus(t('batch.done', { ok, err, skip: results.filter((r) => r.status === 'skipped').length }));
-
-    if (lastSuccess?.result) {
-      const writeSource = lastSuccess.sourceFormat || sourceFormat;
-      const lastFile = eligible.find((f, idx) => folderFileKey(f, idx) === lastSuccess?.id);
-      let sourceText = '';
-      if (lastFile && lastSuccess.sourceFormat) {
-        try {
-          sourceText = await readFileAsUtf8(lastFile);
-        } catch {
-          /* ignore */
-        }
-      }
-
-      const applyBatchSuccessToTab = (tab: typeof sessionTabs[number]) => {
-        let next = tab;
-        if (sourceText && lastSuccess.sourceFormat) {
-          next = {
-            ...next,
-            sourceFormat: lastSuccess.sourceFormat,
-            targetFormat,
-            currentFileName: lastFile?.name ?? next.currentFileName,
-            ...(lastSuccess.sourceFormat === 'markdown'
-              ? { mdOutput: sourceText }
-              : { adocInput: sourceText }),
-          };
-        }
-        return applyResultToBuffers(next, writeSource, targetFormat, lastSuccess.result as string);
-      };
-
-      const live = liveEditorRef.current;
-      const originEdited =
-        live.activeSessionTabId === batchOriginTabId &&
-        (live.sourceFormat !== batchOriginSourceFormat ||
-          live.sourceText !== batchOriginSourceText);
-      if (live.activeSessionTabId !== batchOriginTabId) {
-        patchSessionTabContent(batchOriginTabId, applyBatchSuccessToTab);
-        showSnackbar(t('snack.convertAppliedOtherTab'));
-      } else if (originEdited) {
-        showSnackbar(t('snack.batchKeptEdits'));
-      } else {
-        if (lastSuccess.sourceFormat) {
-          setSourceFormat(lastSuccess.sourceFormat);
-        }
-        if (sourceText && lastSuccess.sourceFormat) {
-          if (lastSuccess.sourceFormat === 'markdown') setMdOutput(sourceText);
-          else setAdocInput(sourceText);
-          if (lastFile) setCurrentFileName(lastFile.name);
-          lastAutoConvertKeyRef.current = sourceAutoConvertKey(
-            lastSuccess.sourceFormat,
-            targetFormat,
-            sourceText
-          );
-          lastAutoConvertOptionsRef.current = conversionStampRef.current;
-        }
-        writeResultBuffer(writeSource, targetFormat, lastSuccess.result, {
-          setAdocInput,
-          setMdOutput,
-          setOtherOutput,
-        });
-        markActiveTabClean();
-      }
-    }
-
-    showSnackbar(t('batch.done', { ok, err, skip: results.filter((r) => r.status === 'skipped').length }));
-  }, [
+  const {
+    handleConvert,
+    confirmAndConvert,
+    loadingHere,
+    showConfirmConvertModal,
+    showConversionModal,
+    confirmationToken,
+    pendingConversion,
+    closeConfirmConvert,
+    acceptConfirmConvert,
+    closeConversionConfirm,
+    cancelConversionConfirm,
+  } = useConversionFlow({
+    sourceFormat,
+    targetFormat,
+    adocInput,
+    mdOutput,
+    loading,
+    justConverted,
     folderBatchRunning,
-    beginFolderBatch,
-    finishFolderBatch,
-    setFolderBatchIndex,
-    setFolderBatchItems,
+    isEditingResult,
+    activeSessionTabId,
+    conversionOptions,
+    userSettings,
+    activeProfileIds,
+    maxSourceSizeMb,
+    conversionTimeoutMs,
+    t,
+    liveEditorRef,
+    conversionAbortRef,
+    convertSnapshotKeyRef,
+    convertSnapshotStampRef,
+    conversionStampRef,
+    showSnackbar,
+    patchSessionTabContent,
+    setAdocInput,
+    setMdOutput,
+    setOtherOutput,
+    setLoading,
+    setStatus,
+    setNotification,
+    setJustConverted,
+    setSourceModified,
+    setResultModified,
+    setConversionUiState,
+    setLastBackendConversionResult,
+    setShowConversionErrorModal,
+    setConversionErrorMessage,
+    setConversionHistory,
+  });
+
+  const { startFolderBatch } = useFolderBatchStart({
+    folderBatchRunning,
     loading,
     folderFiles,
     sourceFormat,
@@ -2327,58 +1616,22 @@ function App() {
     conversionTimeoutMs,
     t,
     showSnackbar,
-    markActiveTabClean,
-    markTabClean,
+    liveEditorRef,
+    beginFolderBatch,
+    finishFolderBatch,
+    setFolderBatchIndex,
+    setFolderBatchItems,
     patchSessionTabContent,
-  ]);
+    setStatus,
+    setSourceFormat,
+    setAdocInput,
+    setMdOutput,
+    setOtherOutput,
+    setCurrentFileName,
+    markActiveTabClean,
+    rememberLivePair,
+  });
 
-  /**
-   * Selects and loads a file from folder files list
-   * 
-   * Loads selected file content into source panel according to current
-   * source format. Updates selection index and file name.
-   * 
-   * @param fileIndex - File index in folderFiles (0-based)
-   * 
-   * ERROR HANDLING: Displays error message if reading fails
-   */
-  const applyFolderFileToSource = useCallback(
-    (fileIndex: number) => {
-      if (fileIndex < 0 || fileIndex >= folderFiles.length) return;
-      const selectedFile = folderFiles[fileIndex];
-      setSelectedFileIndex(fileIndex);
-      setImportedFiles([selectedFile]);
-      void loadSourceFile(selectedFile, { alignFormat: true });
-    },
-    [folderFiles, loadSourceFile]
-  );
-
-  const handleFileSelect = useCallback(
-    (fileIndex: number) => {
-      if (fileIndex < 0 || fileIndex >= folderFiles.length) return;
-      const isDirty = isReplaceSourceDirty({
-        sourceModified,
-        resultModified,
-        isEditingResult,
-        dirtyTab: dirtySessionTabIds.has(activeSessionTabId),
-      });
-      if (isDirty) {
-        setPendingSourceReplace({ kind: 'folder', index: fileIndex });
-        setShowReplaceSourceModal(true);
-        return;
-      }
-      applyFolderFileToSource(fileIndex);
-    },
-    [
-      folderFiles.length,
-      sourceModified,
-      resultModified,
-      isEditingResult,
-      dirtySessionTabIds,
-      activeSessionTabId,
-      applyFolderFileToSource,
-    ]
-  );
 
   /**
    * Scrolls source textarea to a specific heading
@@ -2460,189 +1713,24 @@ function App() {
     handleLinkedScrollFrom('result');
   }, [handleLinkedScrollFrom]);
 
-  // ==========================================================================
-  // HANDLERS: CONTENT ACTIONS (Copy, Clear, Save)
-  // ==========================================================================
-  
-  /**
-   * Copies result panel content to clipboard
-   * 
-   * Uses modern Clipboard API with fallback for older browsers.
-   * Displays visual feedback (copied = true) for 2 seconds.
-   * 
-   * LOGIC:
-   * - Determines text to copy according to targetFormat
-   * - Tries navigator.clipboard.writeText() first
-   * - Fallback: creates temporary textarea and uses document.execCommand()
-   * 
-   * ERROR HANDLING: Displays error message if copy fails
-   */
-  const handleCopy = async () => {
-    // Copy result text according to destination format
-    const textToCopy = readResultBuffer(sourceFormat, targetFormat, {
-      adocInput,
-      mdOutput,
-      otherOutput,
-    });
-    if (!textToCopy || !textToCopy.trim()) {
-      setStatus(t('snack.nothingToCopy'));
-      return;
-    }
-    
-    try {
-      await navigator.clipboard.writeText(textToCopy);
-      setCopied(true);
-      setStatus(t('snack.copiedChars', { count: textToCopy.length }));
-      showSnackbar(t('snack.copiedChars', { count: textToCopy.length }));
-      setTimeout(() => {
-        setCopied(false);
-        if (status.includes("copié")) {
-          setStatus("");
-        }
-      }, 2000);
-    } catch (err) {
-      // Fallback for browsers that do not support Clipboard API
-      const textArea = document.createElement("textarea");
-      textArea.value = textToCopy;
-      textArea.style.position = "fixed";
-      textArea.style.left = "-999999px";
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      try {
-        document.execCommand("copy");
-        setCopied(true);
-        setStatus(t('snack.copiedChars', { count: textToCopy.length }));
-        showSnackbar(t('snack.copiedChars', { count: textToCopy.length }));
-        setTimeout(() => {
-          setCopied(false);
-          if (status.includes("copié")) {
-            setStatus("");
-          }
-        }, 2000);
-      } catch (err) {
-        setStatus(t('snack.copyError'));
-      }
-      document.body.removeChild(textArea);
-    }
-  };
-
-  /**
-   * Exports the result content as a file
-   * 
-   * Creates a downloadable file with the result content.
-   * User can choose the filename.
-   */
-  const handleExport = useCallback(() => {
-    // Get content directly from state
-    const textToExport = readResultBuffer(sourceFormat, targetFormat, {
-      adocInput,
-      mdOutput,
-      otherOutput,
-    });
-    if (!textToExport || !textToExport.trim()) {
-      setStatus(t('snack.nothingToExport'));
-      return;
-    }
-
-    // Determine file extension based on format
-    const extensions: Record<FormatType, string> = {
-      'asciidoc': '.adoc',
-      'markdown': '.md',
-      'html': '.html',
-      'pdf': '.pdf',
-      'yaml': '.yaml',
-      'json': '.json',
-      'txt': '.txt'
-    };
-
-    const extension = extensions[targetFormat] || '.txt';
-    const defaultFileName = `conversion_${new Date().toISOString().slice(0, 10)}${extension}`;
-    
-    // Prompt user for filename
-    const fileName = prompt(`Nom du fichier:`, defaultFileName) || defaultFileName;
-
-    // Create blob and download
-    const blob = new Blob([textToExport], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    setStatus(t('snack.exported', { name: fileName }));
-  }, [sourceFormat, targetFormat, adocInput, mdOutput, otherOutput]);
+  const { handleCopy, handleExport, handleExportZip } = useDocumentExport({
+    sourceFormat,
+    targetFormat,
+    adocInput,
+    mdOutput,
+    otherOutput,
+    currentFileName,
+    status,
+    conversionWarnings,
+    t,
+    showSnackbar,
+    setStatus,
+    setCopied,
+  });
 
   /**
    * Restores a conversion from history
    */
-  const applyHistoryItem = useCallback((item: ConversionHistoryItem) => {
-    const processedSource =
-      item.fromFormat === 'asciidoc'
-        ? removeExperimentalTag(item.sourceContent)
-        : item.sourceContent;
-    const processedResult =
-      item.toFormat === 'asciidoc'
-        ? removeExperimentalTag(item.resultContent)
-        : item.resultContent;
-    const next = applyHistoryToBuffers(
-      item.fromFormat,
-      item.toFormat,
-      processedSource,
-      processedResult
-    );
-    setAdocInput(next.adocInput);
-    setMdOutput(next.mdOutput);
-    setOtherOutput(next.otherOutput);
-
-    setSourceFormat(item.fromFormat);
-    setTargetFormat(item.toFormat);
-    const restoredIds = sanitizeActiveProfileIds(item.activeProfileIds);
-    if (restoredIds.length > 0) {
-      setActiveProfileIds(restoredIds);
-      setConversionOptions((prev) => ({
-        ...rebuildOptionsFromProfiles(restoredIds),
-        metadata: prev.metadata,
-      }));
-    } else {
-      setActiveProfileIds([]);
-      if (item.conversionOptions && typeof item.conversionOptions === 'object') {
-        setConversionOptions(item.conversionOptions);
-      }
-    }
-    setShowHistoryPanel(false);
-    setIsEditingResult(false);
-    setSourceModified(false);
-    setResultModified(false);
-    markActiveTabClean();
-    setStatus(t('status.historyRestored'));
-    showSnackbar(t('snack.historyRestored'));
-  }, [showSnackbar, t, markActiveTabClean]);
-
-  const restoreFromHistory = useCallback((item: ConversionHistoryItem) => {
-    const isDirty = isReplaceSourceDirty({
-      sourceModified,
-      resultModified,
-      isEditingResult,
-      dirtyTab: dirtySessionTabIds.has(activeSessionTabId),
-    });
-    if (isDirty) {
-      setPendingSourceReplace({ kind: 'history', item });
-      setShowReplaceSourceModal(true);
-      return;
-    }
-    applyHistoryItem(item);
-  }, [
-    sourceModified,
-    resultModified,
-    isEditingResult,
-    dirtySessionTabIds,
-    activeSessionTabId,
-    applyHistoryItem,
-  ]);
 
   /**
    * Clears conversion history.
@@ -2852,441 +1940,23 @@ function App() {
     }
   };
 
-  /**
-   * ==========================================================================
-   * HANDLER: CONVERSION CONFIRMATION REQUEST
-   * ==========================================================================
-   *
-   * This function handles the secure confirmation flow:
-   * 1. Get source content according to sourceFormat
-   * 2. Compute content size
-   * 3. Request a confirmation token from the backend
-   * 4. Store pending conversion parameters
-   * 5. Show the confirmation modal
-   *
-   * When the user confirms, confirmAndConvert() is called with the token.
-   */
-  const requestConversionConfirmation = useCallback(async (
-    snap?: {
-      tabId: string;
-      sourceText: string;
-      sourceFormat: FormatType;
-      targetFormat: FormatType;
-    } | null
-  ) => {
-    if (loading || folderBatchRunning || isEditingResult) {
-      return;
-    }
-    const from = snap?.sourceFormat ?? sourceFormat;
-    const to = snap?.targetFormat ?? targetFormat;
-    const sourceText = snap?.sourceText ?? (from === 'markdown' ? mdOutput : adocInput);
-    const tabId = snap?.tabId ?? liveEditorRef.current.activeSessionTabId;
-
-    if (!sourceText.trim()) {
-      setStatus(t('convert.emptyInput'));
-      setNotification({
-        message: "Veuillez entrer du texte à convertir",
-        type: 'error',
-        visible: true
-      });
-      return;
-    }
-
-    const sourceSizeBytes = new Blob([sourceText]).size;
-    if (sourceSizeBytes > maxSourceSizeMb * 1024 * 1024) {
-      setStatus(t('snack.tooLarge', { mb: maxSourceSizeMb }));
-      setNotification({
-        message: `Le document dépasse la capacité de cette machine (${maxSourceSizeMb} Mo). Réduisez le contenu ou divisez le fichier.`,
-        type: 'error',
-        visible: true
-      });
-      return;
-    }
-
-    if (from === to) {
-      setStatus(t('convert.sameFormat'));
-      setNotification({
-        message: "Les formats source et destination sont identiques",
-        type: 'error',
-        visible: true
-      });
-      return;
-    }
-
-    try {
-      setLoading(true);
-      
-      // STEP 1: Request confirmation token from backend
-      // Backend generates a unique and temporary token
-      // This token MUST be included in final conversion request
-      // Calculate size in bytes (approximation for frontend)
-      const contentSize = new Blob([sourceText]).size;
-      const token = await requestConfirmationToken(
-        from,
-        to,
-        contentSize
-      );
-
-      // STEP 2: Store token and conversion data
-      // Token will be used only if user clicks "Yes"
-      setConfirmationToken(token);
-      setPendingConversion({
-        fromFormat: from,
-        toFormat: to,
-        token: token,
-        sourceText,
-        tabId,
-      });
-
-      // STEP 3: Display confirmation modal
-      // User must explicitly click "Yes" to continue
-      setShowConversionModal(true);
-      setLoading(false);
-
-    } catch (error: any) {
-      setLoading(false);
-      setStatus(t('snack.convertError', { message: error.message }));
-      setNotification({
-        message: `Erreur lors de la demande de confirmation: ${error.message}`,
-        type: 'error',
-        visible: true
-      });
-    }
-  }, [loading, folderBatchRunning, isEditingResult, sourceFormat, targetFormat, adocInput, mdOutput, setNotification, t]);
-
-  // Function called when user confirms (clicks "Yes")
-  const confirmAndConvert = useCallback(() => {
-    if (!confirmationToken || !pendingConversion) {
-      setNotification({
-        message: "Error: Missing confirmation token",
-        type: 'error',
-        visible: true
-      });
-      setShowConversionModal(false);
-      return;
-    }
-
-    // Close modal
-    setShowConversionModal(false);
-
-    const fromFormat = pendingConversion.fromFormat;
-    const toFormat = pendingConversion.toFormat;
-    const sourceText = pendingConversion.sourceText;
-    beginConvertAttempt(fromFormat, toFormat, sourceText, pendingConversion.tabId);
-
-    let opts = conversionOptions;
-    if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
-      opts = { ...opts, rendering: { ...opts.rendering, tableOfContents: { ...opts.rendering.tableOfContents, enabled: true } } };
-    } else if (userSettings.conversion.defaultTocEnabled) {
-      opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
-    }
-    if (userSettings.conversion.autoApplyUserToMetadata) {
-      const metadata = applyProfileToMetadata(opts.metadata, userSettings.profile, 'fillEmpty');
-      opts = { ...opts, metadata };
-    }
-    conversionAbortRef.current?.abort();
-    const abortController = new AbortController();
-    conversionAbortRef.current = abortController;
-    const attemptId = activeAttemptIdRef.current + 1;
-    activeAttemptIdRef.current = attemptId;
-    setLastAttemptId(attemptId);
-    const isActiveAttempt = () => activeAttemptIdRef.current === attemptId;
-    const guardedSetStatus = (value: string) => { if (isActiveAttempt()) setStatus(value); };
-    const guardedSetOutput = (value: string) => {
-      if (!isActiveAttempt()) return;
-      deliverConversionOutput(value);
-    };
-    const guardedSetLoading = (value: boolean) => { if (isActiveAttempt()) setLoading(value); };
-    const guardedSetNotification = (value: { message: string; type: 'success' | 'error'; visible: boolean } | null) => { if (isActiveAttempt()) setNotification(value); };
-    const guardedSetShowConversionErrorModal = (value: boolean) => { if (isActiveAttempt()) setShowConversionErrorModal(value); };
-    const guardedSetConversionErrorMessage = (value: string) => { if (isActiveAttempt()) setConversionErrorMessage(value); };
-    const guardedSetLastBackendConversionResult = (value: any | null) => { if (isActiveAttempt()) setLastBackendConversionResult(value); };
-    const guardedSetConversionUiState = (value: 'idle' | 'loading' | 'success' | 'error') => {
-      if (!isActiveAttempt()) return;
-      if (value === 'success' && lastOutputDestRef.current && lastOutputDestRef.current !== 'live') {
-        setConversionUiState('idle');
-        setJustConverted(false);
-        setConfirmationToken(null);
-        setPendingConversion(null);
-        return;
-      }
-      if (value === 'success') setJustConverted(true);
-      if (value === 'success' || value === 'error') {
-        setConfirmationToken(null);
-        setPendingConversion(null);
-      }
-      setConversionUiState(value);
-    };
-    convertText(
-      sourceText,
-      fromFormat,
-      toFormat,
-      guardedSetStatus,
-      guardedSetOutput,
-      guardedSetLoading,
-      guardedSetNotification,
-      opts,
-      confirmationToken,
-      guardedSetShowConversionErrorModal,
-      guardedSetConversionErrorMessage,
-      guardedSetLastBackendConversionResult,
-      guardedSetConversionUiState,
-      conversionTimeoutMs,
-      abortController.signal,
-      {
-        emptyInput: t('convert.emptyInput'),
-        sameFormat: t('convert.sameFormat'),
-        running: t('convert.running'),
-        error: t('convert.error'),
-        success: t('convert.successMark'),
-        successWarnings: (count: number) => t('convert.successWarnings', { count }),
-        timeout: t('convert.timeout'),
-      }
-    );
-  }, [confirmationToken, pendingConversion, conversionOptions, userSettings, conversionTimeoutMs, t, beginConvertAttempt, deliverConversionOutput]);
-
-  // History is recorded in deliverConversionOutput from the origin snapshot.
-  useEffect(() => {
-    if (!loading && justConverted) {
-      const timer = setTimeout(() => {
-        const sourceContent = sourceFormat === 'markdown' ? mdOutput : adocInput;
-        const liveKey = sourceAutoConvertKey(sourceFormat, targetFormat, sourceContent);
-        if (shouldMarkTabCleanAfterConvert(liveKey, convertSnapshotKeyRef.current)) {
-          setSourceModified(false);
-        }
-        setResultModified(false);
-        setJustConverted(false);
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [loading, justConverted, sourceFormat, targetFormat, adocInput, mdOutput]);
-
-  // ==========================================================================
-  // ==========================================================================
-  // HANDLERS: CONVERSION
-  // ==========================================================================
-  
-  /**
-   * Triggers the conversion process
-   * 
-   * For simple conversions (AsciiDoc → Markdown, Markdown → AsciiDoc, etc.),
-   * converts directly without token.
-   * For complex conversions (via /convert), requests a confirmation token.
-   */
-  const handleConvert = useCallback((opts?: { skipConfirm?: boolean }) => {
-    if (loading || folderBatchRunning) {
-      return;
-    }
-    if (isEditingResult) {
-      setStatus(t('snack.saveEditFirst'));
-      setNotification({
-        message: "Sauvegardez ou annulez l'édition du résultat avant de convertir",
-        type: 'error',
-        visible: true
-      });
-      return;
-    }
-
-    if (!isSupportedUiConversion(sourceFormat, targetFormat)) {
-      setStatus(t('snack.pairUnavailable'));
-      setNotification({
-        message: SUPPORTED_CONVERSION_HINT,
-        type: 'error',
-        visible: true
-      });
-      return;
-    }
-
-    const liveSourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
-    if (userSettings.conversion.confirmBeforeConversion && !opts?.skipConfirm) {
-      pendingConfirmConvertRef.current = {
-        tabId: liveEditorRef.current.activeSessionTabId,
-        sourceText: liveSourceText,
-        sourceFormat,
-        targetFormat,
-      };
-      setShowConfirmConvertModal(true);
-      return;
-    }
-
-    const snap = opts?.skipConfirm ? pendingConfirmConvertRef.current : null;
-    pendingConfirmConvertRef.current = null;
-    const request = resolveConvertRequestSnap(snap, {
-      tabId: liveEditorRef.current.activeSessionTabId,
-      sourceText: liveSourceText,
-      sourceFormat,
-      targetFormat,
-    });
-    const from = request.sourceFormat;
-    const to = request.targetFormat;
-    const sourceText = request.sourceText;
-    const originTabId = request.tabId;
-
-    // Check if conversion requires a token (/api/convert)
-    const needsToken = conversionNeedsConfirmationToken(from, to);
-
-    if (needsToken) {
-      requestConversionConfirmation(request);
-    } else {
-      // Conversion simple : convertir directement
-
-      if (!sourceText.trim()) {
-        setStatus(t('convert.emptyInput'));
-        setNotification({
-          message: "Veuillez entrer du texte à convertir",
-          type: 'error',
-          visible: true
-        });
-        return;
-      }
-
-      const sourceSizeBytes = new Blob([sourceText]).size;
-      if (sourceSizeBytes > maxSourceSizeMb * 1024 * 1024) {
-        setStatus(t('snack.tooLarge', { mb: maxSourceSizeMb }));
-      setNotification({
-          message: `Le document dépasse la capacité de cette machine (${maxSourceSizeMb} Mo). Réduisez le contenu ou divisez le fichier.`,
-          type: 'error',
-          visible: true
-        });
-        return;
-      }
-
-      if (from === to) {
-        setStatus(t('convert.sameFormat'));
-        setNotification({
-          message: "Les formats source et destination sont identiques",
-          type: 'error',
-          visible: true
-        });
-        return;
-      }
-
-      let opts = conversionOptions;
-      if (userSettings.conversion.defaultTocEnabled && opts.rendering) {
-        opts = { ...opts, rendering: { ...opts.rendering, tableOfContents: { ...opts.rendering.tableOfContents, enabled: true } } };
-      } else if (userSettings.conversion.defaultTocEnabled) {
-        opts = { ...opts, rendering: { tableOfContents: { enabled: true } } };
-      }
-      if (userSettings.conversion.autoApplyUserToMetadata) {
-        const metadata = applyProfileToMetadata(opts.metadata, userSettings.profile, 'fillEmpty');
-        opts = { ...opts, metadata };
-      }
-      beginConvertAttempt(from, to, sourceText, originTabId);
-      conversionAbortRef.current?.abort();
-      const abortController = new AbortController();
-      conversionAbortRef.current = abortController;
-      const attemptId = activeAttemptIdRef.current + 1;
-      activeAttemptIdRef.current = attemptId;
-      setLastAttemptId(attemptId);
-      const isActiveAttempt = () => activeAttemptIdRef.current === attemptId;
-      const guardedSetStatus = (value: string) => { if (isActiveAttempt()) setStatus(value); };
-      const guardedSetOutput = (value: string) => {
-        if (!isActiveAttempt()) return;
-        if (value.length >= 100_000) {
-          startTransition(() => deliverConversionOutput(value));
-        } else {
-          deliverConversionOutput(value);
-        }
-      };
-      const guardedSetLoading = (value: boolean) => { if (isActiveAttempt()) setLoading(value); };
-      const guardedSetNotification = (value: { message: string; type: 'success' | 'error'; visible: boolean } | null) => { if (isActiveAttempt()) setNotification(value); };
-      const guardedSetShowConversionErrorModal = (value: boolean) => { if (isActiveAttempt()) setShowConversionErrorModal(value); };
-      const guardedSetConversionErrorMessage = (value: string) => { if (isActiveAttempt()) setConversionErrorMessage(value); };
-      const guardedSetLastBackendConversionResult = (value: any | null) => { if (isActiveAttempt()) setLastBackendConversionResult(value); };
-      const guardedSetConversionUiState = (value: 'idle' | 'loading' | 'success' | 'error') => {
-        if (!isActiveAttempt()) return;
-        if (value === 'success' && lastOutputDestRef.current && lastOutputDestRef.current !== 'live') {
-          setConversionUiState('idle');
-          setJustConverted(false);
-          return;
-        }
-        if (value === 'success') setJustConverted(true);
-        setConversionUiState(value);
-      };
-      convertText(
-        sourceText,
-        from,
-        to,
-        guardedSetStatus,
-        guardedSetOutput,
-        guardedSetLoading,
-        guardedSetNotification,
-        opts,
-        null,
-        guardedSetShowConversionErrorModal,
-        guardedSetConversionErrorMessage,
-        guardedSetLastBackendConversionResult,
-        guardedSetConversionUiState,
-        conversionTimeoutMs,
-        abortController.signal,
-        {
-          emptyInput: t('convert.emptyInput'),
-          sameFormat: t('convert.sameFormat'),
-          running: t('convert.running'),
-          error: t('convert.error'),
-          success: t('convert.successMark'),
-          successWarnings: (count: number) => t('convert.successWarnings', { count }),
-          timeout: t('convert.timeout'),
-        }
-      );
-    }
-  }, [loading, folderBatchRunning, requestConversionConfirmation, sourceFormat, targetFormat, adocInput, mdOutput, conversionOptions, userSettings, isEditingResult, conversionTimeoutMs, beginConvertAttempt, deliverConversionOutput, t]);
-
-  useEffect(() => {
-    const clearPending = () => setAutoConvertPending(false);
-    const sourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
-    const key = sourceAutoConvertKey(sourceFormat, targetFormat, sourceText);
-    const stamp = conversionStampRef.current;
-    const action = decideAutoConvert({
-      enabled: userSettings.ui.autoConvertOnIdle,
-      confirmBeforeConversion: userSettings.conversion.confirmBeforeConversion,
-      busy: loading || folderBatchRunning || isEditingResult,
-      sourceFormat,
-      targetFormat,
-      sourceText,
-      lastKey: lastAutoConvertKeyRef.current,
-      lastStamp: lastAutoConvertOptionsRef.current,
-      currentStamp: stamp,
-      failKey: autoConvertFailRef.current.key,
-      failCount: autoConvertFailRef.current.count,
-      needsConfirmationToken: conversionNeedsConfirmationToken(sourceFormat, targetFormat),
-    });
-    if (action === 'skip') {
-      clearPending();
-      return;
-    }
-    if (action === 'seed-exhausted') {
-      lastAutoConvertKeyRef.current = key;
-      lastAutoConvertOptionsRef.current = stamp;
-      clearPending();
-      return;
-    }
-
-    setAutoConvertPending(true);
-    const timer = window.setTimeout(() => {
-      setAutoConvertPending(false);
-      autoConvertFailRef.current = bumpAutoConvertFail(autoConvertFailRef.current, key);
-      handleConvert();
-    }, AUTO_CONVERT_IDLE_MS);
-    return () => {
-      window.clearTimeout(timer);
-      setAutoConvertPending(false);
-    };
-  }, [
-    userSettings.ui.autoConvertOnIdle,
-    userSettings.conversion.confirmBeforeConversion,
-    adocInput,
-    mdOutput,
+  useAutoConvertIdle({
     sourceFormat,
     targetFormat,
+    adocInput,
+    mdOutput,
     loading,
     folderBatchRunning,
     isEditingResult,
-    handleConvert,
     conversionOptions,
-    userSettings.conversion.defaultTocEnabled,
-    userSettings.conversion.autoApplyUserToMetadata,
-  ]);
+    userSettings,
+    handleConvert,
+    lastAutoConvertKeyRef,
+    lastAutoConvertOptionsRef,
+    autoConvertFailRef,
+    conversionStampRef,
+    setAutoConvertPending,
+  });
 
   const toggleHistoryPanel = useCallback(() => {
     if (historyWindowMinimized) {
@@ -3337,66 +2007,6 @@ function App() {
     syncOptionsFromActiveProfiles([]);
     showSnackbar(t('snack.profilesCleared'));
   }, [showSnackbar, syncOptionsFromActiveProfiles]);
-
-  const handleExportZip = useCallback(() => {
-    const sourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
-    const resultText = readResultBuffer(sourceFormat, targetFormat, {
-      adocInput,
-      mdOutput,
-      otherOutput,
-    });
-    const base = (currentFileName || 'document').replace(/\.[^/.]+$/, '');
-    const srcExt =
-      sourceFormat === 'markdown'
-        ? 'md'
-        : sourceFormat === 'asciidoc'
-          ? 'adoc'
-          : sourceFormat === 'html'
-            ? 'html'
-            : 'txt';
-    const outExt =
-      targetFormat === 'markdown'
-        ? 'md'
-        : targetFormat === 'asciidoc'
-          ? 'adoc'
-          : targetFormat === 'html'
-            ? 'html'
-            : 'txt';
-    const blob = createZipBlob([
-      { name: `${base}-source.${srcExt}`, content: sourceText },
-      { name: `${base}-result.${outExt}`, content: resultText },
-      {
-        name: `${base}-meta.json`,
-        content: JSON.stringify(
-          {
-            sourceFormat,
-            targetFormat,
-            fileName: currentFileName,
-            exportedAt: new Date().toISOString(),
-            warnings: conversionWarnings,
-          },
-          null,
-          2
-        ),
-      },
-    ]);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${base}-ascend.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showSnackbar(t('snack.zipDownloaded'));
-  }, [
-    sourceFormat,
-    targetFormat,
-    adocInput,
-    mdOutput,
-    otherOutput,
-    currentFileName,
-    conversionWarnings,
-    showSnackbar,
-  ]);
 
   const openDiffPanel = useCallback(() => {
     const left = sourceFormat === 'markdown' ? mdOutput : adocInput;
@@ -3490,36 +2100,6 @@ function App() {
     document.documentElement.toggleAttribute('data-find-replace-open', showFindReplace);
     return () => document.documentElement.removeAttribute('data-find-replace-open');
   }, [showFindReplace]);
-
-  useAppKeyboardShortcuts({
-    onConvert: handleConvert,
-    onExport: handleExport,
-    onClearSource: handleClearSource,
-    onOpenShortcutsHelp: () => setShortcutsHelpOpen((v) => !v),
-    onOpenSettings: () => {
-      if (settingsOpen && !settingsMinimized) closeSettingsPanel();
-      else openSettingsPanel();
-    },
-    onToggleHistory: toggleHistoryPanel,
-    onOpenFindReplace: () => {
-      setFindTarget(resolveEditorTarget());
-      setShowGotoLine(false);
-      setShowFindReplace(true);
-    },
-    onOpenGotoLine: () => {
-      setGotoTarget(resolveEditorTarget());
-      setShowFindReplace(false);
-      setShowGotoLine(true);
-    },
-    onOpenDiff: openDiffPanel,
-    onToggleFocusMode: toggleFocusMode,
-    onOpenCommandPalette: () => setShowCommandPalette((v) => !v),
-    onCloseActiveSessionTab: () => closeSessionTab(activeSessionTabId),
-    onCloseAllSessionTabs: requestCloseAllSessionTabs,
-    isEditingResult,
-    onOpenSaveModal: () => setShowSaveModal(true),
-    loading: loading || folderBatchRunning,
-  });
 
   // Escape quitte le mode focus si aucune overlay/modale n'est ouverte
   useEffect(() => {
@@ -3697,14 +2277,7 @@ function App() {
     if (!resultUsesOtherBuffer(newSourceFormat, newTargetFormat)) {
       setOtherOutput('');
     }
-    lastAutoConvertKeyRef.current = sourceAutoConvertKey(
-      newSourceFormat,
-      newTargetFormat,
-      currentTargetText
-    );
-    lastAutoConvertOptionsRef.current = conversionStampRef.current;
-    convertSnapshotKeyRef.current = lastAutoConvertKeyRef.current;
-    convertSnapshotStampRef.current = conversionStampRef.current;
+    seedEditorSnapshot(newSourceFormat, newTargetFormat, currentTargetText);
   }, [sourceFormat, targetFormat, adocInput, mdOutput, otherOutput, loading, folderBatchRunning, isEditingResult]);
 
   const applyFormatPair = useCallback(
@@ -3740,282 +2313,57 @@ function App() {
     []
   );
 
-  const commandPaletteItems = useMemo((): CommandPaletteItem[] => {
-    const sourceText = sourceFormat === 'markdown' ? mdOutput : adocInput;
-    const resultText = readResultBuffer(sourceFormat, targetFormat, {
-      adocInput,
-      mdOutput,
-      otherOutput,
-    });
-    const sourceHas = !!sourceText.trim();
-    const resultHas = !!resultText.trim();
-    const canConvertPair =
-      sourceFormat !== targetFormat && isSupportedUiConversion(sourceFormat, targetFormat);
-    const canAddTab = sessionTabs.length < MAX_SESSION_TABS;
-    const convertDisabledReason = loading
-      ? t('cmd.reason.converting')
-      : !sourceHas
-        ? t('cmd.reason.emptySource')
-        : !canConvertPair
-          ? t('cmd.reason.sameFormat')
-          : undefined;
-
-    return [
-      {
-        id: 'convert',
-        label: t('shortcuts.convert'),
-        shortcut: SHORTCUT_TIP.convert,
-        keywords: 'run go',
-        disabled: Boolean(convertDisabledReason),
-        disabledReason: convertDisabledReason,
-        run: () => handleConvert(),
-      },
-      {
-        id: 'find',
-        label: t('shortcuts.find'),
-        shortcut: SHORTCUT_TIP.find,
-        keywords: 'search rechercher',
-        run: () => {
-          setFindTarget(resolveEditorTarget());
-          setShowGotoLine(false);
-          setShowFindReplace(true);
-        },
-      },
-      {
-        id: 'goto',
-        label: t('shortcuts.goto'),
-        shortcut: SHORTCUT_TIP.goto,
-        keywords: 'line ligne',
-        run: () => {
-          setGotoTarget(resolveEditorTarget());
-          setShowFindReplace(false);
-          setShowGotoLine(true);
-        },
-      },
-      {
-        id: 'diff',
-        label: t('shortcuts.diff'),
-        shortcut: SHORTCUT_TIP.diff,
-        keywords: 'compare',
-        disabled: !sourceHas || !resultHas,
-        disabledReason:
-          !sourceHas && !resultHas
-            ? t('cmd.reason.emptyBoth')
-            : !sourceHas
-              ? t('cmd.reason.emptySource')
-              : t('cmd.reason.emptyResult'),
-        run: () => openDiffPanel(),
-      },
-      {
-        id: 'focus',
-        label: t('shortcuts.focus'),
-        shortcut: SHORTCUT_TIP.focus,
-        run: () => toggleFocusMode(),
-      },
-      {
-        id: 'history',
-        label: t('shortcuts.history'),
-        shortcut: SHORTCUT_TIP.history,
-        run: () => toggleHistoryPanel(),
-      },
-      {
-        id: 'settings',
-        label: t('shortcuts.settings'),
-        shortcut: SHORTCUT_TIP.settings,
-        run: () => {
-          if (settingsOpen && !settingsMinimized) closeSettingsPanel();
-          else openSettingsPanel();
-        },
-      },
-      {
-        id: 'navigation',
-        label: t('cmd.navigation'),
-        keywords: 'headings titres toc',
-        run: () => {
-          setNavigationEnabled(true);
-          setNavigationWindowMinimized(false);
-          setNavigationWindowOpen(true);
-        },
-      },
-      {
-        id: 'previewDetach',
-        label: t('panel.previewDetach'),
-        keywords: 'preview aperçu detach flottant window',
-        disabled: !resultHas || !supportsRichPreview(targetFormat),
-        disabledReason: !resultHas
-          ? t('cmd.reason.emptyResult')
-          : !supportsRichPreview(targetFormat)
-            ? t('cmd.reason.noPreview')
-            : undefined,
-        run: () => togglePreviewWindow(),
-      },
-      ...WORKSPACE_PRESETS.map((preset) => ({
-        id: `workspace-${preset.id}`,
-        label: t(`workspace.preset.${preset.id}` as MessageKey),
-        keywords: `layout workspace preset ${preset.id}`,
-        run: () => applyWorkspacePreset(preset.id),
-      })),
-      {
-        id: 'swap',
-        label: t('convert.swapFormats'),
-        keywords: 'échanger swap',
-        run: () => handleSwap(),
-      },
-      {
-        id: 'linkedScroll',
-        label: t('iface.linkedScroll'),
-        keywords: 'scroll sync',
-        run: () => toggleLinkedScroll(),
-      },
-      {
-        id: 'newTab',
-        label: t('sessionTabs.add'),
-        keywords: 'onglet tab',
-        disabled: !canAddTab,
-        disabledReason: !canAddTab ? t('sessionTabs.max', { max: MAX_SESSION_TABS }) : undefined,
-        run: () => addSessionTab(),
-      },
-      {
-        id: 'closeTab',
-        label: t('sessionTabs.closeActive'),
-        shortcut: SHORTCUT_TIP.closeTab,
-        keywords: 'fermer onglet close tab',
-        run: () => closeSessionTab(activeSessionTabId),
-      },
-      {
-        id: 'closeOtherTabs',
-        label: t('sessionTabs.closeOthers'),
-        keywords: 'fermer autres close others',
-        disabled: sessionTabs.length <= 1,
-        disabledReason: sessionTabs.length <= 1 ? t('cmd.reason.singleTab') : undefined,
-        run: () => closeOtherSessionTabs(activeSessionTabId),
-      },
-      {
-        id: 'closeAllTabs',
-        label: t('sessionTabs.closeAll'),
-        shortcut: SHORTCUT_TIP.closeAllTabs,
-        keywords: 'fermer tous close all',
-        disabled: sessionTabs.length <= 1 && dirtySessionTabIds.size === 0 && !sourceHas && !resultHas,
-        disabledReason:
-          sessionTabs.length <= 1 && dirtySessionTabIds.size === 0 && !sourceHas && !resultHas
-            ? t('cmd.reason.singleTab')
-            : undefined,
-        run: () => requestCloseAllSessionTabs(),
-      },
-      {
-        id: 'copy',
-        label: t('common.copy'),
-        keywords: 'clipboard',
-        disabled: !resultHas,
-        disabledReason: !resultHas ? t('cmd.reason.emptyResult') : undefined,
-        run: () => {
-          void handleCopy();
-        },
-      },
-      {
-        id: 'export',
-        label: t('shortcuts.download'),
-        shortcut: SHORTCUT_TIP.download,
-        keywords: 'export download',
-        disabled: !resultHas,
-        disabledReason: !resultHas ? t('cmd.reason.emptyResult') : undefined,
-        run: () => handleExport(),
-      },
-      {
-        id: 'exportZip',
-        label: t('panel.actions.zip'),
-        keywords: 'zip archive',
-        disabled: !resultHas && !sourceHas,
-        disabledReason:
-          !resultHas && !sourceHas ? t('cmd.reason.emptyBoth') : undefined,
-        run: () => handleExportZip(),
-      },
-      {
-        id: 'clearSource',
-        label: t('shortcuts.clearSource'),
-        shortcut: SHORTCUT_TIP.clearSource,
-        keywords: 'effacer delete',
-        disabled: !sourceHas,
-        disabledReason: !sourceHas ? t('cmd.reason.emptySource') : undefined,
-        run: () => handleClearSource(),
-      },
-      {
-        id: 'clearResult',
-        label: t('panel.clearResult'),
-        keywords: 'effacer delete',
-        disabled: !resultHas,
-        disabledReason: !resultHas ? t('cmd.reason.emptyResult') : undefined,
-        run: () => handleClear(),
-      },
-      {
-        id: 'folderBatch',
-        label: t('batch.start'),
-        keywords: 'dossier folder batch queue lot',
-        disabled: folderBatchRunning || loading || folderFiles.length < 2,
-        disabledReason: folderBatchRunning
-          ? t('cmd.reason.batchRunning')
-          : loading
-            ? t('cmd.reason.converting')
-            : folderFiles.length < 2
-              ? t('cmd.reason.needFolder')
-              : undefined,
-        run: () => {
-          void startFolderBatch();
-        },
-      },
-      {
-        id: 'resultZen',
-        label: t('zen.result.enter'),
-        keywords: 'zen lecture result fullscreen',
-        disabled: !resultHas,
-        disabledReason: !resultHas ? t('cmd.reason.emptyResult') : undefined,
-        run: () => setResultZenMode(true),
-      },
-      {
-        id: 'help',
-        label: t('shortcuts.help'),
-        shortcut: SHORTCUT_TIP.help,
-        keywords: 'raccourcis shortcuts',
-        run: () => setShortcutsHelpOpen((v) => !v),
-      },
-    ];
-  }, [
+  const { commandPaletteItems, shortcutHandlers } = useAppCommands({
     sourceFormat,
     targetFormat,
     adocInput,
     mdOutput,
     otherOutput,
     loading,
-    sessionTabs.length,
-    activeSessionTabId,
-    dirtySessionTabIds,
-    t,
-    handleConvert,
-    resolveEditorTarget,
-    openDiffPanel,
-    togglePreviewWindow,
-    applyWorkspacePreset,
-    toggleFocusMode,
-    toggleHistoryPanel,
+    folderBatchRunning,
+    isEditingResult,
     settingsOpen,
     settingsMinimized,
-    closeSettingsPanel,
-    openSettingsPanel,
+    sessionTabCount: sessionTabs.length,
+    activeSessionTabId,
+    dirtyTabCount: dirtySessionTabIds.size,
+    folderFileCount: folderFiles.length,
+    t,
+    resolveEditorTarget,
+    handleConvert,
+    handleExport,
+    handleExportZip,
+    handleCopy,
+    handleClearSource,
+    handleClear,
     handleSwap,
+    openDiffPanel,
+    toggleFocusMode,
+    toggleHistoryPanel,
+    togglePreviewWindow,
     toggleLinkedScroll,
+    applyWorkspacePreset,
+    openSettingsPanel,
+    closeSettingsPanel,
     addSessionTab,
     closeSessionTab,
     closeOtherSessionTabs,
     requestCloseAllSessionTabs,
-    handleCopy,
-    handleExport,
-    handleExportZip,
-    handleClearSource,
-    handleClear,
-    folderFiles.length,
-    folderBatchRunning,
     startFolderBatch,
-  ]);
+    setFindTarget,
+    setGotoTarget,
+    setShowFindReplace,
+    setShowGotoLine,
+    setShowCommandPalette,
+    setShortcutsHelpOpen,
+    setShowSaveModal,
+    setNavigationEnabled,
+    setNavigationWindowMinimized,
+    setNavigationWindowOpen,
+    setResultZenMode,
+  });
+  useAppKeyboardShortcuts(shortcutHandlers);
+
 
   /**
    * ============================================================================
@@ -4892,27 +3240,11 @@ function App() {
         onCloseResetSettings={() => setShowResetSettingsModal(false)}
         onConfirmResetSettings={resetSettingsToDefaults}
         showReplaceSourceModal={showReplaceSourceModal}
-        onCloseReplaceSource={() => {
-          setShowReplaceSourceModal(false);
-          setPendingSourceReplace(null);
-        }}
-        onConfirmReplaceSource={() => {
-          const pending = pendingSourceReplace;
-          setShowReplaceSourceModal(false);
-          setPendingSourceReplace(null);
-          if (pending?.kind === 'folder') applyFolderFileToSource(pending.index);
-          if (pending?.kind === 'file') void loadSourceFile(pending.file, { alignFormat: pending.alignFormat });
-          if (pending?.kind === 'history') applyHistoryItem(pending.item);
-        }}
+        onCloseReplaceSource={closeReplaceSource}
+        onConfirmReplaceSource={confirmReplaceSource}
         showConfirmConvertModal={showConfirmConvertModal}
-        onCloseConfirmConvert={() => {
-          setShowConfirmConvertModal(false);
-          pendingConfirmConvertRef.current = null;
-        }}
-        onConfirmConvert={() => {
-          setShowConfirmConvertModal(false);
-          handleConvert({ skipConfirm: true });
-        }}
+        onCloseConfirmConvert={closeConfirmConvert}
+        onConfirmConvert={acceptConfirmConvert}
         sourceFormat={sourceFormat}
         targetFormat={targetFormat}
         showClearLocalDataModal={showClearLocalDataModal}
@@ -4986,16 +3318,9 @@ function App() {
         showConversionModal={showConversionModal}
         confirmationToken={confirmationToken}
         pendingConversion={pendingConversion}
-        onCloseConversionConfirm={() => {
-          setShowConversionModal(false);
-          setConfirmationToken(null);
-          setPendingConversion(null);
-        }}
+        onCloseConversionConfirm={closeConversionConfirm}
         onConfirmAndConvert={confirmAndConvert}
-        onCancelConversionConfirm={() => {
-          setConfirmationToken(null);
-          setPendingConversion(null);
-        }}
+        onCancelConversionConfirm={cancelConversionConfirm}
         getFormatTitle={getFormatTitle}
         showConversionErrorModal={showConversionErrorModal}
         onCloseConversionError={() => setShowConversionErrorModal(false)}
